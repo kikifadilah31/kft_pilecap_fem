@@ -1,0 +1,303 @@
+"""CLI `pilecap-mesh` -- geometri + meshing saja (PRD Bagian 6.1).
+
+Dipakai untuk cek visual sebelum analisis panjang. Tidak membangun model FEM dan tidak
+membutuhkan properti material, sehingga `validators.validate_material()` sengaja TIDAK
+dipanggil di sini -- `material.E` baru wajib diisi saat `pilecap-analyze` dijalankan.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+from pathlib import Path
+from typing import Any
+
+from pilecap_fem import (
+    __version__,
+    config,
+    geometry_builder,
+    io_utils,
+    mesh_engine,
+    provenance,
+    renderer,
+    reporter,
+    validators,
+)
+from pilecap_fem import mesh_model as mesh_model_mod
+from pilecap_fem.validators import InputError, PilecapError
+
+_log = config.get_logger("cli_pilecap_mesh")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="pilecap-mesh",
+        description="Generate geometri + mesh all-quad pilecap (tanpa analisis FEM).",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--config", type=Path, default=None, help="File konfigurasi JSON")
+    parser.add_argument(
+        "--input-dir", type=Path, default=Path("input"), help="Folder auto-detect input"
+    )
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("output"), help="Root folder output"
+    )
+    parser.add_argument(
+        "--pilecap-polygon",
+        type=Path,
+        default=None,
+        help="CSV polygon pilecap - OVERRIDE length_x/length_y/origin",
+    )
+    parser.add_argument(
+        "--pile-coords",
+        type=Path,
+        default=None,
+        help="CSV koordinat pile - OVERRIDE konfigurasi grid",
+    )
+    parser.add_argument(
+        "--pier-polygon",
+        type=Path,
+        default=None,
+        help="CSV polygon pier - OVERRIDE shape/width_*/diameter/centerline",
+    )
+    parser.add_argument(
+        "--no-custom",
+        action="store_true",
+        help="Abaikan seluruh CSV geometri hasil auto-detect; paksa parameter JSON",
+    )
+    parser.add_argument(
+        "--size", type=float, default=None, help="Override ukuran mesh global [satuan input]"
+    )
+    parser.add_argument("--size-mode", choices=("uniform", "graded"), default=None)
+    parser.add_argument("--algorithm", type=int, default=None, help="Override Mesh.Algorithm")
+    parser.add_argument(
+        "--recomb-algorithm", type=int, default=None, help="Override Mesh.RecombinationAlgorithm"
+    )
+    parser.add_argument(
+        "--allow-tri",
+        action="store_true",
+        help="Izinkan elemen segitiga lolos (DIAGNOSTIK SAJA - model FEM akan menolaknya)",
+    )
+    parser.add_argument("--export-msh", action="store_true", help="Simpan juga model.msh")
+    parser.add_argument("--preview", action="store_true", help="Tampilkan plot mesh interaktif")
+    parser.add_argument("--dpi", type=int, default=config.OUTPUT_DPI)
+    parser.add_argument(
+        "--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"), default="INFO"
+    )
+    parser.add_argument("--version", action="version", version=f"pilecap-fem {__version__}")
+    return parser
+
+
+def _apply_cli_mesh_overrides(
+    cfg: dict[str, Any], args: argparse.Namespace, length_factor: float
+) -> dict[str, Any]:
+    """Terapkan override CLI ke blok `mesh`, sebelum validasi.
+
+    `--size` diberikan dalam satuan input (default mm) dan dikonversi ke SI di sini
+    memakai faktor yang sama dengan file config -- tetap satu tabel konversi
+    (PRD Bagian 4.2).
+    """
+    applied: dict[str, Any] = {}
+    mesh = cfg.setdefault("mesh", {})
+    if args.size is not None:
+        mesh["size_global"] = float(args.size) * length_factor
+        applied["size"] = args.size
+    if args.size_mode is not None:
+        mesh["size_mode"] = args.size_mode
+        applied["size_mode"] = args.size_mode
+    if args.algorithm is not None:
+        mesh["algorithm"] = args.algorithm
+        applied["algorithm"] = args.algorithm
+    if args.recomb_algorithm is not None:
+        mesh["recombination_algorithm"] = args.recomb_algorithm
+        applied["recomb_algorithm"] = args.recomb_algorithm
+    if applied:
+        _log.info("Override CLI pada blok mesh: %s", applied)
+    return applied
+
+
+def run(args: argparse.Namespace, command: str) -> Path:
+    """Jalankan seluruh rantai Fase 1. Mengembalikan folder run.
+
+    Seluruh badan dibungkus try/except agar run yang GAGAL pun meninggalkan
+    `run_manifest.json` berstatus `FAILED` beserta pesan errornya (PRD Bagian 10:
+    "run yang gagal pun terlacak").
+    """
+    run_dir = provenance.make_run_dir(args.output_dir)
+    config.setup_logging(run_dir, args.log_level)
+    model_dir = run_dir / config.MODEL_SUBDIR
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    _log.info("pilecap-fem v%s | run: %s", __version__, run_dir)
+
+    # Manifest dibuat & ditulis PALING AWAL, sebelum satu pun file input dibaca.
+    manifest = provenance.Manifest(run_dir, command)
+    manifest.set_parameters(
+        {"cli": {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}}
+    )
+    manifest.write()
+
+    try:
+        return _run_inner(args, command, run_dir, model_dir, manifest)
+    except Exception as exc:
+        manifest.set_status("FAILED")
+        manifest.update_checks({"error": f"{type(exc).__name__}: {exc}"})
+        manifest.write()
+        raise
+
+
+def _run_inner(
+    args: argparse.Namespace,
+    command: str,
+    run_dir: Path,
+    model_dir: Path,
+    manifest: provenance.Manifest,
+) -> Path:
+    config_path = args.config or io_utils.autodetect(args.input_dir, "config", required=True)
+    assert config_path is not None
+    loaded = io_utils.load_config(config_path)
+
+    # Auto-detect CSV geometri hanya berlaku bila --config tidak menunjuk ke luar
+    # --input-dir; tetap dipakai apa adanya agar perilakunya dapat diprediksi.
+    sources = io_utils.resolve_geometry_sources(
+        loaded,
+        input_dir=args.input_dir if args.input_dir.is_dir() else None,
+        cli_pilecap_polygon=args.pilecap_polygon,
+        cli_pile_coords=args.pile_coords,
+        cli_pier_polygon=args.pier_polygon,
+        no_custom=args.no_custom,
+    )
+
+    length_factor = config.LENGTH_TO_SI[loaded.input_units["length"]]
+    cli_overrides = _apply_cli_mesh_overrides(loaded.si, args, length_factor)
+
+    present = io_utils.sources_present(sources.resolution)
+    validators.validate_config_geometry_params(loaded.si, present)
+    validators.validate_config_mesh(loaded.si)
+
+    geom = geometry_builder.build_geometry_model(loaded.si, sources)
+    _log.info(
+        "Pilecap luas %.3f m2 | t = %.3f m | %d pile | %d pier",
+        geom.pilecap_area,
+        geom.thickness,
+        geom.n_piles,
+        geom.n_piers,
+    )
+    validators.validate_geometry(geom)
+    validators.validate_mesh_vs_geometry(loaded.si, geom)
+
+    options = mesh_engine.MeshOptions.from_config(loaded.si)
+
+    # Manifest dilengkapi SEBELUM meshing dimulai (PRD Bagian 10).
+    manifest.add_input(config_path, loaded.sha256)
+    for res in (sources.resolution.pilecap, sources.resolution.pile, sources.resolution.pier):
+        if res.file is not None:
+            manifest.add_input(res.file, res.sha256)
+    manifest.set_geometry_resolution(sources.resolution)
+    manifest.set_standards(loaded.si.get("design"))
+    manifest.set_parameters(
+        {
+            "cli": {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
+            "cli_mesh_overrides": cli_overrides,
+            # Parameter JSON yang di-override CSV TETAP disimpan apa adanya (PRD Bagian 5.2.1).
+            "config_raw": loaded.raw,
+            "config_si": loaded.si,
+            "input_units": loaded.input_units,
+        }
+    )
+    manifest.write()
+
+    raw = mesh_engine.generate_mesh(
+        geom,
+        options,
+        allow_tri=args.allow_tri,
+        export_msh=(model_dir / "model.msh") if args.export_msh else None,
+        gmsh_terminal=(args.log_level == "DEBUG"),
+    )
+    mesh = mesh_model_mod.build_mesh_model(raw)
+
+    mesh.write_nodes_csv(model_dir / "nodes.csv")
+    mesh.write_elements_csv(model_dir / "elements.csv")
+    reporter.write_mesh_summary(
+        model_dir / "mesh_summary.md",
+        geom=geom,
+        mesh=mesh,
+        raw=raw,
+        options=options,
+        project_name=(loaded.raw.get("project") or {}).get("name", ""),
+        run_dir=run_dir,
+        warnings=raw.warnings,
+    )
+    renderer.render_mesh_plan(
+        model_dir / "mesh_plan.png",
+        geom,
+        mesh,
+        project_name=(loaded.raw.get("project") or {}).get("name", ""),
+        mesh_size_m=options.size_global,
+        n_tri=raw.n_tri,
+        dpi=args.dpi,
+        preview=args.preview,
+    )
+
+    manifest.update_model_stats(
+        {
+            "n_nodes": mesh.n_nodes,
+            "n_elements": mesh.n_elements,
+            "element_type": "quad4 (calon ShellMITC4)",
+            "mesh": {
+                "size_mode": options.size_mode,
+                "mesh_size_min_m": raw.effective_options["Mesh.MeshSizeMin"],
+                "mesh_size_max_m": raw.effective_options["Mesh.MeshSizeMax"],
+                "algorithm": options.algorithm,
+                "recombination_algorithm": options.recombination_algorithm,
+                "n_quad": raw.n_quad,
+                "n_tri": raw.n_tri,
+                "all_quad": raw.n_tri == 0,
+                "n_surfaces_after_fragment": raw.n_surfaces,
+                "area_uniformity_cv_all": mesh.area_uniformity_cv,
+                "area_uniformity_cv_cap": mesh.area_uniformity_cv_cap,
+                "gmsh_version": raw.gmsh_version,
+            },
+            "group_element_counts": mesh.group_element_counts(),
+            "group_area_occ_m2": raw.surface_area_by_group,
+        }
+    )
+    manifest.update_checks(
+        {
+            "fragment_area_match": "PASS",
+            "all_quad": "PASS" if raw.n_tri == 0 else "FAIL",
+            "equilibrium_VC0": "NOT_RUN (butuh pilecap-analyze)",
+            "capacity_checks": "NOT_EVALUATED",
+        }
+    )
+    manifest.add_warnings(list(raw.warnings))
+    manifest.set_status("OK")
+    manifest.write()
+
+    _log.info("Selesai -> %s", model_dir)
+    return run_dir
+
+
+def entry_point(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    command = "pilecap-mesh " + " ".join(argv if argv is not None else sys.argv[1:])
+    try:
+        run_dir = run(args, command.strip())
+    except PilecapError as exc:
+        logging.getLogger("pilecap_fem").error("%s", exc)
+        print(f"\nGAGAL: {exc}", file=sys.stderr)
+        if args.log_level == "DEBUG":
+            raise
+        return 2
+    except FileNotFoundError as exc:
+        print(f"\nGAGAL: {exc}", file=sys.stderr)
+        return 2
+    print(f"\nOK -> {run_dir}")
+    return 0
+
+
+__all__ = ["InputError", "build_parser", "entry_point", "run"]
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(entry_point())

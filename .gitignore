@@ -1,0 +1,24 @@
+# Output run (timestamped, tidak pernah di-commit)
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Artefak mesh hasil eksperimen di root
+/*.msh
+
+# CATATAN: PRD_pilecap_fem.md SENGAJA TIDAK di-ignore.
+# PRD adalah spesifikasi yang menjadi dasar setiap rilis dan wajib ter-version-control
+# agar dapat ditelusuri versi spesifikasi mana yang dipakai (PRD Bagian 1.3 poin 4).

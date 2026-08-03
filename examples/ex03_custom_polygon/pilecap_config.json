@@ -1,0 +1,78 @@
+{
+  "project": {
+    "name": "EX03 - Pilecap poligon L, pile custom, DUA pier poligon",
+    "engineer": "[ISI]",
+    "date": "2026-08-04"
+  },
+
+  "units": {
+    "length": "mm",
+    "force": "kN",
+    "stress": "MPa"
+  },
+
+  "pilecap": {
+    "_catatan": "Blok ini DIABAIKAN karena ada pilecap_polygon.csv. Tetap diisi agar --no-custom menghasilkan model yang sah.",
+    "length_x": 8000,
+    "length_y": 7000,
+    "origin": [4000, 3500],
+    "thickness": 1400
+  },
+
+  "pile": {
+    "_catatan": "Konfigurasi grid DIABAIKAN karena ada custom_pile_coords.csv. `diameter` tetap dipakai sebagai default bila CSV tidak punya kolom diameter.",
+    "diameter": 700,
+    "n_col": 4,
+    "n_row": 3,
+    "spacing_x": 2200,
+    "spacing_y": 2200,
+    "grid_origin": [4000, 3500],
+    "modeling": "pressure"
+  },
+
+  "pier": {
+    "_catatan": "Blok ini DIABAIKAN karena ada pier_polygon.csv (2 pier).",
+    "shape": "rectangular",
+    "centerline": [4000, 3500],
+    "width_x": 1200,
+    "width_y": 1200,
+    "support": "fixed"
+  },
+
+  "material": {
+    "fc": 30,
+    "E": 25000,
+    "E_source": "[CONTOH - ganti dengan nilai & sumber yang Anda tetapkan] nilai placeholder 25000 MPa",
+    "poisson": 0.2,
+    "density": 24
+  },
+
+  "mesh": {
+    "size_mode": "uniform",
+    "size_global": 110,
+    "size_local_pile": null,
+    "size_local_pier": null,
+    "algorithm": 11,
+    "recombination_algorithm": 3,
+    "recombine": true,
+    "require_all_quad": true,
+    "element_order": 1
+  },
+
+  "analysis": {
+    "shell_element": "ShellMITC4",
+    "section": "PlateFiber",
+    "n_layers": 10,
+    "include_self_weight": false
+  },
+
+  "design": {
+    "code": "[PERLU DIKONFIRMASI - PRD Bagian 17 item 2]",
+    "phi_flexure": null,
+    "phi_shear": null,
+    "cover": 75,
+    "strips_x": 5,
+    "strips_y": 5,
+    "moment_at": "pier_face"
+  }
+}
