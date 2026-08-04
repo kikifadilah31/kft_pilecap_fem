@@ -3,10 +3,9 @@
 FEM berbasis OpenSees untuk analisis pilecap, sekaligus pilecap mesh generator berbasis
 gmsh Python API. Spesifikasi lengkap ada di [`PRD_pilecap_fem.md`](PRD_pilecap_fem.md).
 
-> **Status: Fase 2 selesai.** Yang berfungsi: **input → geometri → mesh all-quad**
-> (`pilecap-mesh`) dan **mesh → FEM → momen & geser per elemen** (`pilecap-analyze`),
-> dengan cek keseimbangan VC-0 di setiap run. `pilecap-report` dan `pilecap-run` masih
-> stub yang memberi tahu statusnya (Fase 3).
+> **Status: Fase 3 selesai — keempat command berfungsi.** Rantai penuh
+> **input → geometri → mesh all-quad → FEM → momen & geser → kontur, envelope, dan
+> laporan auditable**, dengan cek keseimbangan VC-0 di setiap run.
 
 > **Tingkat liabilitas: desain nyata yang dibangun di lapangan** (PRD Bagian 1.3).
 > Tool ini **alat bantu**, bukan pengganti engineer. Setiap hasil wajib diperiksa dan
@@ -35,10 +34,17 @@ Dengan folder `input/` berisi file-file yang cocok pola auto-detect, cukup:
 uv run pilecap-mesh
 ```
 
-Untuk analisis FEM lengkap (butuh `pile_reactions.csv`):
+Untuk rantai penuh — mesh, analisis FEM, kontur, envelope, dan laporan — dalam satu
+perintah dan satu folder (butuh `pile_reactions.csv`):
 
 ```bash
-uv run pilecap-analyze --config examples/ex01_standard_4pile/pilecap_config.json --input-dir examples/ex01_standard_4pile
+uv run pilecap-run --config examples/ex03_custom_polygon/pilecap_config.json --input-dir examples/ex03_custom_polygon
+```
+
+Membuat ulang laporan dari run yang sudah ada, tanpa mengulang analisis FEM:
+
+```bash
+uv run pilecap-report --result-dir output/pilecap_20260804_144133 --strips-x 7
 ```
 
 Hasil ditulis ke `output/pilecap_YYYYMMDD_HHMMSS/` — **setiap run folder baru, tidak pernah
@@ -54,11 +60,41 @@ output/pilecap_20260804_093148/
 │   ├── nodes.csv          # tag, x, y, z  [SI]
 │   ├── elements.csv       # tag, n1..n4, luas, centroid, theta, group
 │   └── model.msh          # opsional (--export-msh), untuk dibuka di GUI gmsh
-└── Combo_<nama>/          # satu folder per kombinasi (pilecap-analyze)
-    ├── element_resultants.csv   # m11/m22/m12 lokal + m_x/m_y/m_xy/q_x/q_y global
-    ├── reactions.csv            # reaksi tiap node jepit + baris TOTAL
-    └── equilibrium_check.json   # VC-0 + jejak beban tiap pile
+├── SUMMARY.md             # ringkasan lintas kombinasi + governing + Known Limitations
+├── Combo_<nama>/          # satu folder per kombinasi
+│   ├── calc_sheet.md            # 10 bagian auditable, termasuk rantai telusur 1 elemen
+│   ├── element_resultants.csv   # m11/m22/m12 lokal + m_x/m_y/m_xy/q_x/q_y global
+│   ├── strip_moments_x.csv      # momen per lajur di muka pier
+│   ├── shear_checks.csv         # demand geser satu arah & pons (kapasitas NOT_EVALUATED)
+│   ├── reactions.csv            # reaksi tiap node jepit + baris TOTAL
+│   ├── node_displacements.csv   # sumber contour_deflection.png
+│   ├── equilibrium_check.json   # VC-0 + jejak beban tiap pile
+│   ├── traceability_sample.json # nilai per titik Gauss untuk calc sheet bagian 5
+│   ├── contour_mx.png … contour_deflection.png
+│   └── deformed_opsvis.png
+└── Envelope/              # nilai ekstrem lintas kombinasi + governing_combo
+    ├── envelope_values.csv
+    ├── envelope_summary.md
+    └── envelope_*_max.png / _min.png
 ```
+
+### Visualisasi
+
+| Berkas | Isi |
+|--------|-----|
+| `mesh_plan.png` | Denah mesh, label pile & pier, subjudul override geometri |
+| `boundary_load_check.png` | Peta node jepit & elemen terbeban — cek visual bahwa tumpuan dan beban menempel di tempat yang benar |
+| `contour_m*.png` | Momen per elemen, colormap diverging berpusat nol (`TwoSlopeNorm`) |
+| `contour_q*.png`, `contour_deflection.png` | Geser transversal dan lendutan |
+| `model_opsvis.png`, `deformed_opsvis.png` | `opsv.plot_model()` / `plot_defo()`, faktor skala tercantum di judul |
+
+Kontur digambar **datar per elemen**, tidak dihaluskan: nilai resultant memang per
+elemen, dan interpolasi nodal akan menyiratkan kehalusan yang tidak pernah dihitung —
+paling menyesatkan justru di daerah singularitas tepi zona jepit.
+
+Plot opsvis **dilewati otomatis** di atas 3.000 elemen (dengan WARNING yang menyebut
+alasannya), karena `opsv.plot_defo` tumbuh lebih cepat dari linier — terukur 5,1 detik
+untuk 1.200 elemen. Paksa dengan `--opsvis`.
 
 ### Argumen penting
 
@@ -76,7 +112,13 @@ output/pilecap_20260804_093148/
 | `--element ShellMITC4\|ShellDKGQ\|ShellNLDKGQ` | `analyze` | Mode perbandingan elemen (PRD §11) |
 | `--self-weight` | `analyze` | Aktifkan berat sendiri pilecap |
 | `--equilibrium-rtol` | `analyze` | Toleransi cek keseimbangan VC-0 |
-| `--export-msh`, `--dpi`, `--log-level` | keduanya | Output tambahan & verbositas |
+| `--opsvis` | `analyze` | Paksa plot opsvis meski di atas ambang elemen |
+| `--result-dir` | `report` | Folder hasil analisis (default: run terakhir) |
+| `--strips-x` / `--strips-y` | `report`, `run` | Jumlah lajur integrasi momen |
+| `--moment-at pier_face\|peak\|both` | `report`, `run` | Lokasi momen desain |
+| `--no-envelope` | `report`, `run` | Lewati envelope |
+| `--wood-armer` | `report`, `run` | **Belum tersedia** — menolak dengan pesan sumber primer |
+| `--export-msh`, `--dpi`, `--log-level` | semua | Output tambahan & verbositas |
 
 ### Cek keseimbangan VC-0
 

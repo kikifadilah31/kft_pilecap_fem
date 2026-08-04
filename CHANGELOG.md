@@ -2,6 +2,69 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.3.0] — 2026-08-04 — Fase 3: visualisasi + laporan auditable
+
+### Added
+- `renderer.py` penuh — kontur `m_x`/`m_y`/`m_xy`/`q_x`/`q_y`/lendutan,
+  `boundary_load_check.png`, pembungkus `opsv.plot_model()` / `opsv.plot_defo()`,
+  kontur envelope. Anotasi wajib (outline pilecap, lingkaran pile + `Pz`, arsir pier
+  + `JEPIT`, arah sumbu) dipusatkan di `_annotate_plan()` sehingga tidak pernah
+  menyimpang antar gambar.
+- `postproc_engine` — `shear_demand()` (satu arah di `d` dari muka pier, pons dari
+  keseimbangan gaya di `d/2`), `build_envelope()` dengan `governing_combo` per lokasi,
+  `design_moment_sections()`, `shear_span_ratio()`.
+- `reporter.py` — `calc_sheet.md` (10 bagian PRD Bagian 9.4), `SUMMARY.md`,
+  `strip_moments_x/y.csv`, `shear_checks.csv`, `envelope_values.csv`,
+  `envelope_summary.md`, plus pembaca balik CSV.
+- `cli_pilecap_report.py` dan `cli_pilecap_run.py` — **keempat entry point PRD
+  Bagian 14 kini nyata**, tidak ada lagi stub.
+- 377 test; coverage 96% (`renderer` 100%, `math_engine` 100%, `postproc_engine` 99%,
+  `reporter` 99%).
+
+### Standards
+`OPSVIS_MAX_ELEMENTS = 3.000` — ditetapkan dari pengukuran: `opsv.plot_model` 0,67 s dan
+`opsv.plot_defo` 5,1 s untuk 1.200 elemen, dengan `plot_defo` tumbuh lebih cepat dari
+linier. Di atas ambang, plot opsvis **dilewati dengan WARNING eksplisit** di log dan
+laporan; `--opsvis` memaksa tetap dibuat.
+
+### Deviations from PRD — beserta alasannya
+9. **Plot opsvis dibuat `pilecap-analyze`, bukan `pilecap-report`.** opsvis membaca
+   domain OpenSees yang HIDUP (`plot_defo` memanggil `ops.nodeDisp()`), sehingga tidak
+   dapat dibuat dari CSV tanpa menyelesaikan ulang model. Seluruh kontur dan laporan
+   tetap dibuat `pilecap-report` dari CSV.
+10. **Dua berkas di luar daftar PRD Bagian 9.1**, keduanya diperlukan:
+    `00_Model/geometry.json` (membuat run swasembada — report tidak bergantung pada file
+    input yang bisa berubah) dan `Combo_*/node_displacements.csv` (PRD meminta
+    `contour_deflection.png` tanpa menyediakan sumber datanya).
+11. **`Combo_*/traceability_sample.json`** — nilai per titik Gauss tidak tersimpan di
+    `element_resultants.csv`, sehingga rantai telusur PRD Bagian 9.4 bagian 5 ditulis
+    `pilecap-analyze` sebagai berkas terpisah. `pilecap-report` **menolak berjalan**
+    bila berkas itu hilang, alih-alih menyajikan rantai yang terpotong diam-diam.
+12. **Kontur digambar datar per elemen**, tidak dihaluskan. Nilai resultant memang per
+    elemen; interpolasi nodal akan menyiratkan kehalusan yang tidak dihitung, dan justru
+    paling menyesatkan di daerah singularitas tepi zona jepit.
+
+### Findings
+- **Faktor `moment_per_width` dan `shear_per_width` kebetulan sama-sama `1e-3`.**
+  Membedakan momen dari geser lewat nilai faktornya menghasilkan label satuan yang salah
+  saat membaca balik CSV. Pemetaan kolom → besaran kini eksplisit.
+- `np.vstack` pada envelope gagal dengan pesan numpy yang tidak menyebut penyebabnya;
+  validasi jumlah elemen kini mendahului penumpukan.
+
+### Validation
+VC-0 tetap lulus pada ketiga contoh (residu 1e-14…1e-16), termasuk ex03 dua pier.
+Rantai telusur `calc_sheet.md` diverifikasi dengan hitungan tangan: `m11 cos²θ +
+m22 sin²θ − 2 m12 sinθ cosθ` dari angka yang tercetak menghasilkan `m_xx` yang
+dilaporkan, cocok sampai `rel=1e-9`. Envelope diuji cocok dengan maksimum antar
+`element_resultants.csv` per kombinasi.
+
+### Masih terbuka
+PRD Bagian 17 item 2, 3, 5, 6, 7, 8, 10, 18. Seluruh kapasitas tetap `NOT_EVALUATED`
+dan laporan hanya menampilkan demand. Rasio `a/d` dilaporkan **tanpa vonis**.
+`--wood-armer` menolak berjalan dengan pesan yang menyebut sumber primer Wood (1968).
+
+---
+
 ## [0.2.0] — 2026-08-04 — Fase 2: analisis FEM + validation case
 
 ### Added

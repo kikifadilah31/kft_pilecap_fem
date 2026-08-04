@@ -267,6 +267,46 @@ LABEL_NAN: Final[str] = "NaN - tidak terdefinisi"
 #: narasi Indonesia, istilah teknis dibiarkan Inggris.
 REPORT_LANGUAGE: Final[str] = "id"
 
+#: Batas jumlah elemen sebelum plot opsvis DILEWATI otomatis.
+#:
+#: DIUKUR: `opsv.plot_model` 0,67 s dan `opsv.plot_defo` 5,1 s untuk 1.200 elemen,
+#: dengan `plot_defo` tumbuh lebih cepat dari linier. Pada contoh ex02 (6.844 elemen)
+#: biayanya akan berlipat dan bertabrakan dengan target PRD Bagian 13.1
+#: (< 60 detik untuk ~5.000 elemen x 5 kombinasi).
+#:
+#: Melewati plot BUKAN mengabaikan parameter diam-diam: setiap kali dilewati, alasannya
+#: muncul sebagai WARNING di konsol, `run.log`, dan laporan. Flag `--opsvis` memaksa
+#: plot tetap dibuat berapa pun ukurannya.
+OPSVIS_MAX_ELEMENTS: Final[int] = 3_000
+
+#: Nama berkas keluaran (PRD Bagian 9.1). Dikumpulkan di sini agar tidak tersebar
+#: sebagai string literal di renderer, reporter, dan CLI.
+FILE_MESH_PLAN: Final[str] = "mesh_plan.png"
+FILE_MODEL_OPSVIS: Final[str] = "model_opsvis.png"
+FILE_BOUNDARY_CHECK: Final[str] = "boundary_load_check.png"
+FILE_GEOMETRY_JSON: Final[str] = "geometry.json"
+FILE_DEFORMED_OPSVIS: Final[str] = "deformed_opsvis.png"
+FILE_NODE_DISPLACEMENTS: Final[str] = "node_displacements.csv"
+FILE_CALC_SHEET: Final[str] = "calc_sheet.md"
+FILE_TRACEABILITY: Final[str] = "traceability_sample.json"
+FILE_SUMMARY: Final[str] = "SUMMARY.md"
+ENVELOPE_SUBDIR: Final[str] = "Envelope"
+
+#: Peta field hasil -> (nama berkas kontur, besaran satuan, judul).
+CONTOUR_FIELDS: Final[dict[str, tuple[str, str, str]]] = {
+    "m_xx": ("contour_mx.png", "moment_per_width", "Momen m_x (tulangan arah X)"),
+    "m_yy": ("contour_my.png", "moment_per_width", "Momen m_y (tulangan arah Y)"),
+    "m_xy": ("contour_mxy.png", "moment_per_width", "Momen puntir m_xy"),
+    "q_x": ("contour_qx.png", "shear_per_width", "Geser transversal q_x"),
+    "q_y": ("contour_qy.png", "shear_per_width", "Geser transversal q_y"),
+}
+FILE_CONTOUR_DEFLECTION: Final[str] = "contour_deflection.png"
+
+#: Rasio geometri deep pile cap DILAPORKAN tanpa vonis: ambangnya (PRD Bagian 17 item 5)
+#: belum dikonfirmasi. Menuliskan angka batas tanpa pasal berarti tool memberi kesimpulan
+#: yang tidak dapat dipertanggungjawabkan -- justru yang dilarang PRD Bagian 1.3 poin 2.
+DEEP_PILECAP_RATIO_REPORTED_ONLY: Final[bool] = True
+
 # ---------------------------------------------------------------------------
 # Blok teks tetap laporan (PRD Bagian 8.3 & 9.4)
 # ---------------------------------------------------------------------------

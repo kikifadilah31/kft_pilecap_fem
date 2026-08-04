@@ -16,6 +16,7 @@ Plot kontur, calc sheet, dan envelope adalah tugas `pilecap-report` (Fase 3).
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from dataclasses import replace
@@ -31,6 +32,7 @@ from pilecap_fem import (
     io_utils,
     postproc_engine,
     provenance,
+    renderer,
     reporter,
     validators,
 )
@@ -39,14 +41,12 @@ from pilecap_fem.validators import AnalysisError, InputError, PilecapError
 _log = config.get_logger("cli_pilecap_analyze")
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="pilecap-analyze",
-        description="Bangun model OpenSeesPy dan analisis seluruh kombinasi pembebanan.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    cli_pilecap_mesh.add_common_arguments(parser)
-    cli_pilecap_mesh.add_mesh_arguments(parser)
+def add_analysis_arguments(parser: argparse.ArgumentParser) -> None:
+    """Argumen khusus analisis (PRD Bagian 6.2).
+
+    Dipisahkan agar `pilecap-run` menyusun parser-nya dari helper yang SAMA, bukan
+    menyalin daftar argumen yang kemudian menyimpang diam-diam.
+    """
     parser.add_argument(
         "--reactions", type=Path, default=None, help="CSV reaksi pile (default: auto-detect)"
     )
@@ -80,6 +80,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Lewati penulisan element_resultants.csv (hemat ruang; audit jadi terbatas)",
     )
+    parser.add_argument(
+        "--opsvis",
+        action="store_true",
+        help=(
+            "Paksa plot opsvis dibuat meskipun jumlah elemen melebihi "
+            f"{config.OPSVIS_MAX_ELEMENTS:,} (default: dilewati dengan WARNING)"
+        ),
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="pilecap-analyze",
+        description="Bangun model OpenSeesPy dan analisis seluruh kombinasi pembebanan.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    cli_pilecap_mesh.add_common_arguments(parser)
+    cli_pilecap_mesh.add_mesh_arguments(parser)
+    add_analysis_arguments(parser)
     return parser
 
 
@@ -131,6 +150,13 @@ def _run_inner(
     cli_pilecap_mesh.write_model_artifacts(prepared, run_dir, model_dir, dpi=args.dpi)
     cli_pilecap_mesh.record_model_stats(prepared, manifest)
 
+    # Geometri hasil resolusi ditulis apa adanya agar folder run SWASEMBADA:
+    # `pilecap-report` tidak perlu membuka file input asli yang bisa saja sudah berubah.
+    (model_dir / config.FILE_GEOMETRY_JSON).write_text(
+        json.dumps(prepared.geom.to_json_dict(), indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
     reactions_path = args.reactions or io_utils.autodetect(
         args.input_dir, "reactions", required=True
     )
@@ -175,6 +201,8 @@ def _run_inner(
     slug_map: dict[str, str] = {}
     checks: dict[str, str] = {}
     summary: list[dict[str, object]] = []
+    plot_warnings: list[str] = []
+    opsvis_plotted = False
 
     for combo in tqdm(combos, desc="Kombinasi", unit="combo"):
         result = fem_engine.analyze_combo(
@@ -199,6 +227,48 @@ def _run_inner(
             )
         reporter.write_reactions_csv(combo_dir / "reactions.csv", result, prepared.mesh)
         reporter.write_equilibrium_json(combo_dir / "equilibrium_check.json", result)
+        reporter.write_node_displacements_csv(
+            combo_dir / config.FILE_NODE_DISPLACEMENTS, result, prepared.mesh
+        )
+
+        # Rantai telusur elemen dengan |m_x| terbesar (PRD Bagian 9.4 bagian 5).
+        # Ditulis DI SINI karena nilai per titik Gauss tidak tersimpan di
+        # element_resultants.csv; tanpa berkas ini `pilecap-report` hanya bisa
+        # menyajikan rantai yang terpotong.
+        index_trace, _ = results.extreme("m_xx")
+        (combo_dir / config.FILE_TRACEABILITY).write_text(
+            json.dumps(
+                postproc_engine.traceability_sample(results, prepared.mesh, index_trace),
+                indent=2,
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        # Plot opsvis HARUS dibuat di sini: opsvis membaca domain OpenSees yang hidup,
+        # bukan file. `pilecap-report` yang bekerja dari CSV tidak dapat membuatnya
+        # tanpa menyelesaikan ulang model.
+        if not opsvis_plotted:
+            renderer.render_opsvis_model(
+                model_dir / config.FILE_MODEL_OPSVIS,
+                n_elements=prepared.mesh.n_elements,
+                n_fixed_nodes=len(result.reaction_nodes),
+                force=args.opsvis,
+                dpi=args.dpi,
+                warnings=plot_warnings,
+            )
+            opsvis_plotted = True
+        renderer.render_opsvis_defo(
+            combo_dir / config.FILE_DEFORMED_OPSVIS,
+            combo=combo,
+            sfac=renderer.deformation_scale(prepared.mesh, result.displacements),
+            max_deflection_m=result.max_deflection,
+            n_elements=prepared.mesh.n_elements,
+            force=args.opsvis,
+            dpi=args.dpi,
+            warnings=plot_warnings,
+        )
 
         checks[f"equilibrium_VC0[{combo}]"] = "PASS" if result.equilibrium.passed else "FAIL"
         index_mx, value_mx = results.extreme("m_xx")
@@ -247,6 +317,7 @@ def _run_inner(
             **checks,
         }
     )
+    manifest.add_warnings(plot_warnings)
     manifest.data["combos_analyzed"] = list(combos)
     manifest.data["combo_slug_map"] = slug_map
     manifest.data["combo_summary"] = summary

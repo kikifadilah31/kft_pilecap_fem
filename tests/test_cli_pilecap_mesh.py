@@ -205,12 +205,15 @@ def test_make_run_dir_tidak_menimpa(tmp_path: Path):
     assert a.is_dir() and b.is_dir()
 
 
-@pytest.mark.parametrize("module_name", ["cli_pilecap_report", "cli_pilecap_run"])
-def test_cli_fase_berikutnya_memberi_pesan_jelas(module_name: str, capsys):
+@pytest.mark.parametrize(
+    "module_name",
+    ["cli_pilecap_mesh", "cli_pilecap_analyze", "cli_pilecap_report", "cli_pilecap_run"],
+)
+def test_keempat_cli_punya_entry_point_dan_parser(module_name: str):
+    """Keempat entry point PRD Bagian 14 kini nyata -- tidak ada lagi stub."""
     import importlib
 
     module = importlib.import_module(f"pilecap_fem.{module_name}")
-    assert module.entry_point([]) == 3
-    err = capsys.readouterr().err
-    assert "belum diimplementasikan" in err
-    assert "pilecap-mesh" in err
+    assert callable(module.entry_point)
+    parser = module.build_parser()
+    assert parser.prog.startswith("pilecap-")

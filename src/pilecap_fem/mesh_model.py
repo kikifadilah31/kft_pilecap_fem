@@ -13,11 +13,17 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from pilecap_fem import config
-from pilecap_fem.mesh_engine import RawMesh
+
+if TYPE_CHECKING:  # pragma: no cover
+    # Hanya untuk anotasi tipe. Mengimpornya saat runtime akan menarik gmsh secara
+    # transitif, sehingga `pilecap-report` -- yang hanya membaca CSV -- ikut
+    # membutuhkan gmsh tanpa alasan.
+    from pilecap_fem.mesh_engine import RawMesh
 
 _log = config.get_logger("mesh_model")
 
@@ -271,6 +277,56 @@ def from_arrays(
         elem_group=(
             np.zeros(n_elem, dtype=np.int32) if elem_group is None else elem_group.astype(np.int32)
         ),
+        group_names=group_names,
+    )
+
+
+def from_csv(nodes_csv: Path, elements_csv: Path) -> MeshModel:
+    """Rekonstruksi `MeshModel` dari `00_Model/nodes.csv` + `elements.csv`.
+
+    Dipakai `pilecap-report`, yang membaca hasil run sebelumnya tanpa menjalankan gmsh
+    maupun OpenSees. Plot dan tabel laporan lahir dari berkas yang SAMA dengan yang
+    dibaca checker -- bila keduanya berbeda, itu akan ketahuan.
+
+    `theta` dibaca kembali dari kolom `theta [deg]`, bukan dihitung ulang, agar laporan
+    memakai sudut yang persis dipakai saat transformasi di `pilecap-analyze`.
+    """
+    node_tags: list[int] = []
+    node_xy: list[tuple[float, float]] = []
+    with open(nodes_csv, newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            node_tags.append(int(row["node_tag"]))
+            node_xy.append((float(row["x [m]"]), float(row["y [m]"])))
+
+    index_of_tag = {tag: i for i, tag in enumerate(node_tags)}
+
+    elem_tags: list[int] = []
+    conn: list[list[int]] = []
+    area: list[float] = []
+    centroid: list[tuple[float, float]] = []
+    theta: list[float] = []
+    group_of_elem: list[str] = []
+    with open(elements_csv, newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            elem_tags.append(int(row["elem_tag"]))
+            conn.append([index_of_tag[int(row[f"n{k}"])] for k in (1, 2, 3, 4)])
+            area.append(float(row["area [m^2]"]))
+            centroid.append((float(row["centroid_x [m]"]), float(row["centroid_y [m]"])))
+            theta.append(np.radians(float(row["theta [deg]"])))
+            group_of_elem.append(row["group"])
+
+    group_names = tuple(sorted(set(group_of_elem)))
+    group_index = {name: i for i, name in enumerate(group_names)}
+
+    return MeshModel(
+        node_tags=np.asarray(node_tags, dtype=np.int64),
+        node_xy=np.asarray(node_xy, dtype=np.float64),
+        elem_tags=np.asarray(elem_tags, dtype=np.int64),
+        elem_conn=np.asarray(conn, dtype=np.int64),
+        elem_area=np.asarray(area, dtype=np.float64),
+        elem_centroid=np.asarray(centroid, dtype=np.float64),
+        elem_theta=np.asarray(theta, dtype=np.float64),
+        elem_group=np.asarray([group_index[g] for g in group_of_elem], dtype=np.int32),
         group_names=group_names,
     )
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from shapely.geometry import Point, Polygon, box
@@ -206,6 +206,15 @@ class EntityResolution:
             "overridden_json_keys": list(self.overridden_json_keys),
         }
 
+    @classmethod
+    def from_manifest(cls, data: dict) -> EntityResolution:
+        return cls(
+            source=data["source"],
+            file=Path(data["file"]) if data.get("file") else None,
+            sha256=data.get("sha256"),
+            overridden_json_keys=tuple(data.get("overridden_json_keys") or ()),
+        )
+
 
 @dataclass(frozen=True)
 class GeometryResolution:
@@ -221,6 +230,14 @@ class GeometryResolution:
             "pile": self.pile.to_manifest(),
             "pier": self.pier.to_manifest(),
         }
+
+    @classmethod
+    def from_manifest(cls, data: dict) -> GeometryResolution:
+        return cls(
+            pilecap=EntityResolution.from_manifest(data["pilecap"]),
+            pile=EntityResolution.from_manifest(data["pile"]),
+            pier=EntityResolution.from_manifest(data["pier"]),
+        )
 
     def has_any_override(self) -> bool:
         return any(r.is_override for r in (self.pilecap, self.pile, self.pier))
@@ -277,6 +294,74 @@ class GeometryModel:
                 return p
         raise KeyError(
             f"pile_id {pile_id!r} tidak ada. Tersedia: {[p.pile_id for p in self.piles]}"
+        )
+
+    # -- serialisasi (00_Model/geometry.json) ------------------------------
+
+    def to_json_dict(self) -> dict[str, Any]:
+        """Geometri lengkap dalam SI, siap ditulis ke `00_Model/geometry.json`.
+
+        Membuat folder run **swasembada**: `pilecap-report` tidak perlu membuka file
+        input asli, yang bisa saja sudah pindah atau berubah. Checker pun melihat
+        geometri yang BENAR-BENAR dianalisis, bukan sekadar nama file asalnya.
+        """
+        return {
+            "unit_system": config.SI_UNIT_SYSTEM,
+            "thickness_m": self.thickness,
+            "pilecap_polygon_m": self.pilecap.vertices.tolist(),
+            "piles": [
+                {"pile_id": p.pile_id, "x_m": p.x, "y_m": p.y, "diameter_m": p.diameter}
+                for p in self.piles
+            ],
+            "piers": [
+                {
+                    "pier_id": p.pier_id,
+                    "shape": p.shape,
+                    "centerline_m": list(p.centerline),
+                    "polygon_m": (p.polygon.vertices.tolist() if p.polygon is not None else None),
+                    "width_x_m": p.width_x,
+                    "width_y_m": p.width_y,
+                    "diameter_m": p.diameter,
+                }
+                for p in self.piers
+            ],
+            "geometry_resolution": self.resolution.to_manifest(),
+        }
+
+    @classmethod
+    def from_json_dict(cls, data: dict[str, Any]) -> GeometryModel:
+        """Kebalikan :meth:`to_json_dict`. Bolak-balik harus menghasilkan model identik."""
+        piles = tuple(
+            Pile(
+                pile_id=str(p["pile_id"]),
+                x=float(p["x_m"]),
+                y=float(p["y_m"]),
+                diameter=float(p["diameter_m"]),
+            )
+            for p in data["piles"]
+        )
+        piers = tuple(
+            Pier(
+                pier_id=str(p["pier_id"]),
+                shape=p["shape"],
+                centerline=(float(p["centerline_m"][0]), float(p["centerline_m"][1])),
+                polygon=(
+                    Polygon2D(np.asarray(p["polygon_m"], dtype=np.float64))
+                    if p.get("polygon_m")
+                    else None
+                ),
+                width_x=p.get("width_x_m"),
+                width_y=p.get("width_y_m"),
+                diameter=p.get("diameter_m"),
+            )
+            for p in data["piers"]
+        )
+        return cls(
+            pilecap=Polygon2D(np.asarray(data["pilecap_polygon_m"], dtype=np.float64)),
+            thickness=float(data["thickness_m"]),
+            piles=piles,
+            piers=piers,
+            resolution=GeometryResolution.from_manifest(data["geometry_resolution"]),
         )
 
 
