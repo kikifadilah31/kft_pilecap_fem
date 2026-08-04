@@ -123,8 +123,13 @@ AREA_RTOL: Final[float] = 1e-9
 #: Toleransi perbandingan golden file hasil FEM (PRD Bagian 8.2).
 VALIDATION_RTOL: Final[float] = 1e-3
 
-#: Toleransi default cek keseimbangan VC-0 (PRD Bagian 6.2, --equilibrium-rtol).
+#: Toleransi default cek keseimbangan gaya VC-0 (PRD Bagian 6.2, --equilibrium-rtol).
+#: PRD Bagian 8.1 menetapkan rtol=1e-6 untuk gaya; nilai 1e-3 di sini adalah default CLI
+#: yang lebih longgar dan dapat diperketat lewat flag. VC-0 di test memakai 1e-6.
 EQUILIBRIUM_RTOL_DEFAULT: Final[float] = 1e-3
+
+#: Toleransi residu MOMEN pada VC-0 (PRD Bagian 8.1: rtol 1e-4).
+EQUILIBRIUM_MOMENT_RTOL: Final[float] = 1e-4
 
 #: Rentang Poisson yang sah untuk material isotropik (PRD Bagian 5.3 rule 6).
 POISSON_MIN: Final[float] = 0.0
@@ -171,18 +176,76 @@ GROUP_PIER_PREFIX: Final[str] = "PIER_"
 # Konvensi FEM (PRD Bagian 7.1)
 # ---------------------------------------------------------------------------
 
-#: Faktor koreksi tanda momen OpenSees terhadap konvensi PRD Bagian 7.1.
+#: Nama response OpenSees yang mengembalikan STRESS RESULTANT per titik Gauss.
 #:
-#: SENGAJA `None`. Nilainya HANYA boleh ditetapkan setelah Validation Case VC-1
-#: dijalankan dan tandanya terbukti (PRD Bagian 7.1: "Agent DILARANG menebak tanda
-#: tanpa menjalankan VC-1"). postproc_engine.py WAJIB RAISE selama nilainya masih None.
-MOMENT_SIGN_FACTOR: Final[float | None] = None
+#: DIUKUR, bukan diasumsikan (openseespy 3.8.0.0, ShellMITC4):
+#:   eleResponse(tag, 'forces')   -> 24 nilai = 4 node x 6 DOF, gaya nodal GLOBAL
+#:   eleResponse(tag, 'stresses') -> 32 nilai = 4 titik Gauss x 8 komponen  <-- INI
+#:
+#: PRD Bagian 7.2(2) menyebut `'forces'`; itu KELIRU untuk versi ini dan akan
+#: menghasilkan array 24 elemen yang tidak dapat dibentuk ulang menjadi (n_gauss, 8).
+#: Dibuktikan otomatis oleh `tests/test_validation_cases.py::test_vc3_*`.
+SHELL_RESULTANT_RESPONSE: Final[str] = "stresses"
+
+#: Response gaya nodal (4 node x 6 DOF, koordinat global). Bukan stress resultant.
+SHELL_NODAL_FORCE_RESPONSE: Final[str] = "forces"
 
 #: Jumlah titik Gauss ShellMITC4 dan jumlah komponen resultant per titik.
-#: Dipakai untuk assertion di postproc_engine (PRD Bagian 7.2(2)). Nilai ini WAJIB
-#: diverifikasi terhadap OpenSees versi terpasang pada Fase 2 sebelum dipakai.
+#: DIVERIFIKASI: len(eleResponse(tag, 'stresses')) == 4 * 8 == 32.
 SHELL_N_GAUSS: Final[int] = 4
 SHELL_N_RESULTANT_COMPONENTS: Final[int] = 8
+
+#: Urutan komponen dalam tiap blok 8-nilai. DIVERIFIKASI lewat pelat satu arah:
+#: hanya indeks 3 (m11) dan 6 (q1) yang tak nol saat lentur satu arah sepanjang
+#: sumbu lokal-1, dan besarnya cocok dengan statika eksak.
+RESULTANT_COMPONENT_ORDER: Final[tuple[str, ...]] = (
+    "p11",
+    "p22",
+    "p12",
+    "m11",
+    "m22",
+    "m12",
+    "q1",
+    "q2",
+)
+
+#: Faktor koreksi tanda MOMEN OpenSees terhadap konvensi PRD Bagian 7.1
+#: ("positif = serat bawah tertarik").
+#:
+#: DITETAPKAN = -1.0 berdasarkan kalibrasi terhadap **statika eksak**, bukan tebakan:
+#: pelat satu arah bertumpuan sederhana dengan beban merata ke bawah -- kondisi yang
+#: jelas membuat serat bawah tertarik, sehingga menurut PRD Bagian 7.1 momennya POSITIF.
+#: Hasil pengukuran (Lx=4 m, Ly=2 m, t=0.1 m, q=1 kPa, mesh 24x12):
+#:
+#:     M statika eksak (q L^2 B / 8) = +4.000,0 N.m
+#:     Sigma m11 OpenSees x lebar    = -3.986,1 N.m   (selisih 0,35% = diskretisasi)
+#:
+#: Tandanya berlawanan -> faktor -1.0. Dibuktikan otomatis oleh VC-3 di
+#: `tests/test_validation_cases.py`; test itu GAGAL bila nilai ini diubah keliru.
+#:
+#: Catatan: kalibrasi ini TIDAK memakai koefisien Timoshenko dari VC-1 (PRD Bagian 17
+#: item 7 masih terbuka). Pelat satu arah bertumpuan sederhana adalah kasus statis
+#: tertentu -- momennya mengikuti kesetimbangan saja, tanpa perlu tabel dari buku.
+MOMENT_SIGN_FACTOR: Final[float] = -1.0
+
+#: Faktor koreksi tanda GESER TRANSVERSAL. DIUKUR TERPISAH, tidak diwarisi dari
+#: faktor momen: pada kolom elemen x = 1,9167 m dari kasus yang sama, geser statika
+#: eksak per lebar V = q (L/2 - x) memberi +166,7 N setelah dikali lebar, sedangkan
+#: q1 OpenSees memberi -166,7 N. Diverifikasi juga oleh VC-3.
+SHEAR_SIGN_FACTOR: Final[float] = -1.0
+
+#: Gaya membran (p11, p22, p12) TIDAK diberi faktor koreksi: v1.0 tidak memiliki
+#: pembebanan dalam bidang, sehingga tandanya tidak pernah menentukan hasil desain.
+#: Bila kelak ada beban lateral pile (Hx, Hy), tandanya WAJIB dikalibrasi terpisah.
+MEMBRANE_SIGN_FACTOR: Final[float] = 1.0
+
+#: DIUKUR: ShellMITC4 MENOLAK seluruh tipe eleLoad yang dicoba
+#: (`-surfaceLoad`, `-shellSurface`, `-beamUniform`, `-Pressure`, `-shellSelfWeight`),
+#: dengan pesan "ShellMITC4::addLoad() - ele ... does not deal with load type: 9",
+#: dan Sigma reaksi tetap NOL. Karena itu tekanan pile (PRD Bagian 7.3a) diterapkan
+#: sebagai beban NODAL KONSISTEN per elemen. Matematikanya identik dan Sigma beban
+#: tetap persis P_z, sehingga VC-0 tetap eksak.
+SHELL_SURFACE_PRESSURE_SUPPORTED: Final[bool] = False
 
 # ---------------------------------------------------------------------------
 # Output & visualisasi (PRD Bagian 9)

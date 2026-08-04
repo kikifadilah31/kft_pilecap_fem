@@ -221,15 +221,58 @@ def _shell_local_x_angle(coords: np.ndarray) -> np.ndarray:
     penyederhanaan "local-x ~ arah node1->node2" yang tertulis di PRD Bagian 7.2(3),
     dan bedanya nyata untuk quad yang tidak persegi.
 
-    .. warning::
-       **Nilai ini BELUM diverifikasi terhadap OpenSees.** Rumus di atas diambil dari
-       konstruksi basis elemen ShellMITC4, tetapi PRD Bagian 7.1 melarang menebak
-       konvensi tanpa bukti. Sampai **VC-2** (invariansi orientasi mesh, PRD Bagian 8.1)
-       dijalankan pada Fase 2 dan terbukti, `postproc_engine` TIDAK boleh memakai theta
-       ini untuk menghasilkan momen desain.
+    **Status verifikasi: TERBUKTI.** Konektivitas elemen digeser 0/1/2/3 simpul pada
+    pelat satu arah yang sama, dan komponen resultant yang membawa momen bentang
+    berpindah persis seperti prediksi rumus di atas:
+
+        shift=0 -> theta =   0 deg -> m11 membawa momen (m11/M = -1.00, m22/M = 0.00)
+        shift=1 -> theta = +90 deg -> m22 membawa momen (m11/M =  0.00, m22/M = -1.00)
+        shift=2 -> theta = 180 deg -> m11 membawa momen
+        shift=3 -> theta = -90 deg -> m22 membawa momen
+
+    Verifikasi pada sudut sembarang (bukan kelipatan 90 deg) dilakukan oleh **VC-2**
+    di `tests/test_validation_cases.py`, yang me-mesh pelat yang sama pada orientasi
+    miring dan menuntut `m_xx`/`m_yy` global identik.
     """
     v1 = 0.5 * (coords[:, 1, :] + coords[:, 2, :] - coords[:, 0, :] - coords[:, 3, :])
     return np.asarray(np.arctan2(v1[:, 1], v1[:, 0]), dtype=np.float64)
+
+
+def from_arrays(
+    node_xy: np.ndarray,
+    elem_conn: np.ndarray,
+    *,
+    group_names: tuple[str, ...] = (config.GROUP_CAP,),
+    elem_group: np.ndarray | None = None,
+    node_tags: np.ndarray | None = None,
+    elem_tags: np.ndarray | None = None,
+) -> MeshModel:
+    """Bangun `MeshModel` langsung dari array node & konektivitas 0-based.
+
+    Jalur ini melewati gmsh sepenuhnya. Dipakai oleh validation case yang membutuhkan
+    mesh terstruktur dengan orientasi yang DIKETAHUI PERSIS (VC-2, VC-3), sehingga
+    hasil FEM dapat dibandingkan dengan statika eksak tanpa ketidakpastian meshing.
+    """
+    node_xy = np.asarray(node_xy, dtype=np.float64)
+    elem_conn = np.asarray(elem_conn, dtype=np.int64)
+    coords = node_xy[elem_conn]
+    area, centroid = _quad_areas_and_centroids(coords)
+    n_elem = elem_conn.shape[0]
+    return MeshModel(
+        node_tags=(
+            np.arange(1, len(node_xy) + 1, dtype=np.int64) if node_tags is None else node_tags
+        ),
+        node_xy=node_xy,
+        elem_tags=(np.arange(1, n_elem + 1, dtype=np.int64) if elem_tags is None else elem_tags),
+        elem_conn=elem_conn,
+        elem_area=area,
+        elem_centroid=centroid,
+        elem_theta=_shell_local_x_angle(coords),
+        elem_group=(
+            np.zeros(n_elem, dtype=np.int32) if elem_group is None else elem_group.astype(np.int32)
+        ),
+        group_names=group_names,
+    )
 
 
 def build_mesh_model(raw: RawMesh) -> MeshModel:

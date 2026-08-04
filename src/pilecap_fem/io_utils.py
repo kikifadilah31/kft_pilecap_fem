@@ -360,6 +360,90 @@ def load_pile_coords(path: Path, length_factor: float, default_diameter: float) 
 
 
 # ---------------------------------------------------------------------------
+# Reaksi pile (PRD Bagian 5.1(b))
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ReactionTable:
+    """Reaksi pile per kombinasi, sudah dalam SI (N).
+
+    `combos` mempertahankan urutan kemunculan di file agar laporan dapat direproduksi
+    persis. `values[combo][pile_id]` adalah `Pz` dalam newton, positif = tekan pada pile
+    = gaya ke ATAS pada pilecap (PRD Bagian 7.1).
+    """
+
+    combos: tuple[str, ...]
+    values: dict[str, dict[str, float]]
+    path: Path
+    sha256: str
+    lateral_nonzero: tuple[str, ...] = ()
+
+    def pile_ids(self) -> tuple[str, ...]:
+        """Gabungan seluruh pile_id yang muncul, terurut."""
+        ids: set[str] = set()
+        for row in self.values.values():
+            ids.update(row)
+        return tuple(sorted(ids))
+
+    def total_pz(self, combo: str) -> float:
+        return float(sum(self.values[combo].values()))
+
+
+def load_reactions(path: Path, force_factor: float) -> ReactionTable:
+    """Baca `pile_reactions.csv` dan konversikan `Pz` ke newton.
+
+    `Hx` / `Hy` dibaca hanya untuk dilaporkan: v1.0 MENGABAIKAN gaya lateral pile
+    (PRD Bagian 5.1(b) & keterbatasan Bagian 8.3 poin 4). Nilai tak-nol dicatat agar
+    muncul sebagai WARNING, bukan hilang diam-diam.
+    """
+    frame = _read_csv(path, ("combo", "pile_id", "Pz"))
+    validators.check_numeric_no_nan(frame, ("Pz",), path)
+
+    lateral_nonzero: list[str] = []
+    for column in ("Hx", "Hy"):
+        if column in frame.columns:
+            lateral = pd.to_numeric(frame[column], errors="coerce").fillna(0.0)
+            if bool((lateral.abs() > 0.0).any()):
+                lateral_nonzero.append(column)
+
+    combos: list[str] = []
+    values: dict[str, dict[str, float]] = {}
+    for combo, pile_id, pz in zip(
+        frame["combo"].astype(str),
+        frame["pile_id"].astype(str),
+        frame["Pz"].astype(float),
+        strict=True,
+    ):
+        if combo not in values:
+            values[combo] = {}
+            combos.append(combo)
+        # Rule 2 -- pile_id duplikat dalam satu combo.
+        if pile_id in values[combo]:
+            raise InputError(
+                f"`pile_id` {pile_id!r} muncul lebih dari sekali untuk combo {combo!r} "
+                f"di {path} (PRD Bagian 5.3 rule 2)."
+            )
+        values[combo][pile_id] = float(pz) * force_factor
+
+    sha = sha256_file(path)
+    _log.info(
+        "Reaksi: %s (sha256 %s) | %d kombinasi | %d pile",
+        path.name,
+        short_hash(sha),
+        len(combos),
+        len(values[combos[0]]) if combos else 0,
+    )
+    return ReactionTable(
+        combos=tuple(combos),
+        values=values,
+        path=path,
+        sha256=sha,
+        lateral_nonzero=tuple(lateral_nonzero),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Resolusi sumber geometri (PRD Bagian 5.2.1)
 # ---------------------------------------------------------------------------
 

@@ -486,6 +486,62 @@ def validate_geometry(geom: GeometryModel) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Validasi reaksi pile (rule 3, 15)
+# ---------------------------------------------------------------------------
+
+
+def validate_reactions(reactions: Any, geom: GeometryModel) -> list[str]:
+    """Rule 3 & 15 -- kecocokan `pile_id` dan tanda total reaksi.
+
+    Rule 2 (duplikat dalam satu combo) sudah ditegakkan saat parsing di
+    `io_utils.load_reactions`, karena di sanalah baris CSV masih terlihat satu per satu.
+
+    Mengembalikan daftar WARNING (gaya lateral yang diabaikan).
+    """
+    if not reactions.combos:
+        raise InputError(f"Tidak ada satu pun kombinasi di {reactions.path}.")
+
+    geometry_ids = {p.pile_id for p in geom.piles}
+
+    for combo in reactions.combos:
+        combo_ids = set(reactions.values[combo])
+
+        # Rule 3 -- selisih DUA ARAH harus dilaporkan, bukan hanya salah satunya.
+        missing_in_csv = sorted(geometry_ids - combo_ids)
+        missing_in_geometry = sorted(combo_ids - geometry_ids)
+        if missing_in_csv or missing_in_geometry:
+            raise InputError(
+                f"Daftar `pile_id` tidak cocok untuk combo {combo!r}:\n"
+                f"  Ada di geometri tetapi TIDAK di {reactions.path.name}: "
+                f"{missing_in_csv or '-'}\n"
+                f"  Ada di {reactions.path.name} tetapi TIDAK di geometri: "
+                f"{missing_in_geometry or '-'}\n"
+                f"  Pile dari geometri: {sorted(geometry_ids)}\n"
+                "  (PRD Bagian 5.3 rule 3)"
+            )
+
+        # Rule 15 -- total reaksi harus positif (pile menekan pilecap ke atas).
+        total = reactions.total_pz(combo)
+        if total <= 0.0:
+            raise InputError(
+                f"Total Sigma Pz untuk combo {combo!r} = {total / 1e3:,.3f} kN <= 0.\n"
+                "  Pz positif berarti pile menekan pilecap ke ATAS; total tidak positif "
+                "berarti pilecap tidak dipikul sama sekali (PRD Bagian 5.3 rule 15)."
+            )
+
+    warnings: list[str] = []
+    if reactions.lateral_nonzero:
+        warnings.append(
+            f"Kolom {list(reactions.lateral_nonzero)} berisi nilai tak-nol tetapi "
+            "DIABAIKAN di v1.0: pile hanya memberi gaya vertikal "
+            "(PRD Bagian 8.3 keterbatasan #4)."
+        )
+    for message in warnings:
+        _log.warning("%s", message)
+    return warnings
+
+
+# ---------------------------------------------------------------------------
 # Validasi parameter mesh terhadap geometri (rule 7, 7a)
 # ---------------------------------------------------------------------------
 
