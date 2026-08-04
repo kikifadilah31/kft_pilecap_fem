@@ -8,14 +8,32 @@ Bahasa: Indonesia, istilah teknis dibiarkan Inggris (keputusan user, PRD Bagian 
 
 from __future__ import annotations
 
+import csv
+import json
+import re
 from pathlib import Path
 
+import numpy as np
+
 from pilecap_fem import __version__, config, io_utils
+from pilecap_fem.fem_engine import ComboResult
 from pilecap_fem.geometry_builder import GeometryModel, GeometryResolution
 from pilecap_fem.mesh_engine import MeshOptions, RawMesh
 from pilecap_fem.mesh_model import MeshModel
+from pilecap_fem.postproc_engine import ElementResults
 
 _log = config.get_logger("reporter")
+
+
+def slugify(name: str) -> str:
+    """Nama kombinasi -> nama folder yang aman (PRD Bagian 9.2).
+
+    Karakter non-alfanumerik menjadi `_`. Pemetaan nama asli <-> slug dicatat di
+    `run_manifest.json`, karena slug bersifat lossy: `1.2D+1.6L` dan `1,2D-1,6L`
+    menghasilkan slug yang sama.
+    """
+    slug = re.sub(r"[^0-9A-Za-z]+", "_", name).strip("_")
+    return slug or "combo"
 
 
 def disclaimer_block() -> str:
@@ -63,6 +81,135 @@ def geometry_resolution_table(resolution: GeometryResolution) -> str:
             "Gunakan `--no-custom` bila ini tidak diinginkan.\n"
         )
     return "\n".join(lines) + "\n" + note
+
+
+def write_element_resultants_csv(path: Path, results: ElementResults, mesh: MeshModel) -> Path:
+    """`element_resultants.csv` -- resultant per elemen dalam satuan TAMPILAN.
+
+    Kolom lokal (`m11`, `m22`, `m12`) ikut disertakan agar checker dapat menghitung
+    ulang transformasi sendiri dari nilai yang sama (PRD Bagian 9.1).
+    """
+    to_mm = io_utils.to_display
+    unit_len = io_utils.display_unit("length")
+    unit_m = io_utils.display_unit("moment_per_width")
+    unit_q = io_utils.display_unit("shear_per_width")
+
+    header = [
+        "elem_tag",
+        f"centroid_x [{unit_len}]",
+        f"centroid_y [{unit_len}]",
+        "area [m^2]",
+        "group",
+        "theta [deg]",
+        f"m11 [{unit_m}]",
+        f"m22 [{unit_m}]",
+        f"m12 [{unit_m}]",
+        f"m_x [{unit_m}]",
+        f"m_y [{unit_m}]",
+        f"m_xy [{unit_m}]",
+        f"q_x [{unit_q}]",
+        f"q_y [{unit_q}]",
+        f"q_mag [{unit_q}]",
+    ]
+
+    moment = np.column_stack(
+        [results.m11, results.m22, results.m12, results.m_xx, results.m_yy, results.m_xy]
+    )
+    shear = np.column_stack([results.q_x, results.q_y, results.q_magnitude])
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(header)
+        for i in range(results.n_elements):
+            writer.writerow(
+                [
+                    int(mesh.elem_tags[i]),
+                    f"{to_mm(mesh.elem_centroid[i, 0], 'length'):.3f}",
+                    f"{to_mm(mesh.elem_centroid[i, 1], 'length'):.3f}",
+                    f"{mesh.elem_area[i]:.9e}",
+                    mesh.group_names[int(mesh.elem_group[i])],
+                    f"{np.degrees(results.theta[i]):.4f}",
+                    *(f"{to_mm(v, 'moment_per_width'):.6f}" for v in moment[i]),
+                    *(f"{to_mm(v, 'shear_per_width'):.6f}" for v in shear[i]),
+                ]
+            )
+    _log.debug("element_resultants.csv ditulis: %s", path)
+    return path
+
+
+def write_reactions_csv(path: Path, combo_result: ComboResult, mesh: MeshModel) -> Path:
+    """`reactions.csv` -- reaksi tiap node jepit + baris TOTAL."""
+    unit_len = io_utils.display_unit("length")
+    unit_f = io_utils.display_unit("force")
+    unit_m = io_utils.display_unit("moment")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "node_tag",
+                f"x [{unit_len}]",
+                f"y [{unit_len}]",
+                f"Rx [{unit_f}]",
+                f"Ry [{unit_f}]",
+                f"Rz [{unit_f}]",
+                f"Mx [{unit_m}]",
+                f"My [{unit_m}]",
+                f"Mz [{unit_m}]",
+            ]
+        )
+        for index, reaction in zip(
+            combo_result.reaction_nodes, combo_result.reactions, strict=True
+        ):
+            writer.writerow(
+                [
+                    int(mesh.node_tags[index]),
+                    f"{io_utils.to_display(mesh.node_xy[index, 0], 'length'):.3f}",
+                    f"{io_utils.to_display(mesh.node_xy[index, 1], 'length'):.3f}",
+                    *(f"{io_utils.to_display(v, 'force'):.6f}" for v in reaction[:3]),
+                    *(f"{io_utils.to_display(v, 'moment'):.6f}" for v in reaction[3:]),
+                ]
+            )
+        totals = combo_result.reactions.sum(axis=0)
+        writer.writerow(
+            [
+                "TOTAL",
+                "",
+                "",
+                *(f"{io_utils.to_display(v, 'force'):.6f}" for v in totals[:3]),
+                *(f"{io_utils.to_display(v, 'moment'):.6f}" for v in totals[3:]),
+            ]
+        )
+    return path
+
+
+def write_equilibrium_json(path: Path, combo_result: ComboResult) -> Path:
+    """`equilibrium_check.json` -- VC-0 apa adanya, dalam SI (PRD Bagian 9.1)."""
+    payload = combo_result.equilibrium.to_dict()
+    payload["combo"] = combo_result.combo
+    payload["catatan"] = (
+        "Nilai dalam SI (N, N.m). Momen dihitung terhadap titik acuan yang tercantum, "
+        "sehingga checker dapat menghitung ulang dari nodes.csv dan reactions.csv."
+    )
+    payload["pile_loads"] = [
+        {
+            "pile_id": t.pile_id,
+            "Pz_N": t.pz,
+            "A_disk_mesh_m2": t.a_disk_mesh,
+            "A_disk_nominal_m2": t.a_disk_nominal,
+            "pressure_Pa": t.pressure,
+            "n_elements": t.n_elements,
+            "applied_total_N": t.applied_total,
+            "discrepancy_N": t.discrepancy,
+        }
+        for t in combo_result.load_traces
+    ]
+    payload["self_weight_total_N"] = combo_result.self_weight_total
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return path
 
 
 def write_mesh_summary(

@@ -2,6 +2,81 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.2.0] — 2026-08-04 — Fase 2: analisis FEM + validation case
+
+### Added
+- `math_engine.py` — transformasi tensor momen & vektor geser, integrasi strip,
+  kekakuan pelat. Tidak mengimpor gmsh/openseespy/matplotlib (Core 7, dijaga test).
+- `fem_engine.py` — `SupportStrategy` / `PileLoadStrategy` sebagai kontrak eksplisit,
+  `ops.wipe()` per kombinasi, cek keseimbangan **VC-0 di setiap run**.
+- `postproc_engine.py` — rata-rata Gauss → koreksi tanda → transformasi global,
+  `traceability_sample()` (rantai telusur satu elemen), `strip_moments()`.
+- `io_utils.load_reactions()` + `ReactionTable`; `validators.validate_reactions()`.
+- `cli_pilecap_analyze.py` — CLI `pilecap-analyze` dengan `--combo`, `--element`,
+  `--self-weight`, `--equilibrium-rtol`, `--no-save-raw`.
+- Output per kombinasi: `Combo_<slug>/element_resultants.csv`, `reactions.csv`,
+  `equilibrium_check.json`.
+- 307 test; coverage 96% (`math_engine` 99%, `postproc_engine` 99% — target PRD
+  Bagian 15.4 adalah ≥90% untuk kedua modul itu).
+
+### Standards — hasil SPIKE, diukur bukan ditebak
+PRD Bagian 7.1 melarang menebak konvensi OpenSees. Empat besaran berikut diukur lebih
+dulu, lalu dikodekan sebagai konstanta bersumber di `config.py`:
+
+| Konstanta | Nilai | Dasar |
+|-----------|-------|-------|
+| `SHELL_RESULTANT_RESPONSE` | `"stresses"` | `'forces'` mengembalikan 24 nilai (4 node × 6 DOF, gaya nodal global); `'stresses'` mengembalikan 32 = 4 titik Gauss × 8 komponen |
+| `MOMENT_SIGN_FACTOR` | `-1.0` | Statika eksak pelat satu arah: +4.000,0 N·m vs OpenSees −3.986,1 N·m |
+| `SHEAR_SIGN_FACTOR` | `-1.0` | Diukur **terpisah** dari momen, bukan diwarisi |
+| `SHELL_SURFACE_PRESSURE_SUPPORTED` | `False` | ShellMITC4 menolak semua tipe `eleLoad`; ΣR tetap nol |
+
+Kalibrasi tanda **tidak memakai koefisien buku**: pelat satu arah bertumpuan sederhana
+bersifat statis tertentu, sehingga momen & gesernya mengikuti kesetimbangan saja. Karena
+itu PRD Bagian 17 item 7 yang masih terbuka tidak menghambat penetapan kedua faktor ini.
+
+### Deviations from PRD — beserta alasannya
+5. **`eleResponse` memakai `'stresses'`, bukan `'forces'`.** PRD Bagian 7.2(2) menyebut
+   `'forces'`; pada openseespy 3.8.0.0 itu mengembalikan gaya nodal global (24 nilai) dan
+   tidak dapat dibentuk ulang menjadi `(n_gauss, 8)`.
+6. **Tekanan pile diterapkan sebagai beban nodal konsisten**, bukan lewat `eleLoad`
+   (PRD Bagian 7.3a). Matematikanya identik — `p_i = P_z,i / A_disk,i` dengan `A_disk`
+   dari jumlah luas elemen mesh — dan Σ beban tetap **persis** `P_z`, sehingga VC-0 eksak.
+7. **Integrasi strip memilih elemen secara geometris** (yang benar-benar dipotong garis),
+   bukan berdasarkan kedekatan centroid. Pemilihan centroid memilih nol atau dua kolom
+   tergantung posisi potongan relatif terhadap mesh, tanpa memunculkan error apa pun.
+8. **Lebar kontribusi default `"exact"`** (kliping garis–quad, PRD Bagian 7.2(4) opsi a).
+   Metode bounding box melebihkan 34% pada mesh quasi-structured quad; ketiga metode
+   setara pada mesh terstruktur dan dibandingkan di VC-3.
+
+### Validation
+| VC | Status | Catatan |
+|----|--------|---------|
+| VC-0 | **PASS** | Kesetimbangan gaya & momen; residu 1e-14…1e-16 pada ketiga contoh. Terbukti MEMBLOKIR: toleransi mustahil → `AnalysisError`, manifest `FAILED`, tanpa output desain. |
+| VC-1 | SKIP | Butuh koefisien Timoshenko + nomor tabel (PRD Bagian 17 item 7 terbuka) |
+| VC-2 | **PASS** | Tiga jalur: pergeseran konektivitas, model diputar 30°/45°, dan mesh gmsh berorientasi tersebar (m12 lokal tak-nol pada 39% elemen) |
+| VC-3 | **PASS** | Kalibrasi tanda momen & geser terhadap statika eksak |
+| VC-4 | **PASS** | Konvergensi mesh h, h/2, h/4; perubahan dua mesh terhalus < 2% |
+| VC-5 | **PASS** | Kelebihan lendutan terhadap Kirchhoff berskala (t/L)² |
+| VC-6 | SKIP | Butuh model pembanding SAP2000/Midas (PRD Bagian 17 item 8 terbuka) |
+| VC-7 | SKIP | Butuh referensi contoh soal metode konvensional |
+
+Golden file: **belum dibuat** — dijadwalkan Fase 4 bersama `pytest --regen-golden`.
+
+### Resolved
+- Penyimpangan #4 rilis 0.1.0 (sudut theta "belum terverifikasi") kini **TERBUKTI**:
+  pergeseran konektivitas 0/1/2/3 memindahkan momen bentang persis seperti prediksi
+  `v1 = 0.5·(r₂ + r₃ − r₁ − r₄)`, dan VC-2 mengonfirmasinya pada sudut sembarang.
+- Bug: rule 7a memakai `size_global` juga pada mode `graded`, sehingga menolak
+  konfigurasi yang justru sudah memenuhi maksud aturannya.
+
+### Masih terbuka
+PRD Bagian 17 item 2, 3, 5, 6, 7, 8, 10, 18. Cek kapasitas tetap `NOT_EVALUATED`.
+`math_engine.wood_armer()` sengaja RAISE sampai aturan koreksinya disalin dari sumber
+primer Wood (1968) — rumus dasarnya saja tidak konservatif pada daerah momen
+berlawanan tanda.
+
+---
+
 ## [0.1.0] — 2026-08-04 — Fase 1: geometri + mesh generator
 
 ### Added

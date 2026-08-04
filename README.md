@@ -3,10 +3,10 @@
 FEM berbasis OpenSees untuk analisis pilecap, sekaligus pilecap mesh generator berbasis
 gmsh Python API. Spesifikasi lengkap ada di [`PRD_pilecap_fem.md`](PRD_pilecap_fem.md).
 
-> **Status: Fase 1 selesai.** Yang berfungsi saat ini adalah rantai
-> **input → geometri → mesh all-quad**, lewat command `pilecap-mesh`.
-> `pilecap-analyze`, `pilecap-report`, dan `pilecap-run` masih stub yang memberi tahu
-> statusnya (Fase 2–3).
+> **Status: Fase 2 selesai.** Yang berfungsi: **input → geometri → mesh all-quad**
+> (`pilecap-mesh`) dan **mesh → FEM → momen & geser per elemen** (`pilecap-analyze`),
+> dengan cek keseimbangan VC-0 di setiap run. `pilecap-report` dan `pilecap-run` masih
+> stub yang memberi tahu statusnya (Fase 3).
 
 > **Tingkat liabilitas: desain nyata yang dibangun di lapangan** (PRD Bagian 1.3).
 > Tool ini **alat bantu**, bukan pengganti engineer. Setiap hasil wajib diperiksa dan
@@ -35,32 +35,55 @@ Dengan folder `input/` berisi file-file yang cocok pola auto-detect, cukup:
 uv run pilecap-mesh
 ```
 
+Untuk analisis FEM lengkap (butuh `pile_reactions.csv`):
+
+```bash
+uv run pilecap-analyze --config examples/ex01_standard_4pile/pilecap_config.json --input-dir examples/ex01_standard_4pile
+```
+
 Hasil ditulis ke `output/pilecap_YYYYMMDD_HHMMSS/` — **setiap run folder baru, tidak pernah
 menimpa**:
 
 ```
-output/pilecap_20260804_004049/
+output/pilecap_20260804_093148/
 ├── run_manifest.json      # provenance: sha256 input, versi dependency, resolusi geometri
 ├── run.log
-└── 00_Model/
-    ├── mesh_summary.md    # statistik mesh, opsi gmsh efektif, tabel resolusi geometri
-    ├── mesh_plan.png      # denah mesh + label pile & pier
-    ├── nodes.csv          # tag, x, y, z  [SI]
-    ├── elements.csv       # tag, n1..n4, luas, centroid, theta, group
-    └── model.msh          # opsional (--export-msh), untuk dibuka di GUI gmsh
+├── 00_Model/
+│   ├── mesh_summary.md    # statistik mesh, opsi gmsh efektif, tabel resolusi geometri
+│   ├── mesh_plan.png      # denah mesh + label pile & pier
+│   ├── nodes.csv          # tag, x, y, z  [SI]
+│   ├── elements.csv       # tag, n1..n4, luas, centroid, theta, group
+│   └── model.msh          # opsional (--export-msh), untuk dibuka di GUI gmsh
+└── Combo_<nama>/          # satu folder per kombinasi (pilecap-analyze)
+    ├── element_resultants.csv   # m11/m22/m12 lokal + m_x/m_y/m_xy/q_x/q_y global
+    ├── reactions.csv            # reaksi tiap node jepit + baris TOTAL
+    └── equilibrium_check.json   # VC-0 + jejak beban tiap pile
 ```
 
 ### Argumen penting
 
-| Argumen | Keterangan |
-|---------|------------|
-| `--config`, `--input-dir`, `--output-dir` | Lokasi input & output |
-| `--pilecap-polygon` / `--pile-coords` / `--pier-polygon` | Tunjuk CSV geometri secara eksplisit |
-| `--no-custom` | Abaikan seluruh CSV geometri hasil auto-detect; paksa parameter JSON |
-| `--size` | Override ukuran mesh global, dalam satuan input (default mm) |
-| `--size-mode uniform\|graded` | `graded` mengaktifkan refinement lokal di pile/pier |
-| `--allow-tri` | Izinkan segitiga lolos — **diagnostik saja**, model FEM akan menolaknya |
-| `--export-msh`, `--preview`, `--dpi`, `--log-level` | Output tambahan & verbositas |
+| Argumen | Berlaku di | Keterangan |
+|---------|------------|------------|
+| `--config`, `--input-dir`, `--output-dir` | keduanya | Lokasi input & output |
+| `--pilecap-polygon` / `--pile-coords` / `--pier-polygon` | keduanya | Tunjuk CSV geometri secara eksplisit |
+| `--no-custom` | keduanya | Abaikan seluruh CSV geometri hasil auto-detect; paksa parameter JSON |
+| `--size` | keduanya | Override ukuran mesh global, dalam satuan input (default mm) |
+| `--size-mode uniform\|graded` | keduanya | `graded` mengaktifkan refinement lokal di pile/pier |
+| `--allow-tri` | keduanya | Izinkan segitiga lolos — **diagnostik saja**, model FEM akan menolaknya |
+| `--preview` | `mesh` | Tampilkan plot mesh interaktif |
+| `--reactions` | `analyze` | CSV reaksi pile (default auto-detect) |
+| `--combo NAMA` | `analyze` | Analisis hanya kombinasi tertentu (boleh diulang) |
+| `--element ShellMITC4\|ShellDKGQ\|ShellNLDKGQ` | `analyze` | Mode perbandingan elemen (PRD §11) |
+| `--self-weight` | `analyze` | Aktifkan berat sendiri pilecap |
+| `--equilibrium-rtol` | `analyze` | Toleransi cek keseimbangan VC-0 |
+| `--export-msh`, `--dpi`, `--log-level` | keduanya | Output tambahan & verbositas |
+
+### Cek keseimbangan VC-0
+
+`pilecap-analyze` menjalankan cek kesetimbangan gaya & momen pada **setiap** kombinasi,
+bukan hanya saat testing (PRD §1.3 poin 3). Kombinasi yang gagal menghentikan run;
+`run_manifest.json` ditandai `FAILED` dan **tidak ada output desain yang dihasilkan**.
+Pada ketiga contoh residunya berada di kisaran 1e-14 sampai 1e-16.
 
 ## Satuan
 

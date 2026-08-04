@@ -205,10 +205,7 @@ def test_make_run_dir_tidak_menimpa(tmp_path: Path):
     assert a.is_dir() and b.is_dir()
 
 
-@pytest.mark.parametrize(
-    "module_name",
-    ["cli_pilecap_analyze", "cli_pilecap_report", "cli_pilecap_run"],
-)
+@pytest.mark.parametrize("module_name", ["cli_pilecap_report", "cli_pilecap_run"])
 def test_cli_fase_berikutnya_memberi_pesan_jelas(module_name: str, capsys):
     import importlib
 
