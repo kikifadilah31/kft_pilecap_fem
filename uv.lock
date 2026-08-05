@@ -355,7 +355,6 @@ wheels = [
 
 [[package]]
 name = "pilecap-fem"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "gmsh" },
@@ -382,13 +381,13 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "gmsh", specifier = "==4.15.2" },
-    { name = "matplotlib", specifier = ">=3.8,<4" },
-    { name = "numpy", specifier = ">=2.0,<3" },
-    { name = "openseespy", specifier = ">=3.8.0.0" },
-    { name = "opsvis", specifier = ">=1.3.7" },
-    { name = "pandas", specifier = ">=2.2,<3" },
-    { name = "shapely", specifier = ">=2.0,<3" },
-    { name = "tqdm", specifier = ">=4.66,<5" },
+    { name = "matplotlib", specifier = "==3.11.1" },
+    { name = "numpy", specifier = "==2.5.1" },
+    { name = "openseespy", specifier = "==3.8.0.0" },
+    { name = "opsvis", specifier = "==1.3.7" },
+    { name = "pandas", specifier = "==2.3.3" },
+    { name = "shapely", specifier = "==2.1.2" },
+    { name = "tqdm", specifier = "==4.70.0" },
 ]
 
 [package.metadata.requires-dev]

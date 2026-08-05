@@ -2,7 +2,32 @@
 
 Format mengikuti template PRD Bagian 16C.
 
-## [0.3.0] — 2026-08-04 — Fase 3: visualisasi + laporan auditable
+## [0.3.0] — 2026-08-04 — Fase 3: visualisasi + laporan auditable, siap `uvx`
+
+### Distribution (PRD Bagian 14, Cond D)
+- Dapat dipasang langsung dari GitHub:
+  `uvx --from git+https://github.com/kikifadilah31/kft_pilecap_fem pilecap-run`.
+- **Versi kini satu sumber**, dibaca `pyproject.toml` dari `__init__.py` lewat
+  `[tool.hatch.version]`. Sebelumnya versi hidup di dua tempat dan keduanya tertinggal
+  di `0.1.0`, sehingga **setiap `run_manifest.json` dan `calc_sheet.md` yang dihasilkan
+  mengklaim v0.1.0** — cacat provenance (PRD Core 5). Dijaga `tests/test_packaging.py`,
+  termasuk kecocokan dengan entri teratas CHANGELOG.
+- **Seluruh dependency di-pin eksak (`==`)** ke versi yang lolos VC-0..VC-5, karena
+  `uvx`/`uv tool install` dari git **mengabaikan `uv.lock`** dan me-resolve ulang dari
+  `pyproject.toml`. Dengan rentang longgar, dua pengguna yang memasang di hari berbeda
+  dapat menjalankan numerik yang berbeda (PRD Bagian 10).
+- `examples/` ikut dikemas (18 KB) + flag `--init-example DIR` pada `pilecap-mesh`,
+  `pilecap-analyze`, dan `pilecap-run`. `pilecap-report` sengaja tidak menerimanya:
+  ia bekerja pada run yang sudah ada, dan menambahkannya akan menarik gmsh ke modul yang
+  sengaja dibuat bebas gmsh (dijaga oleh test).
+- `LICENSE` (draft, redaksi final oleh pemilik) + classifier `Private :: Do Not Upload`.
+
+### Findings — distribusi
+- **`openseespy` 3.8.0.0 TERPASANG di Python 3.13 tetapi GAGAL diimpor.** Wheel-nya
+  bertag `py3-none-win_amd64` sehingga lolos pemeriksaan pip/uv, namun `.pyd` di dalamnya
+  dibangun untuk CPython 3.12 → `DLL load failed while importing opensees`. Batas
+  `requires-python = ">=3.12,<3.13"` karena itu **wajib**, bukan konservatif: tanpanya uv
+  memasang kombinasi rusak yang baru ketahuan saat analisis dijalankan.
 
 ### Added
 - `renderer.py` penuh — kontur `m_x`/`m_y`/`m_xy`/`q_x`/`q_y`/lendutan,
@@ -44,7 +69,7 @@ laporan; `--opsvis` memaksa tetap dibuat.
     elemen; interpolasi nodal akan menyiratkan kehalusan yang tidak dihitung, dan justru
     paling menyesatkan di daerah singularitas tepi zona jepit.
 
-### Findings
+### Findings — visualisasi & laporan
 - **Faktor `moment_per_width` dan `shear_per_width` kebetulan sama-sama `1e-3`.**
   Membedakan momen dari geser lewat nilai faktornya menghasilkan label satuan yang salah
   saat membaca balik CSV. Pemetaan kolom → besaran kini eksplisit.

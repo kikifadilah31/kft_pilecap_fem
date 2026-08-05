@@ -412,3 +412,40 @@ def setup_logging(output_dir: Path | None = None, level: str = "INFO") -> loggin
 def get_logger(module_name: str) -> logging.Logger:
     """Logger per modul. `module_name` adalah nama pendek, mis. "io_utils"."""
     return logging.getLogger(f"pilecap_fem.{module_name}")
+
+
+# ---------------------------------------------------------------------------
+# Contoh bawaan (PRD Bagian 5.4)
+# ---------------------------------------------------------------------------
+
+#: Nama ketiga folder contoh yang WAJIB ada (PRD Bagian 5.4).
+EXAMPLE_NAMES: Final[tuple[str, ...]] = (
+    "ex01_standard_4pile",
+    "ex02_standard_12pile",
+    "ex03_custom_polygon",
+)
+
+
+def examples_dir() -> Path:
+    """Folder contoh bawaan.
+
+    Dicari di dua tempat: salinan yang ikut terkemas di dalam paket (jalur pengguna
+    `uvx`, yang tidak meng-clone repo), lalu `examples/` di akar repo (jalur
+    pengembangan).
+
+    Fallback ke repo diperlukan agar test tetap berjalan sebelum paket dibangun, TETAPI
+    fallback itu juga dapat menutupi kesalahan pengemasan -- karena itu isi wheel
+    diperiksa terpisah, bukan hanya perilaku di repo
+    (`tests/test_packaging.py::test_wheel_memuat_contoh`).
+    """
+    packaged = Path(__file__).parent / "examples"
+    if packaged.is_dir():
+        return packaged
+    repo = Path(__file__).resolve().parents[2] / "examples"
+    if repo.is_dir():
+        return repo
+    raise FileNotFoundError(
+        "Folder contoh tidak ditemukan, baik di dalam paket "
+        f"({packaged}) maupun di akar repo ({repo}). "
+        "Instalasi kemungkinan tidak lengkap."
+    )

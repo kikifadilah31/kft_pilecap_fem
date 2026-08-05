@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -72,6 +73,16 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--dpi", type=int, default=config.OUTPUT_DPI)
     parser.add_argument(
+        "--init-example",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help=(
+            "Salin ketiga contoh bawaan ke DIR lalu keluar. Berguna bagi pengguna "
+            "`uvx` yang tidak meng-clone repo."
+        ),
+    )
+    parser.add_argument(
         "--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"), default="INFO"
     )
     parser.add_argument("--version", action="version", version=f"pilecap-fem {__version__}")
@@ -105,6 +116,44 @@ def build_parser() -> argparse.ArgumentParser:
     add_mesh_arguments(parser)
     parser.add_argument("--preview", action="store_true", help="Tampilkan plot mesh interaktif")
     return parser
+
+
+def handle_init_example(args: argparse.Namespace) -> bool:
+    """Tangani `--init-example DIR`. Kembalikan True bila program harus berhenti.
+
+    Dipanggil paling awal di keempat `entry_point`, sebelum satu pun file input dibaca.
+
+    Menolak menimpa folder yang sudah berisi: contoh ditulis untuk dimodifikasi user,
+    dan menimpanya diam-diam berarti membuang pekerjaan yang mungkin sudah dilakukan.
+    """
+    target: Path | None = getattr(args, "init_example", None)
+    if target is None:
+        return False
+
+    source = config.examples_dir()
+    target.mkdir(parents=True, exist_ok=True)
+
+    existing = [name for name in config.EXAMPLE_NAMES if (target / name).exists()]
+    if existing:
+        raise InputError(
+            f"Folder contoh berikut sudah ada di {target}: {existing}.\n"
+            "  Contoh tidak ditimpa -- berkas itu dimaksudkan untuk Anda modifikasi.\n"
+            "  Hapus atau pindahkan folder tersebut, atau tunjuk direktori lain."
+        )
+
+    for name in config.EXAMPLE_NAMES:
+        shutil.copytree(source / name, target / name)
+
+    print(f"Contoh disalin ke {target.resolve()}:")
+    for name in config.EXAMPLE_NAMES:
+        n_files = len(list((target / name).iterdir()))
+        print(f"  {name}/  ({n_files} berkas)")
+    print(
+        "\nCoba jalankan:\n"
+        f"  pilecap-run --config {config.EXAMPLE_NAMES[0]}/pilecap_config.json "
+        f"--input-dir {config.EXAMPLE_NAMES[0]}"
+    )
+    return True
 
 
 def apply_cli_mesh_overrides(
@@ -360,6 +409,8 @@ def entry_point(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     command = "pilecap-mesh " + " ".join(argv if argv is not None else sys.argv[1:])
     try:
+        if handle_init_example(args):
+            return 0
         run_dir = run(args, command.strip())
     except PilecapError as exc:
         logging.getLogger("pilecap_fem").error("%s", exc)

@@ -1,27 +1,48 @@
 [project]
 name = "pilecap-fem"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Automated pile cap plate-bending analyzer (gmsh + OpenSeesPy)"
 readme = "README.md"
+# Batas bawah 3.12 ditentukan openseespywin (requires_python >= 3.12).
+#
+# Batas atas <3.13 WAJIB, bukan sekadar konservatif. DIUKUR: openseespy 3.8.0.0
+# BERHASIL DIPASANG di Python 3.13 -- wheel-nya bertag `py3-none-win_amd64` sehingga
+# lolos pemeriksaan pip/uv -- tetapi GAGAL DIIMPOR:
+#
+#     RuntimeError: Failed to import openseespy on Windows:
+#     DLL load failed while importing opensees
+#
+# `.pyd` di dalamnya dibangun untuk CPython 3.12. Tanpa batas atas ini, uv akan dengan
+# senang hati memasang kombinasi yang rusak dan kegagalannya baru muncul saat analisis
+# dijalankan. `uvx` menyediakan Python 3.12 sendiri bila pengguna belum punya.
 requires-python = ">=3.12,<3.13"
-license = { text = "Proprietary" }
+license-files = ["LICENSE"]
 authors = [{ name = "Kiki Fadilah Tanjung" }]
+# Paket proprietary: cegah ter-unggah ke PyPI karena kecelakaan.
+classifiers = ["Private :: Do Not Upload"]
 
-# CATATAN PINNING (PRD Bagian 10 & Bagian 17 item 16):
-# Versi di bawah adalah batas kerja saat pengembangan. Versi EKSAK yang terbukti lulus
-# seluruh validation case dikunci di uv.lock dan dicatat di CHANGELOG.md saat rilis.
-# gmsh di-pin ketat karena penomoran Mesh.Algorithm / Mesh.RecombinationAlgorithm
-# adalah bagian dari kontrak numerik tool ini (lihat config.GMSH_*).
+# PINNING EKSAK (PRD Bagian 10 & Bagian 1.3).
+#
+# Angka di bawah BUKAN "yang terbaru saat itu" melainkan versi yang benar-benar lolos
+# VC-0..VC-5 pada Python 3.12.4. Dipakai `==` karena `uvx`/`uv tool install` dari git
+# MENGABAIKAN uv.lock dan me-resolve ulang dari berkas ini: dengan rentang longgar, dua
+# pengguna yang menginstal di hari berbeda dapat menjalankan numerik yang berbeda.
+#
+# gmsh paling kritis -- penomoran Mesh.Algorithm / Mesh.RecombinationAlgorithm adalah
+# bagian dari kontrak numerik tool ini (lihat config.GMSH_*). openseespy yang di-pin,
+# bukan openseespywin: meta-package itulah yang memilih paket per platform.
+#
+# Menaikkan salah satu versi = menjalankan ulang seluruh validation case lalu mencatat
+# hasilnya di CHANGELOG.md.
 dependencies = [
     "gmsh==4.15.2",
-    "numpy>=2.0,<3",
-    "pandas>=2.2,<3",
-    "shapely>=2.0,<3",
-    "matplotlib>=3.8,<4",
-    "tqdm>=4.66,<5",
-    # Dipakai mulai Fase 2/3. Dideklarasikan sekarang agar environment tervalidasi sejak awal.
-    "openseespy>=3.8.0.0",
-    "opsvis>=1.3.7",
+    "numpy==2.5.1",
+    "pandas==2.3.3",
+    "shapely==2.1.2",
+    "matplotlib==3.11.1",
+    "tqdm==4.70.0",
+    "openseespy==3.8.0.0",
+    "opsvis==1.3.7",
 ]
 
 [project.scripts]
@@ -45,8 +66,18 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Versi dibaca dari __init__.py -- SATU sumber, bukan dua yang bisa menyimpang.
+[tool.hatch.version]
+path = "src/pilecap_fem/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/pilecap_fem"]
+
+# Contoh ikut dikemas (total 18 KB) agar pengguna `uvx` -- yang tidak meng-clone repo --
+# tetap dapat mencoba tool ini lewat `--init-example`. File yang dikemas adalah file
+# yang SAMA dengan yang dipakai test regresi, sehingga tidak bisa basi diam-diam.
+[tool.hatch.build.targets.wheel.force-include]
+"examples" = "pilecap_fem/examples"
 
 [tool.ruff]
 line-length = 100

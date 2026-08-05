@@ -68,6 +68,8 @@ def entry_point(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     command = "pilecap-run " + " ".join(argv if argv is not None else sys.argv[1:])
     try:
+        if cli_pilecap_mesh.handle_init_example(args):
+            return 0
         run_dir = run(args, command.strip())
     except NotImplementedError as exc:
         print(f"\nBELUM TERSEDIA: {exc}", file=sys.stderr)

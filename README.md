@@ -16,13 +16,57 @@ gmsh Python API. Spesifikasi lengkap ada di [`PRD_pilecap_fem.md`](PRD_pilecap_f
 
 ## Instalasi
 
-Butuh [`uv`](https://docs.astral.sh/uv/) dan Python 3.12.
+Satu-satunya prasyarat adalah [`uv`](https://docs.astral.sh/uv/). Tidak perlu meng-clone
+repo, dan tidak perlu menyiapkan Python sendiri.
+
+**Jalankan langsung tanpa memasang apa pun:**
 
 ```bash
-uv sync --dev
+uvx --from git+https://github.com/kikifadilah31/kft_pilecap_fem pilecap-run --help
 ```
 
+**Pasang sebagai tool permanen, disematkan ke versi tertentu:**
+
+```bash
+uv tool install git+https://github.com/kikifadilah31/kft_pilecap_fem@v0.3.0
+```
+
+Setelah itu keempat command (`pilecap-mesh`, `pilecap-analyze`, `pilecap-report`,
+`pilecap-run`) tersedia langsung di terminal.
+
+Empat hal yang perlu diketahui:
+
+- **`--from` wajib** pada `uvx` karena nama paket (`pilecap-fem`) berbeda dari nama
+  command yang dijalankan.
+- **Sematkan tag versi** (`@v0.3.0`) untuk pekerjaan yang hasilnya akan diperiksa
+  kemudian. `run_manifest.json` merekam `tool_version`; dengan tag, versi itu dapat
+  ditarik kembali persis. Tanpa tag, instalasi selalu mengambil `main` terbaru.
+- **Python 3.12 disediakan `uv` sendiri.** Batas `<3.13` bukan kehati-hatian berlebihan:
+  `openseespy` 3.8.0.0 *terpasang* di Python 3.13 tetapi *gagal diimpor* karena `.pyd`
+  di dalamnya dibangun untuk 3.12.
+- **Unduhan pertama ~60 MB** (gmsh saja 40 MB), lalu di-cache `uv`.
+
+### Mencoba tanpa menyiapkan data sendiri
+
+```bash
+uvx --from git+https://github.com/kikifadilah31/kft_pilecap_fem pilecap-mesh --init-example .
+```
+
+Menyalin ketiga contoh bawaan ke folder saat ini. Berkas yang disalin adalah berkas yang
+**sama persis** dengan yang dipakai test regresi, jadi tidak bisa basi diam-diam.
+
+### Untuk pengembangan
+
+```bash
+git clone https://github.com/kikifadilah31/kft_pilecap_fem && cd kft_pilecap_fem && uv sync --dev
+```
+
+Lalu jalankan lewat `uv run <command>`.
+
 ## Pemakaian
+
+Contoh di bawah memakai `uv run` (jalur pengembangan). Bila memasang lewat
+`uv tool install`, hilangkan awalan `uv run`.
 
 ```bash
 uv run pilecap-mesh --config examples/ex01_standard_4pile/pilecap_config.json --input-dir examples/ex01_standard_4pile --export-msh
@@ -118,6 +162,7 @@ untuk 1.200 elemen. Paksa dengan `--opsvis`.
 | `--moment-at pier_face\|peak\|both` | `report`, `run` | Lokasi momen desain |
 | `--no-envelope` | `report`, `run` | Lewati envelope |
 | `--wood-armer` | `report`, `run` | **Belum tersedia** — menolak dengan pesan sumber primer |
+| `--init-example DIR` | `mesh`, `analyze`, `run` | Salin contoh bawaan ke DIR lalu keluar |
 | `--export-msh`, `--dpi`, `--log-level` | semua | Output tambahan & verbositas |
 
 ### Cek keseimbangan VC-0
