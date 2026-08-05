@@ -128,16 +128,54 @@ def test_setiap_command_menampilkan_versi_yang_benar(name: str):
     assert pilecap_fem.__version__ in (result.stdout + result.stderr)
 
 
-def test_pilecap_report_tidak_menarik_gmsh():
-    """`pilecap-report` hanya membaca CSV; menariknya ke gmsh membebani tanpa alasan."""
-    code = "import sys; import pilecap_fem.cli_pilecap_report; print('gmsh' in sys.modules)"
+@pytest.mark.parametrize("heavy", ["gmsh", "openseespy"])
+def test_pilecap_report_tidak_menarik_solver(heavy: str):
+    """`pilecap-report` hanya membaca CSV -- solver tidak perlu ikut dimuat.
+
+    Bukan sekadar soal kecepatan: `openseespy` gagal diimpor pada interpreter yang
+    tidak didukung, sehingga pelaporan dari CSV pun akan ikut mati tanpa alasan.
+    """
+    code = f"import sys; import pilecap_fem.cli_pilecap_report; print({heavy!r} in sys.modules)"
     result = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
     )
     assert result.stdout.strip() == "False", (
-        "mengimpor cli_pilecap_report ikut memuat gmsh -- periksa impor TYPE_CHECKING "
-        "di mesh_model.py dan reporter.py"
+        f"mengimpor cli_pilecap_report ikut memuat {heavy} -- periksa impor "
+        "TYPE_CHECKING di mesh_model.py, postproc_engine.py, dan reporter.py"
     )
+
+
+# ---------------------------------------------------------------------------
+# Penjaga interpreter
+# ---------------------------------------------------------------------------
+
+
+def test_interpreter_saat_ini_lolos_penjaga():
+    pilecap_fem._check_interpreter()
+
+
+def test_penjaga_interpreter_konsisten_dengan_requires_python():
+    import tomllib
+
+    with open(PYPROJECT, "rb") as handle:
+        requires = tomllib.load(handle)["project"]["requires-python"]
+    low, high = pilecap_fem.REQUIRED_PYTHON
+    assert f">={low[0]}.{low[1]}" in requires
+    assert f"<{high[0]}.{high[1]}" in requires
+
+
+@pytest.mark.parametrize("versi", [(3, 11), (3, 13), (3, 14)])
+def test_penjaga_menolak_interpreter_tak_didukung(versi: tuple[int, int], monkeypatch):
+    """DIUKUR: `uvx` dari sumber git memilih interpreter SEBELUM tahu requires-python.
+
+    Terbukti memakai Python 3.14 dan tetap memasang paketnya; tanpa penjaga ini,
+    kegagalannya muncul sebagai `DLL load failed while importing opensees` yang
+    terbaca seperti instalasi rusak, bukan seperti salah interpreter.
+    """
+    monkeypatch.setattr(sys, "version_info", (*versi, 0, "final", 0))
+    monkeypatch.setattr(sys, "version", f"{versi[0]}.{versi[1]}.0")
+    with pytest.raises(RuntimeError, match=r"--python 3\.12"):
+        pilecap_fem._check_interpreter()
 
 
 # ---------------------------------------------------------------------------

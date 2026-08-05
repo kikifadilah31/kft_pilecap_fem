@@ -2,6 +2,35 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.3.1] — 2026-08-04 — Perbaikan instalasi `uvx`
+
+Ditemukan saat menguji instalasi sungguhan dari GitHub pada v0.3.0. Tag v0.3.0
+**tidak dipindahkan**: memindahkan tag yang sudah dipublikasikan justru meniadakan
+alasan tag itu ada, yaitu agar laporan lama dapat direproduksi dengan versi tool yang
+persis sama.
+
+### Fixed
+- **`requires-python` tidak cukup untuk instalasi dari sumber git.** Terukur:
+  `uvx --from git+...` memilih interpreter **sebelum** metadata paket diketahui,
+  memakai Python 3.14.1 (terbaca di `pyvenv.cfg` lingkungan tool-nya) dan tetap
+  memasang paketnya — lalu gagal dengan `DLL load failed while importing opensees`,
+  pesan yang terbaca seperti instalasi rusak alih-alih salah interpreter.
+  - `pilecap_fem._check_interpreter()` kini berjalan saat impor dan berhenti dengan
+    pesan yang menyebut penyebab sebenarnya beserta perintah yang benar.
+  - README: `--python 3.12` didokumentasikan sebagai **wajib**, menggantikan klaim
+    keliru pada v0.3.0 bahwa `uv` menyediakan Python 3.12 sendiri.
+- **`pilecap-report` menarik `openseespy`** lewat rantai
+  `reporter → postproc_engine → fem_engine`, sehingga pelaporan dari CSV ikut mati di
+  interpreter yang salah padahal tidak membutuhkan solver sama sekali. Impor
+  `ComboResult` kini `TYPE_CHECKING`; terbukti bebas gmsh **dan** openseespy, dijaga
+  test terparametrisasi untuk keduanya.
+- Test pengemasan memanggil `uv` lewat path absolut hasil `shutil.which()`. Nama
+  telanjang diresolusi `CreateProcess` lewat PATH saat spawn dan gagal (`WinError 2`)
+  hanya ketika test berjalan di akhir suite penuh — kegagalan yang tidak ada
+  hubungannya dengan isi wheel.
+
+---
+
 ## [0.3.0] — 2026-08-04 — Fase 3: visualisasi + laporan auditable, siap `uvx`
 
 ### Distribution (PRD Bagian 14, Cond D)
@@ -26,8 +55,18 @@ Format mengikuti template PRD Bagian 16C.
 - **`openseespy` 3.8.0.0 TERPASANG di Python 3.13 tetapi GAGAL diimpor.** Wheel-nya
   bertag `py3-none-win_amd64` sehingga lolos pemeriksaan pip/uv, namun `.pyd` di dalamnya
   dibangun untuk CPython 3.12 → `DLL load failed while importing opensees`. Batas
-  `requires-python = ">=3.12,<3.13"` karena itu **wajib**, bukan konservatif: tanpanya uv
-  memasang kombinasi rusak yang baru ketahuan saat analisis dijalankan.
+  `requires-python = ">=3.12,<3.13"` karena itu **wajib**, bukan konservatif.
+- **`requires-python` TIDAK cukup untuk instalasi dari sumber git.** Terukur: `uvx --from
+  git+...` memilih interpreter **sebelum** metadata paket diketahui, memakai Python
+  3.14.1 (terbaca di `pyvenv.cfg` lingkungan tool-nya) dan tetap memasang paketnya —
+  lalu gagal dengan error DLL yang terbaca seperti instalasi rusak. Karena itu:
+  - `--python 3.12` didokumentasikan sebagai **wajib** untuk `uvx`/`uv tool install`;
+  - `pilecap_fem._check_interpreter()` berjalan saat impor dan menghentikan program
+    dengan pesan yang menyebut penyebab sebenarnya beserta perintah yang benar.
+- **`pilecap-report` sempat menarik `openseespy`** lewat rantai
+  `reporter → postproc_engine → fem_engine`. Impor `ComboResult` kini `TYPE_CHECKING`,
+  sehingga pelaporan dari CSV tidak lagi bergantung pada solver maupun gmsh — dijaga
+  test terparametrisasi untuk keduanya.
 
 ### Added
 - `renderer.py` penuh — kontur `m_x`/`m_y`/`m_xy`/`q_x`/`q_y`/lendutan,

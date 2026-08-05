@@ -17,14 +17,18 @@ Modul ini bekerja murni SI. Konversi ke satuan tampilan terjadi di `reporter.py`
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from pilecap_fem import config, math_engine
-from pilecap_fem.fem_engine import ComboResult
 from pilecap_fem.geometry_builder import GeometryModel, Pier
 from pilecap_fem.mesh_model import MeshModel
+
+if TYPE_CHECKING:  # pragma: no cover
+    # Hanya anotasi tipe. Mengimpornya saat runtime menarik openseespy ke seluruh jalur
+    # `pilecap-report`, yang sebenarnya hanya membaca CSV.
+    from pilecap_fem.fem_engine import ComboResult
 
 _log = config.get_logger("postproc_engine")
 

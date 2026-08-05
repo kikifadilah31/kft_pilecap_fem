@@ -22,13 +22,13 @@ repo, dan tidak perlu menyiapkan Python sendiri.
 **Jalankan langsung tanpa memasang apa pun:**
 
 ```bash
-uvx --from git+https://github.com/kikifadilah31/kft_pilecap_fem pilecap-run --help
+uvx --python 3.12 --from git+https://github.com/kikifadilah31/kft_pilecap_fem pilecap-run --help
 ```
 
 **Pasang sebagai tool permanen, disematkan ke versi tertentu:**
 
 ```bash
-uv tool install git+https://github.com/kikifadilah31/kft_pilecap_fem@v0.3.0
+uv tool install --python 3.12 git+https://github.com/kikifadilah31/kft_pilecap_fem@v0.3.0
 ```
 
 Setelah itu keempat command (`pilecap-mesh`, `pilecap-analyze`, `pilecap-report`,
@@ -36,20 +36,23 @@ Setelah itu keempat command (`pilecap-mesh`, `pilecap-analyze`, `pilecap-report`
 
 Empat hal yang perlu diketahui:
 
+- **`--python 3.12` wajib.** Saat memasang dari sumber **git**, `uv` memilih interpreter
+  *sebelum* mengetahui `requires-python` paket — terukur memakai Python 3.14 dan tetap
+  memasangnya. `openseespy` hanya menyediakan binary untuk CPython 3.12: pada versi lain
+  ia terpasang tetapi **gagal diimpor**. Bila flag ini terlupa, tool berhenti dengan pesan
+  yang menyebutkan persoalannya dan perintah yang benar — bukan error DLL yang
+  membingungkan.
 - **`--from` wajib** pada `uvx` karena nama paket (`pilecap-fem`) berbeda dari nama
   command yang dijalankan.
 - **Sematkan tag versi** (`@v0.3.0`) untuk pekerjaan yang hasilnya akan diperiksa
   kemudian. `run_manifest.json` merekam `tool_version`; dengan tag, versi itu dapat
   ditarik kembali persis. Tanpa tag, instalasi selalu mengambil `main` terbaru.
-- **Python 3.12 disediakan `uv` sendiri.** Batas `<3.13` bukan kehati-hatian berlebihan:
-  `openseespy` 3.8.0.0 *terpasang* di Python 3.13 tetapi *gagal diimpor* karena `.pyd`
-  di dalamnya dibangun untuk 3.12.
 - **Unduhan pertama ~60 MB** (gmsh saja 40 MB), lalu di-cache `uv`.
 
 ### Mencoba tanpa menyiapkan data sendiri
 
 ```bash
-uvx --from git+https://github.com/kikifadilah31/kft_pilecap_fem pilecap-mesh --init-example .
+uvx --python 3.12 --from git+https://github.com/kikifadilah31/kft_pilecap_fem pilecap-mesh --init-example .
 ```
 
 Menyalin ketiga contoh bawaan ke folder saat ini. Berkas yang disalin adalah berkas yang
