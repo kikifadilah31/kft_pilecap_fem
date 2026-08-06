@@ -87,7 +87,7 @@ def test_kontur_menghasilkan_png_tidak_kosong(sample, tmp_path: Path):
         quantity="moment_per_width",
         title="Momen m_x",
         combo="1.2D+1.6L",
-        dpi=60,
+        style=renderer.PlotStyle(dpi=60),
     )
     assert path.is_file()
     assert path.stat().st_size > 5_000
@@ -105,7 +105,7 @@ def test_kontur_menerima_nilai_nan_tanpa_melempar(sample, tmp_path: Path):
         values,
         quantity="moment_per_width",
         title="Momen m_x",
-        dpi=60,
+        style=renderer.PlotStyle(dpi=60),
     )
     assert path.is_file()
 
@@ -120,7 +120,7 @@ def test_kontur_seluruhnya_nan_raise(sample, tmp_path: Path):
             np.full(mesh.n_elements, np.nan),
             quantity="moment_per_width",
             title="Momen m_x",
-            dpi=60,
+            style=renderer.PlotStyle(dpi=60),
         )
 
 
@@ -187,7 +187,7 @@ def test_element_values_from_nodal_menolak_panjang_salah(sample):
 def test_boundary_load_check_terbentuk(sample, tmp_path: Path):
     geom, mesh = sample
     path = renderer.render_boundary_load_check(
-        tmp_path / config.FILE_BOUNDARY_CHECK, geom, mesh, dpi=60
+        tmp_path / config.FILE_BOUNDARY_CHECK, geom, mesh, style=renderer.PlotStyle(dpi=60)
     )
     assert path.is_file()
     assert path.stat().st_size > 5_000
@@ -215,7 +215,9 @@ def test_mesh_plan_menampilkan_subjudul_override(sample, tmp_path: Path):
     assert "GEOMETRI OVERRIDE" in subtitle
     assert "pilecap_polygon.csv" in subtitle
 
-    path = renderer.render_mesh_plan(tmp_path / "plan.png", overridden, mesh, dpi=60)
+    path = renderer.render_mesh_plan(
+        tmp_path / "plan.png", overridden, mesh, style=renderer.PlotStyle(dpi=60)
+    )
     assert path.is_file()
 
 
@@ -297,7 +299,7 @@ def test_kegagalan_opsvis_tidak_membatalkan_run(tmp_path: Path):
         title="uji",
         n_elements=10,
         force=False,
-        dpi=60,
+        style=renderer.PlotStyle(dpi=60),
         warnings=warnings,
     )
     assert result is None
@@ -368,3 +370,178 @@ def test_anotasi_pier_poligon(tmp_path: Path):
     texts = [t.get_text() for t in ax.texts]
     plt.close(fig)
     assert any("PIER_A" in t for t in texts)
+
+
+# ---------------------------------------------------------------------------
+# Tema (gaya shell-kit)
+# ---------------------------------------------------------------------------
+
+
+def _corner_pixel(path: Path) -> tuple[int, int, int]:
+    """Warna piksel sudut kiri-atas -- latar figur, bukan area gambar."""
+    import matplotlib.image as mpimg
+
+    data = mpimg.imread(path)
+    pixel = data[2, 2]
+    return tuple(round(float(c) * 255) for c in pixel[:3])
+
+
+@pytest.mark.parametrize("name", ["light", "dark"])
+def test_tema_menghasilkan_latar_yang_benar_benar_dipakai(sample, tmp_path: Path, name: str):
+    """Diperiksa dari PIKSEL, bukan ukuran berkas.
+
+    Tanpa `facecolor` pada `savefig`, PNG tema gelap keluar berlatar PUTIH dengan teks
+    terang -- nyaris tak terbaca, dan lolos sempurna bila test hanya memastikan berkas
+    lebih besar dari sekian kilobyte.
+    """
+    geom, mesh = sample
+    theme = config.theme(name)
+    path = renderer.render_contour(
+        tmp_path / f"contour_{name}.png",
+        geom,
+        mesh,
+        _values(mesh),
+        quantity="moment_per_width",
+        title="Momen m_x",
+        style=renderer.PlotStyle(theme=theme, dpi=60),
+    )
+
+    expected = tuple(int(theme.background[i : i + 2], 16) for i in (1, 3, 5))
+    assert _corner_pixel(path) == expected
+
+
+def test_kedua_tema_menghasilkan_gambar_yang_berbeda(sample, tmp_path: Path):
+    geom, mesh = sample
+    paths = []
+    for name in ("light", "dark"):
+        paths.append(
+            renderer.render_contour(
+                tmp_path / f"beda_{name}.png",
+                geom,
+                mesh,
+                _values(mesh),
+                quantity="moment_per_width",
+                title="Momen m_x",
+                style=renderer.PlotStyle(theme=config.theme(name), dpi=60),
+            )
+        )
+    assert paths[0].read_bytes() != paths[1].read_bytes()
+
+
+def test_tema_tidak_dikenal_raise():
+    with pytest.raises(KeyError, match="tidak dikenal"):
+        config.theme("biru")
+
+
+# ---------------------------------------------------------------------------
+# Metode kontur
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("method", config.CONTOUR_METHODS)
+def test_kedua_metode_kontur_menghasilkan_png(sample, tmp_path: Path, method: str):
+    geom, mesh = sample
+    path = renderer.render_contour(
+        tmp_path / f"metode_{method}.png",
+        geom,
+        mesh,
+        _values(mesh),
+        quantity="moment_per_width",
+        title="Momen m_x",
+        style=renderer.PlotStyle(method=method, dpi=60),
+    )
+    assert path.is_file()
+    assert path.stat().st_size > 5_000
+
+
+def test_metode_kontur_tidak_dikenal_raise():
+    with pytest.raises(ValueError, match="tidak dikenal"):
+        renderer.PlotStyle(method="entah")
+
+
+def test_triangulasi_quad_tidak_terlipat(sample):
+    """Dua segitiga per quad harus menutup luas quad-nya, tanpa tumpang tindih.
+
+    Segitiga yang terlipat akan memberi luas total lebih kecil dari luas mesh -- gejala
+    yang tidak terlihat pada gambar tetapi merusak seluruh interpolasi `average-nodal`.
+    """
+    _, mesh = sample
+    x, y, tris = renderer._triangulation(mesh)
+
+    a, b, c = x[tris[:, 0]], x[tris[:, 1]], x[tris[:, 2]]
+    ay, by, cy = y[tris[:, 0]], y[tris[:, 1]], y[tris[:, 2]]
+    signed = 0.5 * ((b - a) * (cy - ay) - (c - a) * (by - ay))
+
+    assert np.all(signed > 0.0), "ada segitiga terlipat (luas bertanda negatif)"
+    # Luas dalam mm^2 harus cocok dengan luas mesh dalam m^2.
+    assert float(signed.sum()) == pytest.approx(float(mesh.elem_area.sum()) * 1e6, rel=1e-9)
+
+
+def test_nodal_dari_elemen_mempertahankan_nan(sample):
+    """Node yang SELURUH elemennya NaN tetap NaN -- tidak diisi diam-diam tetangganya."""
+    _, mesh = sample
+    values = np.full(mesh.n_elements, np.nan)
+    assert np.all(np.isnan(renderer._nodal_from_elements(mesh, values)))
+
+    values[:] = 5.0
+    assert np.allclose(renderer._nodal_from_elements(mesh, values), 5.0)
+
+
+# ---------------------------------------------------------------------------
+# Plot kategorikal
+# ---------------------------------------------------------------------------
+
+
+def test_kategorikal_memakai_label_yang_diberikan(sample, tmp_path: Path):
+    geom, mesh = sample
+    codes = np.zeros(mesh.n_elements)
+    codes[: mesh.n_elements // 3] = 1
+    codes[mesh.n_elements // 3 : 2 * mesh.n_elements // 3] = 2
+
+    path = renderer.render_categorical(
+        tmp_path / "kategori.png",
+        geom,
+        mesh,
+        codes,
+        labels=("D16", "D19", "D22"),
+        title="Diameter tulangan",
+        style=renderer.PlotStyle(dpi=60),
+    )
+    assert path.is_file()
+    assert path.stat().st_size > 5_000
+
+
+def test_kategorikal_menandai_yang_tidak_memadai(sample, tmp_path: Path):
+    """NaN pada seleksi = tidak ada batang yang cukup besar; harus terlihat, bukan hilang."""
+    geom, mesh = sample
+    codes = np.ones(mesh.n_elements)
+    codes[:5] = np.nan
+
+    path = renderer.render_categorical(
+        tmp_path / "kategori_nan.png",
+        geom,
+        mesh,
+        codes,
+        labels=("D16",),
+        title="Diameter tulangan",
+        style=renderer.PlotStyle(dpi=60),
+    )
+    assert path.is_file()
+
+
+def test_kategorikal_melebihi_palet_bawaan_tetap_berjalan(sample, tmp_path: Path):
+    """Daftar kode bisa lebih panjang dari 25 warna bawaan -- warna tambahan dibangkitkan."""
+    geom, mesh = sample
+    labels = tuple(f"K{i}" for i in range(30))
+    codes = np.linspace(0, 30, mesh.n_elements).round()
+
+    path = renderer.render_categorical(
+        tmp_path / "kategori_banyak.png",
+        geom,
+        mesh,
+        codes,
+        labels=labels,
+        title="Banyak kategori",
+        style=renderer.PlotStyle(dpi=60),
+    )
+    assert path.is_file()

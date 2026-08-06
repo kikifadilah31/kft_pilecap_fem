@@ -21,6 +21,7 @@ dilewati diam-diam, tetapi juga tidak membatalkan hasil analisis yang sudah lulu
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -33,12 +34,36 @@ from pilecap_fem.mesh_model import MeshModel
 
 _log = config.get_logger("renderer")
 
-_COLOR_CAP = "#eef2f6"
-_COLOR_PILE = "#bcd9f0"
-_COLOR_PIER = "#f2c4c4"
-_COLOR_EDGE = "#9aa5b1"
-_COLOR_PILE_LINE = "#1f5f9c"
-_COLOR_PIER_LINE = "#8b1e1e"
+
+@dataclass(frozen=True)
+class PlotStyle:
+    """Pilihan penyajian yang dibawa bersama, bukan sebagai lima parameter terpisah.
+
+    `render_contour` sudah menerima sebelas argumen sebelum tema dan metode kontur ada.
+    Mengelompokkan yang bersifat penyajian membuat tanda tangannya berhenti tumbuh, dan
+    membuat "gaya" dapat diteruskan utuh dari CLI ke setiap fungsi gambar.
+    """
+
+    theme: config.Theme = field(default_factory=config.theme)
+    method: str = config.DEFAULT_CONTOUR_METHOD
+    dpi: int = config.OUTPUT_DPI
+    preview: bool = False
+
+    def __post_init__(self) -> None:
+        if self.method not in config.CONTOUR_METHODS:
+            raise ValueError(
+                f"contour method {self.method!r} tidak dikenal. Pilihan: {config.CONTOUR_METHODS}"
+            )
+
+    @classmethod
+    def from_args(cls, args: Any) -> PlotStyle:
+        """Bangun dari `argparse.Namespace`; flag yang tidak ada memakai bawaannya."""
+        return cls(
+            theme=config.theme(getattr(args, "theme", None)),
+            method=getattr(args, "contour_method", None) or config.DEFAULT_CONTOUR_METHOD,
+            dpi=getattr(args, "dpi", config.OUTPUT_DPI),
+            preview=bool(getattr(args, "preview", False)),
+        )
 
 
 def _use_agg(preview: bool) -> None:
@@ -50,15 +75,15 @@ def _to_mm(value: Any) -> Any:
     return io_utils.to_display(value, "length")
 
 
-def _face_colors(mesh: MeshModel) -> list[str]:
+def _face_colors(mesh: MeshModel, theme: config.Theme) -> list[str]:
     palette = []
     for name in mesh.group_names:
         if name.startswith(config.GROUP_PILE_PREFIX):
-            palette.append(_COLOR_PILE)
+            palette.append(theme.pile)
         elif name.startswith(config.GROUP_PIER_PREFIX):
-            palette.append(_COLOR_PIER)
+            palette.append(theme.pier)
         else:
-            palette.append(_COLOR_CAP)
+            palette.append(theme.cap)
     return [palette[int(g)] for g in mesh.elem_group]
 
 
@@ -82,7 +107,8 @@ def _annotate_plan(
     geom: GeometryModel,
     *,
     pz_by_pile: dict[str, float] | None = None,
-    pile_label_color: str = "#0d3b66",
+    theme: config.Theme | None = None,
+    pile_label_color: str | None = None,
 ) -> None:
     """Anotasi wajib PRD Bagian 9.3, sama untuk SELURUH plot denah.
 
@@ -95,9 +121,11 @@ def _annotate_plan(
     import matplotlib.pyplot as plt
 
     unit = io_utils.display_unit("length")
+    th = theme or config.theme()
+    label_color = pile_label_color or th.pile_label
 
     cap = _to_mm(geom.pilecap.closed_vertices())
-    ax.plot(cap[:, 0], cap[:, 1], color="black", linewidth=1.8, zorder=5)
+    ax.plot(cap[:, 0], cap[:, 1], color=th.outline, linewidth=1.8, zorder=5)
 
     for pile in geom.piles:
         ax.add_patch(
@@ -107,7 +135,7 @@ def _annotate_plan(
                 fill=False,
                 linestyle="--",
                 linewidth=1.2,
-                edgecolor=_COLOR_PILE_LINE,
+                edgecolor=th.pile_line,
                 zorder=6,
             )
         )
@@ -121,11 +149,11 @@ def _annotate_plan(
             ha="center",
             va="center",
             fontsize=7,
-            color=pile_label_color,
+            color=label_color,
             zorder=7,
             bbox={
                 "boxstyle": "round,pad=0.15",
-                "facecolor": "white",
+                "facecolor": th.annotation_face,
                 "alpha": 0.7,
                 "edgecolor": "none",
             },
@@ -137,7 +165,7 @@ def _annotate_plan(
             _to_mm(exterior[:, 0]),
             _to_mm(exterior[:, 1]),
             facecolor="none",
-            edgecolor=_COLOR_PIER_LINE,
+            edgecolor=th.pier_line,
             hatch="///",
             linewidth=1.6,
             zorder=6,
@@ -150,42 +178,84 @@ def _annotate_plan(
             va="center",
             fontsize=9,
             fontweight="bold",
-            color=_COLOR_PIER_LINE,
+            color=th.pier_line,
             zorder=7,
             bbox={
                 "boxstyle": "round,pad=0.25",
-                "facecolor": "white",
+                "facecolor": th.annotation_face,
                 "alpha": 0.85,
                 "edgecolor": "none",
             },
         )
 
-    ax.set_xlabel(f"X - memanjang [{unit}]")
-    ax.set_ylabel(f"Y - melintang [{unit}]")
+    ax.set_xlabel(f"X - memanjang [{unit}]", color=th.text)
+    ax.set_ylabel(f"Y - melintang [{unit}]", color=th.text)
+    ax.tick_params(colors=th.text)
+    for spine in ax.spines.values():
+        spine.set_color(th.grid)
     ax.set_aspect("equal", adjustable="box")
     ax.autoscale_view()
-    ax.grid(True, linewidth=0.3, alpha=0.4)
+    ax.grid(True, linewidth=0.3, alpha=0.4, color=th.grid)
 
 
-def _figure_for(geom: GeometryModel, width: float = 12.0) -> tuple[Any, Any]:
+def _figure_for(
+    geom: GeometryModel, width: float = 12.0, theme: config.Theme | None = None
+) -> tuple[Any, Any]:
     import matplotlib.pyplot as plt
 
+    th = theme or config.theme()
     xmin, ymin, xmax, ymax = geom.pilecap.bounds
     span_x, span_y = xmax - xmin, ymax - ymin
     aspect = (span_y / span_x) if span_x > 0 else 1.0
-    return plt.subplots(figsize=(width, max(5.0, width * aspect * 0.85)))
+    fig, ax = plt.subplots(figsize=(width, max(5.0, width * aspect * 0.85)))
+    fig.patch.set_facecolor(th.background)
+    ax.set_facecolor(th.background)
+    return fig, ax
 
 
 def _element_polygons(mesh: MeshModel) -> list[np.ndarray]:
     return [_to_mm(mesh.node_xy[conn]) for conn in mesh.elem_conn]
 
 
-def _save(fig: Any, path: Path, dpi: int, preview: bool) -> Path:
+def _triangulation(mesh: MeshModel) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Node + segitiga untuk metode `average-nodal`.
+
+    Setiap quad dipecah menjadi dua segitiga mengikuti urutan simpul mesh (0-1-2 dan
+    0-2-3). Urutan itu sudah dijamin CCW oleh `mesh_model`, sehingga tidak ada segitiga
+    yang terlipat -- diperiksa test dengan membandingkan rentang nilai terhadap
+    `element-center` pada kasus yang sama.
+    """
+    conn = mesh.elem_conn
+    tris = np.vstack([conn[:, [0, 1, 2]], conn[:, [0, 2, 3]]])
+    return _to_mm(mesh.node_xy[:, 0]), _to_mm(mesh.node_xy[:, 1]), tris
+
+
+def _nodal_from_elements(mesh: MeshModel, values: np.ndarray) -> np.ndarray:
+    """Rata-rata nilai elemen ke node (metode `average-nodal`).
+
+    Elemen NaN tidak ikut merata-rata; node yang seluruh elemennya NaN tetap NaN, sehingga
+    daerah tak terdefinisi tidak terisi diam-diam oleh tetangganya.
+    """
+    total = np.zeros(mesh.n_nodes, dtype=np.float64)
+    count = np.zeros(mesh.n_nodes, dtype=np.float64)
+    finite = np.isfinite(values)
+    for column in range(mesh.elem_conn.shape[1]):
+        nodes = mesh.elem_conn[:, column]
+        np.add.at(total, nodes[finite], values[finite])
+        np.add.at(count, nodes[finite], 1.0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(count > 0, total / count, np.nan)
+
+
+def _save(fig: Any, path: Path, dpi: int, preview: bool, theme: config.Theme | None = None) -> Path:
     import matplotlib.pyplot as plt
 
+    th = theme or config.theme()
     fig.tight_layout()
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=dpi)
+    # `facecolor` WAJIB diteruskan: tanpa itu PNG tema gelap keluar berlatar putih dengan
+    # teks terang -- nyaris tak terbaca, dan lolos bila test hanya memeriksa ukuran berkas.
+    fig.savefig(path, dpi=dpi, facecolor=th.background)
     if preview:  # pragma: no cover - interaktif
         plt.show()
     plt.close(fig)
@@ -205,24 +275,24 @@ def render_mesh_plan(
     project_name: str = "",
     mesh_size_m: float | None = None,
     n_tri: int = 0,
-    dpi: int = config.OUTPUT_DPI,
-    preview: bool = False,
+    style: PlotStyle | None = None,
 ) -> Path:
     """Denah mesh + label pile & pier (PRD Bagian 9.1 `mesh_plan.png`)."""
-    _use_agg(preview)
+    st = style or PlotStyle()
+    _use_agg(st.preview)
     from matplotlib.collections import PolyCollection
 
     unit = io_utils.display_unit("length")
-    fig, ax = _figure_for(geom)
+    fig, ax = _figure_for(geom, theme=st.theme)
     ax.add_collection(
         PolyCollection(
             _element_polygons(mesh),
-            facecolors=_face_colors(mesh),
-            edgecolors=_COLOR_EDGE,
+            facecolors=_face_colors(mesh, st.theme),
+            edgecolors=st.theme.edge,
             linewidths=0.25,
         )
     )
-    _annotate_plan(ax, geom)
+    _annotate_plan(ax, geom, theme=st.theme)
 
     title = "Denah Mesh Pilecap"
     if project_name:
@@ -238,11 +308,12 @@ def render_mesh_plan(
 
     override = _override_subtitle(geom)
     if override is not None:
-        ax.set_title(f"{title}\n{subtitle}\n{override}", fontsize=11, color=_COLOR_PIER_LINE)
+        ax.set_title(f"{title}\n{subtitle}\n{override}", fontsize=11, color=st.theme.pier_line)
     else:
-        ax.set_title(f"{title}\n{subtitle}", fontsize=11)
+        ax.set_title(f"{title}\n{subtitle}", fontsize=11, color=st.theme.text)
+    _watermark(ax, st.theme)
 
-    _save(fig, path, dpi, preview)
+    _save(fig, path, st.dpi, st.preview, st.theme)
     _log.info("%s ditulis: %s", path.name, path)
     return path
 
@@ -291,6 +362,159 @@ def _build_norm(vmin: float, vmax: float, diverging: bool) -> tuple[Any, str]:
     return Normalize(vmin=-vabs, vmax=vabs), " (seluruh nilai satu tanda; skala simetris)"
 
 
+def _mark_extremes(
+    ax: Any,
+    mesh: MeshModel,
+    values: np.ndarray,
+    finite: np.ndarray,
+    unit: str,
+    theme: config.Theme,
+    *,
+    include_min: bool = True,
+) -> None:
+    """Penanda maks/min bergaya shell-kit: berlian + callout melengkung.
+
+    PRD Bagian 9.3 mewajibkan "nilai maks/min + lokasinya"; bentuknya mengikuti shell-kit
+    (berlian `ms=12` bertepi putih, kotak membulat, panah `arc3`) agar plot pilecap dan
+    plot shell-kit dapat dibaca berdampingan tanpa berganti kebiasaan mata.
+    """
+    idx_max = int(np.nanargmax(np.where(finite, values, -np.inf)))
+    entries = [(idx_max, "MAKS", theme.color_max)]
+    if include_min:
+        idx_min = int(np.nanargmin(np.where(finite, values, np.inf)))
+        entries.append((idx_min, "MIN", theme.color_min))
+
+    for index, label, color in entries:
+        cx, cy = _to_mm(mesh.elem_centroid[index])
+        ax.plot(
+            cx,
+            cy,
+            marker="D",
+            markersize=9,
+            color=color,
+            markeredgecolor=theme.background,
+            markeredgewidth=1.5,
+            zorder=10,
+        )
+        ax.annotate(
+            f"{label}: {values[index]:,.1f} {unit}\n({cx:,.0f}, {cy:,.0f})",
+            xy=(cx, cy),
+            textcoords="offset points",
+            xytext=(26, 22),
+            fontsize=8,
+            fontweight="bold",
+            color=theme.text,
+            zorder=11,
+            bbox={
+                "boxstyle": "round,pad=0.4",
+                "facecolor": theme.background,
+                "edgecolor": theme.text,
+                "linewidth": 1.0,
+                "alpha": 0.9,
+            },
+            arrowprops={
+                "arrowstyle": "-|>,head_width=0.4,head_length=0.6",
+                "color": theme.text,
+                "linewidth": 1.5,
+                "connectionstyle": "arc3,rad=0.3",
+            },
+        )
+
+
+def _watermark(ax: Any, theme: config.Theme) -> None:
+    ax.text(
+        0.01,
+        0.01,
+        f"pilecap-fem | TEMA {theme.name.upper()}",
+        transform=ax.transAxes,
+        color=theme.text,
+        alpha=0.3,
+        fontsize=8,
+        fontweight="bold",
+        va="bottom",
+        ha="left",
+        zorder=12,
+    )
+
+
+def _inadequate_badge(ax: Any, n: int, theme: config.Theme, label: str) -> None:
+    """Badge merah-abu di kanan bawah, mengikuti shell-kit.
+
+    Dibuat mencolok dengan sengaja: elemen yang penampangnya tidak memadai adalah satu-
+    satunya hal pada plot tulangan yang membatalkan seluruh pembacaan lainnya.
+    """
+    if not n:
+        return
+    ax.text(
+        0.98,
+        0.02,
+        f"{label}: {n:,} elemen",
+        transform=ax.transAxes,
+        color="#FFFFFF",
+        fontsize=9,
+        fontweight="bold",
+        va="bottom",
+        ha="right",
+        zorder=12,
+        bbox={
+            "boxstyle": "round,pad=0.4",
+            "facecolor": theme.color_inadequate,
+            "edgecolor": "#FFFFFF",
+            "linewidth": 1.0,
+        },
+    )
+
+
+def _draw_field(
+    ax: Any,
+    mesh: MeshModel,
+    values: np.ndarray,
+    *,
+    cmap: Any,
+    norm: Any,
+    method: str,
+    theme: config.Theme,
+) -> Any:
+    """Gambar medan per elemen dengan metode terpilih; kembalikan mappable untuk colorbar."""
+    from matplotlib.collections import PolyCollection
+
+    if method == "element-center":
+        collection = PolyCollection(
+            _element_polygons(mesh),
+            array=np.ma.masked_invalid(values),
+            cmap=cmap,
+            norm=norm,
+            edgecolors="none",
+        )
+        ax.add_collection(collection)
+        return collection
+
+    # average-nodal: nilai elemen dirata-ratakan ke node lalu dihaluskan.
+    x, y, tris = _triangulation(mesh)
+    nodal = _nodal_from_elements(mesh, values)
+    filled = ax.tricontourf(
+        x,
+        y,
+        tris,
+        np.nan_to_num(nodal, nan=float(np.nanmin(nodal))),
+        levels=config.CONTOUR_LEVELS,
+        cmap=cmap,
+        norm=norm,
+        extend="both",
+    )
+    ax.tricontour(
+        x,
+        y,
+        tris,
+        np.nan_to_num(nodal, nan=float(np.nanmin(nodal))),
+        levels=config.CONTOUR_LEVELS,
+        colors=theme.text,
+        linewidths=0.2,
+        alpha=0.5,
+    )
+    return filled
+
+
 def render_contour(
     path: Path,
     geom: GeometryModel,
@@ -302,16 +526,21 @@ def render_contour(
     combo: str = "",
     diverging: bool = True,
     pz_by_pile: dict[str, float] | None = None,
-    dpi: int = config.OUTPUT_DPI,
-    preview: bool = False,
+    style: PlotStyle | None = None,
+    info: str = "",
+    n_inadequate: int = 0,
 ) -> Path:
     """Kontur satu besaran per elemen (PRD Bagian 9.1 `contour_*.png`).
 
     `values_si` adalah nilai SI per elemen; konversi ke satuan tampilan terjadi di sini
     (PRD Bagian 4.3). `quantity` menentukan satuan colorbar lewat `config.DISPLAY_UNITS`.
+
+    `info` adalah baris konteks material (`f'c`, `fy`, tebal, selimut, `d_eff`). Tanpa itu
+    gambar yang dicetak dan ditempel ke laporan kehilangan seluruh asumsi yang melahirkan
+    angkanya.
     """
-    _use_agg(preview)
-    from matplotlib.collections import PolyCollection
+    st = style or PlotStyle()
+    _use_agg(st.preview)
     from matplotlib.patches import Patch
 
     unit = io_utils.display_unit(quantity)
@@ -327,10 +556,93 @@ def render_contour(
 
     vmin, vmax = float(values[finite].min()), float(values[finite].max())
     norm, norm_note = _build_norm(vmin, vmax, diverging)
-    cmap = matplotlib.colormaps[config.CMAP_MOMENT if diverging else config.CMAP_MAGNITUDE].copy()
-    cmap.set_bad(config.COLOR_NAN)
+    cmap_name = st.theme.cmap_force if diverging else st.theme.cmap_rebar
+    cmap = matplotlib.colormaps[cmap_name].copy()
+    cmap.set_bad(st.theme.color_nan)
 
-    fig, ax = _figure_for(geom)
+    fig, ax = _figure_for(geom, theme=st.theme)
+    mappable = _draw_field(ax, mesh, values, cmap=cmap, norm=norm, method=st.method, theme=st.theme)
+    _annotate_plan(ax, geom, pz_by_pile=pz_by_pile, theme=st.theme)
+
+    colorbar = fig.colorbar(mappable, ax=ax, shrink=0.85, pad=0.02)
+    colorbar.set_label(f"{title} [{unit}]", color=st.theme.text)
+    colorbar.ax.tick_params(colors=st.theme.text)
+
+    _mark_extremes(ax, mesh, values, finite, unit, st.theme)
+    _inadequate_badge(ax, n_inadequate, st.theme, "PENAMPANG TIDAK MEMADAI")
+    _watermark(ax, st.theme)
+
+    if n_nan:
+        ax.legend(
+            handles=[Patch(facecolor=st.theme.color_nan, label=config.LABEL_NAN)],
+            loc="lower left",
+            fontsize=8,
+            framealpha=0.9,
+            labelcolor=st.theme.text,
+            facecolor=st.theme.background,
+            edgecolor=st.theme.grid,
+        )
+
+    heading = title if not combo else f"{title} - Kombinasi {combo}"
+    subtitle = f"maks {vmax:,.1f} | min {vmin:,.1f} {unit}{norm_note}"
+    if n_nan:
+        subtitle += f" | {n_nan} elemen NaN"
+    if st.method != config.DEFAULT_CONTOUR_METHOD:
+        subtitle += f" | metode {st.method}"
+    if info:
+        subtitle += f"\n{info}"
+    ax.set_title(f"{heading}\n{subtitle}", fontsize=11, color=st.theme.text)
+
+    _save(fig, path, st.dpi, st.preview, st.theme)
+    _log.debug("%s ditulis (maks %.3f, min %.3f %s)", path.name, vmax, vmin, unit)
+    return path
+
+
+def render_categorical(
+    path: Path,
+    geom: GeometryModel,
+    mesh: MeshModel,
+    codes: np.ndarray,
+    *,
+    labels: tuple[str, ...] | list[str],
+    title: str,
+    combo: str = "",
+    pz_by_pile: dict[str, float] | None = None,
+    style: PlotStyle | None = None,
+    info: str = "",
+    n_inadequate: int = 0,
+    zero_label: str = "tanpa tulangan",
+) -> Path:
+    """Plot KATEGORIKAL: tiap elemen diwarnai menurut batang yang terpilih.
+
+    Terpisah dari `render_contour` dengan sengaja. Keduanya melayani model warna yang
+    tidak berhubungan: kontur memetakan besaran kontinu ke gradien, sedangkan ini
+    memetakan pilihan diskret ke warna yang harus mudah dibedakan satu sama lain.
+    Menggabungkannya akan menghasilkan satu fungsi dengan dua cabang yang nyaris tidak
+    berbagi apa pun selain judul.
+
+    `codes` berisi indeks kategori: `0` berarti tidak perlu tulangan (selalu putih),
+    `1..len(labels)` menunjuk `labels`, dan `NaN` berarti tidak ada batang yang memadai.
+    Selalu digambar datar per elemen -- menghaluskan pilihan diskret tidak bermakna.
+    """
+    st = style or PlotStyle()
+    _use_agg(st.preview)
+    from matplotlib.collections import PolyCollection
+    from matplotlib.colors import BoundaryNorm, ListedColormap
+    from matplotlib.patches import Patch
+
+    values = np.asarray(codes, dtype=np.float64)
+    n_bins = len(labels) + 1  # +1 untuk kategori "tanpa tulangan"
+    palette = list(config.CATEGORICAL_COLORS[:n_bins])
+    if len(palette) < n_bins:  # daftar kode lebih panjang dari palet bawaan
+        extra = matplotlib.colormaps["turbo"](np.linspace(0.05, 0.95, n_bins - len(palette)))
+        palette += [matplotlib.colors.to_hex(c) for c in extra]
+
+    cmap = ListedColormap(palette)
+    cmap.set_bad(st.theme.color_inadequate)
+    norm = BoundaryNorm(np.arange(n_bins + 1) - 0.5, cmap.N)
+
+    fig, ax = _figure_for(geom, theme=st.theme)
     collection = PolyCollection(
         _element_polygons(mesh),
         array=np.ma.masked_invalid(values),
@@ -339,52 +651,40 @@ def render_contour(
         edgecolors="none",
     )
     ax.add_collection(collection)
-    _annotate_plan(ax, geom, pz_by_pile=pz_by_pile)
+    _annotate_plan(ax, geom, pz_by_pile=pz_by_pile, theme=st.theme)
 
-    colorbar = fig.colorbar(collection, ax=ax, shrink=0.85, pad=0.02)
-    colorbar.set_label(f"{title} [{unit}]")
+    colorbar = fig.colorbar(collection, ax=ax, shrink=0.85, pad=0.02, ticks=np.arange(n_bins))
+    colorbar.ax.set_yticklabels([zero_label, *labels])
+    colorbar.set_label(title, color=st.theme.text)
+    colorbar.ax.tick_params(colors=st.theme.text)
 
-    # Tandai lokasi ekstrem -- PRD Bagian 9.3 meminta "nilai maks/min + lokasinya".
-    idx_max = int(np.nanargmax(np.where(finite, values, -np.inf)))
-    idx_min = int(np.nanargmin(np.where(finite, values, np.inf)))
-    for index, label, color in (
-        (idx_max, f"maks {values[idx_max]:,.1f}", "#111111"),
-        (idx_min, f"min {values[idx_min]:,.1f}", "#111111"),
-    ):
-        cx, cy = _to_mm(mesh.elem_centroid[index])
-        ax.plot(cx, cy, marker="o", markersize=5, markerfacecolor="none", color=color, zorder=8)
-        ax.annotate(
-            f"{label} {unit}\n({cx:,.0f}, {cy:,.0f})",
-            (cx, cy),
-            textcoords="offset points",
-            xytext=(8, 8),
-            fontsize=7,
-            color=color,
-            zorder=8,
-            bbox={
-                "boxstyle": "round,pad=0.2",
-                "facecolor": "white",
-                "alpha": 0.8,
-                "edgecolor": "none",
-            },
-        )
+    used = sorted({int(v) for v in values[np.isfinite(values)] if v > 0})
+    n_bad = int(np.count_nonzero(~np.isfinite(values)))
+    _inadequate_badge(ax, n_inadequate or n_bad, st.theme, "TIDAK ADA BATANG YANG MEMADAI")
+    _watermark(ax, st.theme)
 
-    if n_nan:
+    if n_bad:
         ax.legend(
-            handles=[Patch(facecolor=config.COLOR_NAN, label=config.LABEL_NAN)],
+            handles=[
+                Patch(facecolor=st.theme.color_inadequate, label="tidak ada batang yang memadai")
+            ],
             loc="lower left",
             fontsize=8,
             framealpha=0.9,
+            labelcolor=st.theme.text,
+            facecolor=st.theme.background,
+            edgecolor=st.theme.grid,
         )
 
     heading = title if not combo else f"{title} - Kombinasi {combo}"
-    subtitle = f"maks {vmax:,.1f} | min {vmin:,.1f} {unit}{norm_note}"
-    if n_nan:
-        subtitle += f" | {n_nan} elemen NaN"
-    ax.set_title(f"{heading}\n{subtitle}", fontsize=11)
+    dipakai = ", ".join(labels[i - 1] for i in used) if used else "(tidak ada)"
+    subtitle = f"dipakai: {dipakai}"
+    if info:
+        subtitle += f"\n{info}"
+    ax.set_title(f"{heading}\n{subtitle}", fontsize=11, color=st.theme.text)
 
-    _save(fig, path, dpi, preview)
-    _log.debug("%s ditulis (maks %.3f, min %.3f %s)", path.name, vmax, vmin, unit)
+    _save(fig, path, st.dpi, st.preview, st.theme)
+    _log.debug("%s ditulis (%d kategori dipakai)", path.name, len(used))
     return path
 
 
@@ -394,8 +694,7 @@ def render_boundary_load_check(
     mesh: MeshModel,
     *,
     pz_by_pile: dict[str, float] | None = None,
-    dpi: int = config.OUTPUT_DPI,
-    preview: bool = False,
+    style: PlotStyle | None = None,
 ) -> Path:
     """Peta node jepit & area terbeban (PRD Bagian 9.1 `boundary_load_check.png`).
 
@@ -403,12 +702,13 @@ def render_boundary_load_check(
     dan beban benar-benar menempel di tempat yang seharusnya. Physical group yang salah
     atau kosong terlihat langsung di sini.
     """
-    _use_agg(preview)
+    st = style or PlotStyle()
+    _use_agg(st.preview)
     from matplotlib.collections import PolyCollection
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
 
-    fig, ax = _figure_for(geom)
+    fig, ax = _figure_for(geom, theme=st.theme)
 
     is_pier = np.zeros(mesh.n_elements, dtype=bool)
     is_pile = np.zeros(mesh.n_elements, dtype=bool)
@@ -417,12 +717,12 @@ def render_boundary_load_check(
     for name in mesh.pile_groups():
         is_pile |= mesh.group_mask(name)
 
-    colors = np.where(is_pier, _COLOR_PIER, np.where(is_pile, _COLOR_PILE, _COLOR_CAP))
+    colors = np.where(is_pier, st.theme.pier, np.where(is_pile, st.theme.pile, st.theme.cap))
     ax.add_collection(
         PolyCollection(
             _element_polygons(mesh),
             facecolors=list(colors),
-            edgecolors=_COLOR_EDGE,
+            edgecolors=st.theme.edge,
             linewidths=0.2,
         )
     )
@@ -438,11 +738,11 @@ def render_boundary_load_check(
             linestyle="None",
             marker="s",
             markersize=2.5,
-            color=_COLOR_PIER_LINE,
+            color=st.theme.pier_line,
             zorder=8,
         )
 
-    _annotate_plan(ax, geom, pz_by_pile=pz_by_pile)
+    _annotate_plan(ax, geom, pz_by_pile=pz_by_pile, theme=st.theme)
 
     ax.legend(
         handles=[
@@ -452,24 +752,32 @@ def render_boundary_load_check(
                 linestyle="None",
                 marker="s",
                 markersize=5,
-                color=_COLOR_PIER_LINE,
+                color=st.theme.pier_line,
                 label=f"Node JEPIT 6 DOF ({len(fixed_nodes)})",
             ),
-            Patch(facecolor=_COLOR_PILE, label=f"Elemen terbeban ({int(is_pile.sum())})"),
-            Patch(facecolor=_COLOR_CAP, label=f"Pelat bebas ({int((~is_pier & ~is_pile).sum())})"),
+            Patch(facecolor=st.theme.pile, label=f"Elemen terbeban ({int(is_pile.sum())})"),
+            Patch(
+                facecolor=st.theme.cap,
+                label=f"Pelat bebas ({int((~is_pier & ~is_pile).sum())})",
+            ),
         ],
         loc="upper right",
         fontsize=8,
         framealpha=0.9,
+        labelcolor=st.theme.text,
+        facecolor=st.theme.background,
+        edgecolor=st.theme.grid,
     )
     ax.set_title(
         "Cek Visual Tumpuan & Pembebanan\n"
         f"{len(fixed_nodes)} node jepit di {len(mesh.pier_groups())} pier | "
         f"{int(is_pile.sum())} elemen terbeban di {len(mesh.pile_groups())} pile",
         fontsize=11,
+        color=st.theme.text,
     )
+    _watermark(ax, st.theme)
 
-    _save(fig, path, dpi, preview)
+    _save(fig, path, st.dpi, st.preview, st.theme)
     _log.info("%s ditulis: %s", path.name, path)
     return path
 
@@ -514,7 +822,7 @@ def _render_opsvis(
     title: str,
     n_elements: int,
     force: bool,
-    dpi: int,
+    style: PlotStyle,
     warnings: list[str],
 ) -> Path | None:
     """Kerangka bersama kedua plot opsvis: ambang, figure 3D, penanganan kegagalan."""
@@ -528,7 +836,9 @@ def _render_opsvis(
     import matplotlib.pyplot as plt
 
     fig = plt.figure(figsize=(11.0, 8.0))
+    fig.patch.set_facecolor(style.theme.background)
     ax = fig.add_subplot(projection="3d")
+    ax.set_facecolor(style.theme.background)
     try:
         plot_call(ax)
     except Exception as exc:
@@ -545,9 +855,9 @@ def _render_opsvis(
         warnings.append(message)
         return None
 
-    ax.set_title(title, fontsize=11)
+    ax.set_title(title, fontsize=11, color=style.theme.text)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=dpi)
+    fig.savefig(path, dpi=style.dpi, facecolor=style.theme.background)
     plt.close(fig)
     _log.info("%s ditulis: %s", path.name, path)
     return path
@@ -559,7 +869,7 @@ def render_opsvis_model(
     n_elements: int,
     n_fixed_nodes: int,
     force: bool = False,
-    dpi: int = config.OUTPUT_DPI,
+    style: PlotStyle | None = None,
     warnings: list[str] | None = None,
 ) -> Path | None:
     """`opsv.plot_model()` -- cek geometri & tumpuan (PRD Bagian 9.3).
@@ -584,7 +894,7 @@ def render_opsvis_model(
         ),
         n_elements=n_elements,
         force=force,
-        dpi=dpi,
+        style=style or PlotStyle(),
         warnings=warnings if warnings is not None else [],
     )
 
@@ -597,7 +907,7 @@ def render_opsvis_defo(
     max_deflection_m: float,
     n_elements: int,
     force: bool = False,
-    dpi: int = config.OUTPUT_DPI,
+    style: PlotStyle | None = None,
     warnings: list[str] | None = None,
 ) -> Path | None:
     """`opsv.plot_defo()` -- deformasi, faktor skala dicantumkan di judul."""
@@ -613,6 +923,6 @@ def render_opsvis_defo(
         ),
         n_elements=n_elements,
         force=force,
-        dpi=dpi,
+        style=style or PlotStyle(),
         warnings=warnings if warnings is not None else [],
     )

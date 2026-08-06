@@ -73,6 +73,12 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--dpi", type=int, default=config.OUTPUT_DPI)
     parser.add_argument(
+        "--theme",
+        choices=tuple(config.THEMES),
+        default=config.DEFAULT_THEME,
+        help="Tema warna seluruh plot (gaya shell-kit)",
+    )
+    parser.add_argument(
         "--init-example",
         type=Path,
         default=None,
@@ -292,8 +298,7 @@ def write_model_artifacts(
     run_dir: Path,
     model_dir: Path,
     *,
-    dpi: int,
-    preview: bool = False,
+    style: renderer.PlotStyle,
 ) -> None:
     """Tulis isi `00_Model/`: nodes, elements, mesh_summary, mesh_plan."""
     prepared.mesh.write_nodes_csv(model_dir / "nodes.csv")
@@ -315,8 +320,7 @@ def write_model_artifacts(
         project_name=prepared.project_name,
         mesh_size_m=prepared.options.size_global,
         n_tri=prepared.raw.n_tri,
-        dpi=dpi,
-        preview=preview,
+        style=style,
     )
 
 
@@ -386,7 +390,7 @@ def _run_inner(
     manifest: provenance.Manifest,
 ) -> Path:
     prepared = prepare_model(args, model_dir, manifest, require_material=False)
-    write_model_artifacts(prepared, run_dir, model_dir, dpi=args.dpi, preview=args.preview)
+    write_model_artifacts(prepared, run_dir, model_dir, style=renderer.PlotStyle.from_args(args))
 
     record_model_stats(prepared, manifest)
     manifest.update_model_stats({"element_type": "quad4 (calon ShellMITC4)"})

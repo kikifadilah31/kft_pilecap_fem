@@ -37,6 +37,7 @@ from pilecap_fem import (
     math_engine,
     mesh_model,
     postproc_engine,
+    provenance,
     renderer,
     reporter,
 )
@@ -60,6 +61,21 @@ def add_report_arguments(parser: argparse.ArgumentParser) -> None:
         "--wood-armer",
         action="store_true",
         help="Hitung momen desain Wood-Armer (BELUM tersedia - lihat pesan errornya)",
+    )
+    parser.add_argument(
+        "--contour-method",
+        choices=config.CONTOUR_METHODS,
+        default=config.DEFAULT_CONTOUR_METHOD,
+        help=(
+            "element-center: satu warna datar per elemen (jujur, bawaan). "
+            "average-nodal: dihaluskan -- lebih rapi tetapi menyiratkan kehalusan yang "
+            "tidak pernah dihitung, paling menyesatkan di singularitas tepi pier"
+        ),
+    )
+    parser.add_argument(
+        "--no-rebar-plots",
+        action="store_true",
+        help="Lewati 8 plot tulangan per kombinasi (mempercepat pelaporan)",
     )
     parser.add_argument("--no-envelope", action="store_true", help="Lewati envelope")
     parser.add_argument(
@@ -89,6 +105,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_report_arguments(parser)
     parser.add_argument("--dpi", type=int, default=config.OUTPUT_DPI)
+    # Sengaja di sini, bukan di `add_report_arguments`: `pilecap-run` sudah mendapat
+    # `--theme` dari `add_common_arguments`, dan mendaftarkannya di kedua tempat akan
+    # membuat argparse menolak parser gabungannya.
+    parser.add_argument(
+        "--theme",
+        choices=tuple(config.THEMES),
+        default=config.DEFAULT_THEME,
+        help="Tema warna seluruh plot (gaya shell-kit)",
+    )
     parser.add_argument(
         "--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"), default="INFO"
     )
@@ -216,13 +241,21 @@ def run(args: argparse.Namespace, command: str) -> Path:
     # `validators.validate_design`, sehingga config yang kurang lengkap gagal dalam
     # hitungan milidetik, bukan setelah seluruh kontur selesai digambar (Core 3).
     capacity_inputs = capacity_engine.CapacityInputs.from_config(cfg)
+    style = renderer.PlotStyle.from_args(args)
+    # Asumsi kapasitas MENGUBAH angka desain (mode tulangan, grid sengkang, batas
+    # `As_min`, asumsi `dv`). Tanpa langkah ini semuanya hanya hidup di calc sheet dan
+    # tidak pernah masuk catatan provenance run.
+    provenance.record_capacity(run_dir, capacity_engine.provenance_block(capacity_inputs))
     _log.info(
-        "Cek kapasitas aktif: shell-kit v%s | fy = %.0f MPa | phi = %.2f/%.2f (%s)",
+        "Cek kapasitas aktif: shell-kit v%s | fy = %.0f MPa | phi = %.2f/%.2f (%s) | "
+        "mode tulangan %s | tema %s",
         capacity_engine.provenance_block(capacity_inputs)["engine_version"],
         capacity_inputs.fy_mpa,
         capacity_inputs.phi_flexure,
         capacity_inputs.phi_shear,
         capacity_inputs.phi_source,
+        capacity_inputs.rebar_mode,
+        style.theme.name,
     )
 
     deep_ratio = postproc_engine.shear_span_ratio(geom, cover_m)
@@ -240,7 +273,7 @@ def run(args: argparse.Namespace, command: str) -> Path:
         pz_by_pile={
             row["pile_id"]: float(row["Pz_N"]) for row in first_equilibrium.get("pile_loads", [])
         },
-        dpi=args.dpi,
+        style=style,
     )
     results_by_combo: dict[str, postproc_engine.ElementResults] = {}
     designs_by_combo: dict[str, dict[tuple[str, str], capacity_engine.FlexureDesign]] = {}
@@ -266,7 +299,8 @@ def run(args: argparse.Namespace, command: str) -> Path:
             mesh_size=mesh_size,
             deep_ratio=deep_ratio,
             command=command,
-            dpi=args.dpi,
+            style=style,
+            no_rebar_plots=args.no_rebar_plots,
             combo_rows=combo_rows,
             capacity_inputs=capacity_inputs,
             designs_by_combo=designs_by_combo,
@@ -276,7 +310,7 @@ def run(args: argparse.Namespace, command: str) -> Path:
     envelope = None
     if not args.no_envelope and len(results_by_combo) >= 1:
         envelope = _write_envelope(
-            run_dir, geom, mesh, results_by_combo, designs_by_combo, dpi=args.dpi
+            run_dir, geom, mesh, results_by_combo, designs_by_combo, style=style
         )
 
     reporter.write_summary(
@@ -303,6 +337,143 @@ def run(args: argparse.Namespace, command: str) -> Path:
     return run_dir
 
 
+def _material_info(inputs: capacity_engine.CapacityInputs) -> str:
+    """Baris konteks material yang muncul di bawah judul setiap plot."""
+    return (
+        f"f'c = {inputs.fc_mpa:,.0f} MPa | fy = {inputs.fy_mpa:,.0f} MPa | "
+        f"t = {inputs.thickness_mm:,.0f} mm | selimut = {inputs.cover_mm:,.0f} mm | "
+        f"mode {inputs.rebar_mode}"
+    )
+
+
+def _render_rebar_plots(
+    combo_dir: Path,
+    geom: GeometryModel,
+    mesh: mesh_model.MeshModel,
+    *,
+    designs: dict[tuple[str, str], capacity_engine.FlexureDesign],
+    selections: dict[tuple[str, str], capacity_engine.RebarSelection],
+    shear_maps: dict[str, capacity_engine.ShearRebarMap],
+    combo: str,
+    pz_by_pile: dict[str, float],
+    style: renderer.PlotStyle,
+    info: str,
+) -> None:
+    """Delapan plot tulangan per kombinasi: 4 As + 4 seleksi + 4 geser.
+
+    Peta per elemen ini adalah alat BACA, bukan angka desain: puncaknya jatuh di
+    singularitas tepi zona jepit pier. Angka desain tetap berasal dari lajur di muka pier
+    (lentur) dan penampang `d` dari muka pier (geser) -- dinyatakan di caption tiap plot
+    agar tidak ada gambar yang beredar tanpa peringatan itu.
+    """
+    peringatan = "PETA ORIENTASI - angka desain dari lajur muka pier, bukan puncak elemen"
+
+    for (direction, face), (filename, title) in config.REBAR_FACES.items():
+        design = designs[(direction, face)]
+        renderer.render_contour(
+            combo_dir / filename,
+            geom,
+            mesh,
+            capacity_engine.as_design_array(design),
+            quantity="steel_area",
+            title=title,
+            # `As` tidak bertanda: skala diverging yang dipusatkan di nol akan membuang
+            # separuh rentang warna untuk nilai yang tidak pernah muncul.
+            diverging=False,
+            combo=combo,
+            pz_by_pile=pz_by_pile,
+            style=style,
+            info=f"{info}\n{peringatan}",
+            n_inadequate=design.n_inadequate,
+        )
+
+        selection = selections[(direction, face)]
+        stem = filename.replace("contour_As_", f"contour_{selection.kind}_")
+        judul = f"{selection.kind.capitalize()} tulangan arah {direction.upper()} - muka {face}"
+        if selection.is_categorical:
+            renderer.render_categorical(
+                combo_dir / stem,
+                geom,
+                mesh,
+                _category_index(selection),
+                labels=selection.labels,
+                title=judul,
+                combo=combo,
+                pz_by_pile=pz_by_pile,
+                style=style,
+                info=f"{info}\n{peringatan}",
+            )
+        else:
+            renderer.render_contour(
+                combo_dir / stem,
+                geom,
+                mesh,
+                selection.values,
+                quantity=selection.quantity,
+                title=judul,
+                diverging=False,
+                combo=combo,
+                pz_by_pile=pz_by_pile,
+                style=style,
+                info=f"{info}\n{peringatan}",
+                n_inadequate=selection.n_inadequate,
+            )
+
+    for direction, (_, avs_file, dia_file, label) in config.SHEAR_REBAR_FIELDS.items():
+        smap = shear_maps[direction]
+        catatan = (
+            f"{smap.n_needs_stirrup} elemen V_u > phi.V_c (perlu sengkang NYATA) | "
+            f"{smap.n_av_min_only} elemen hanya kena Av,min"
+        )
+        renderer.render_contour(
+            combo_dir / avs_file,
+            geom,
+            mesh,
+            smap.av_per_s,
+            quantity="shear_steel_ratio",
+            title=f"Av/s sengkang {label}",
+            diverging=False,
+            combo=combo,
+            pz_by_pile=pz_by_pile,
+            style=style,
+            info=f"{info}\n{catatan}",
+            n_inadequate=smap.n_web_crushed,
+        )
+        renderer.render_contour(
+            combo_dir / dia_file,
+            geom,
+            mesh,
+            smap.stirrup_diameter,
+            quantity="length",
+            title=f"Diameter sengkang {label}",
+            diverging=False,
+            combo=combo,
+            pz_by_pile=pz_by_pile,
+            style=style,
+            # Diameter sengkang sering nyaris seragam karena luas per kaki mudah
+            # terpenuhi pada grid yang lebar; Av/s yang membawa informasinya.
+            info=f"{info}\n{catatan} | baca bersama plot Av/s",
+            n_inadequate=smap.n_web_crushed,
+        )
+
+
+def _category_index(selection: capacity_engine.RebarSelection) -> np.ndarray:
+    """Ubah nilai seleksi menjadi indeks kategori 0..len(labels) untuk plot kategorikal.
+
+    Mode konfigurasi sudah memberi indeks 1-basis. Mode diameter memberi diameter dalam
+    meter, sehingga perlu dipetakan ke posisinya di `AVAILABLE_DIAMETERS`.
+    """
+    if selection.kind == capacity_engine.SELECTION_CONFIG:
+        return np.asarray(selection.values, dtype=np.float64)
+
+    diameters_mm = np.round(np.asarray(selection.values, dtype=np.float64) * 1e3, 3)
+    index = np.zeros(diameters_mm.shape, dtype=np.float64)
+    for position, label in enumerate(selection.labels, start=1):
+        index[diameters_mm == float(label.lstrip("D"))] = position
+    index[~np.isfinite(diameters_mm)] = np.nan
+    return index
+
+
 def _report_one_combo(
     *,
     combo: str,
@@ -319,7 +490,8 @@ def _report_one_combo(
     mesh_size: float,
     deep_ratio: dict[str, Any],
     command: str,
-    dpi: int,
+    style: renderer.PlotStyle,
+    no_rebar_plots: bool,
     combo_rows: list[dict[str, Any]],
     capacity_inputs: capacity_engine.CapacityInputs,
     designs_by_combo: dict[str, dict[tuple[str, str], capacity_engine.FlexureDesign]],
@@ -335,6 +507,10 @@ def _report_one_combo(
     equilibrium = json.loads((combo_dir / "equilibrium_check.json").read_text(encoding="utf-8"))
     pz_by_pile = {row["pile_id"]: float(row["Pz_N"]) for row in equilibrium.get("pile_loads", [])}
 
+    # Konteks material yang menyertai SETIAP plot. Tanpa ini gambar yang dicetak dan
+    # ditempel ke laporan kehilangan seluruh asumsi yang melahirkan angkanya.
+    info = _material_info(capacity_inputs)
+
     # --- kontur -------------------------------------------------------------
     for field, (filename, quantity, title) in config.CONTOUR_FIELDS.items():
         renderer.render_contour(
@@ -346,7 +522,8 @@ def _report_one_combo(
             title=title,
             combo=combo,
             pz_by_pile=pz_by_pile,
-            dpi=dpi,
+            style=style,
+            info=info,
         )
 
     displacements_csv = combo_dir / config.FILE_NODE_DISPLACEMENTS
@@ -361,7 +538,8 @@ def _report_one_combo(
             title="Lendutan vertikal w",
             combo=combo,
             pz_by_pile=pz_by_pile,
-            dpi=dpi,
+            style=style,
+            info=info,
         )
 
     # --- momen lajur & geser ------------------------------------------------
@@ -390,21 +568,34 @@ def _report_one_combo(
     strip_design_by_combo[combo] = strip_design
     shear_capacities = capacity_engine.one_way_shear_from_checks(shear_checks, capacity_inputs)
 
-    reporter.write_rebar_design_csv(combo_dir / config.FILE_REBAR_DESIGN, designs, mesh)
-    for (direction, face), (filename, title) in config.REBAR_FACES.items():
-        renderer.render_contour(
-            combo_dir / filename,
+    selections = {
+        key: capacity_engine.select_flexure_bars(design, capacity_inputs)
+        for key, design in designs.items()
+    }
+    shear_maps = {
+        direction: capacity_engine.shear_rebar_map(
+            getattr(results, field), capacity_inputs, direction=direction
+        )
+        for direction, (field, _, _, _) in config.SHEAR_REBAR_FIELDS.items()
+    }
+
+    reporter.write_rebar_design_csv(
+        combo_dir / config.FILE_REBAR_DESIGN, designs, mesh, selections=selections
+    )
+    reporter.write_shear_rebar_csv(combo_dir / config.FILE_SHEAR_REBAR, shear_maps, mesh)
+
+    if not no_rebar_plots:
+        _render_rebar_plots(
+            combo_dir,
             geom,
             mesh,
-            capacity_engine.as_design_array(designs[(direction, face)]),
-            quantity="steel_area",
-            title=title,
-            # `As` tidak bertanda: skala diverging yang dipusatkan di nol akan membuang
-            # separuh rentang warna untuk nilai yang tidak pernah muncul.
-            diverging=False,
+            designs=designs,
+            selections=selections,
+            shear_maps=shear_maps,
             combo=combo,
             pz_by_pile=pz_by_pile,
-            dpi=dpi,
+            style=style,
+            info=info,
         )
 
     # --- calc sheet ---------------------------------------------------------
@@ -443,6 +634,8 @@ def _report_one_combo(
         capacity_inputs=capacity_inputs,
         strip_design=strip_design,
         designs=designs,
+        selections=selections,
+        shear_maps=shear_maps,
         shear_capacities=shear_capacities,
         trace=trace,
         deep_ratio=deep_ratio,
@@ -480,7 +673,7 @@ def _write_envelope(
     results_by_combo: dict[str, postproc_engine.ElementResults],
     designs_by_combo: dict[str, dict[tuple[str, str], capacity_engine.FlexureDesign]],
     *,
-    dpi: int,
+    style: renderer.PlotStyle,
 ) -> postproc_engine.Envelope:
     envelope = postproc_engine.build_envelope(results_by_combo)
     envelope_dir = run_dir / config.ENVELOPE_SUBDIR
@@ -502,7 +695,7 @@ def _write_envelope(
                 quantity=quantity,
                 title=f"ENVELOPE {which} - {title}",
                 combo="seluruh kombinasi",
-                dpi=dpi,
+                style=style,
             )
             plots.append(name)
 

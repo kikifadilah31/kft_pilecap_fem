@@ -420,14 +420,12 @@ def validate_design(cfg: dict) -> None:
             "checker dapat menelusuri asal angka fy (PRD Bagian 9.4 bagian 1)."
         )
 
-    if design.get("rebar_spacing") is None:
-        raise InputError(
-            "`design.rebar_spacing` (spasi tulangan rencana) bernilai null.\n"
-            "  Nilai ini menentukan diameter batang yang dipilih dan karenanya tinggi "
-            "efektif d, jadi ia mengubah `As perlu` -- tidak boleh ditebak.\n"
-            "  Isi `design.rebar_spacing` [mm], mis. 150."
-        )
-    _require_positive(float(design["rebar_spacing"]), "design.rebar_spacing")
+    _validate_rebar_mode(design)
+    _validate_stirrups(design)
+
+    surface_zone = design.get("as_min_surface_zone")
+    if surface_zone is not None:
+        _require_positive(float(surface_zone), "design.as_min_surface_zone")
 
     if design.get("cover") is None:
         raise InputError("`design.cover` bernilai null; tinggi efektif d tidak dapat dihitung.")
@@ -452,6 +450,108 @@ def validate_design(cfg: dict) -> None:
                 f"`design.{key}` = {value} di luar rentang 0 < phi <= 1. "
                 "Kosongkan (null) bila ingin memakai nilai SNI bawaan shell-kit."
             )
+
+
+#: Mode pemilihan batang tulangan lentur. Menentukan MANA yang jadi masukan dan mana yang
+#: dihitung -- keduanya sah, tetapi tidak boleh ambigu.
+REBAR_MODES: tuple[str, str] = ("spacing_fixed", "diameter_fixed")
+
+
+def _known_config_codes() -> list[str]:
+    """Kode konfigurasi yang dikenal `shell-kit`, diambil dari sumbernya."""
+    from shell_kit import rebar as sk_rebar
+
+    codes: list[str] = list(sk_rebar.get_available_config_codes())
+    return codes
+
+
+def _validate_rebar_mode(design: dict) -> None:
+    """Cabang `rebar_mode`: yang tetap adalah masukan, yang lain dihitung.
+
+    Kode konfigurasi divalidasi DI SINI terhadap tabel shell-kit. Tanpa itu kode yang
+    salah ketik baru meledak jauh di hilir sebagai `KeyError` mentah dari dalam
+    `shell_kit.rebar` -- pesan yang tidak memberi tahu user apa pun tentang config-nya.
+    """
+    mode = design.get("rebar_mode")
+    if mode is None:
+        raise InputError(
+            "`design.rebar_mode` belum diisi.\n"
+            "  Tentukan mana yang Anda tetapkan dan mana yang dihitung tool:\n"
+            '    "spacing_fixed"  -> Anda isi `rebar_spacing`, tool memilih DIAMETER\n'
+            '    "diameter_fixed" -> Anda isi `rebar_config`, tool menghitung SPASI'
+        )
+    if mode not in REBAR_MODES:
+        raise InputError(f"`design.rebar_mode` = {mode!r} tidak dikenal. Pilihan: {REBAR_MODES}.")
+
+    if mode == "spacing_fixed":
+        if design.get("rebar_spacing") is None:
+            raise InputError(
+                '`design.rebar_spacing` wajib diisi pada mode "spacing_fixed".\n'
+                "  Nilai ini menentukan diameter batang yang dipilih dan karenanya tinggi "
+                "efektif d, jadi ia mengubah `As perlu` -- tidak boleh ditebak.\n"
+                "  Isi `design.rebar_spacing` [mm], mis. 150."
+            )
+        _require_positive(float(design["rebar_spacing"]), "design.rebar_spacing")
+    else:
+        code = design.get("rebar_config")
+        if code is None:
+            raise InputError(
+                '`design.rebar_config` wajib diisi pada mode "diameter_fixed".\n'
+                '  Isi kode konfigurasi batang, mis. "25" (D25 tunggal) atau "2D25".\n'
+                f"  Kode tersedia: {', '.join(_known_config_codes())}"
+            )
+        known = _known_config_codes()
+        if str(code).upper().strip() not in known:
+            raise InputError(
+                f"`design.rebar_config` = {code!r} bukan kode yang dikenal.\n"
+                f"  Kode tersedia: {', '.join(known)}"
+            )
+
+    # Opsional pada kedua mode: mempersempit pilihan ke daftar konfigurasi tertentu,
+    # yang sekaligus mengubah plot menjadi kategorikal berlabel kode.
+    codes = design.get("rebar_select_codes")
+    if codes is not None:
+        if not isinstance(codes, list) or not codes:
+            raise InputError(
+                "`design.rebar_select_codes` harus berupa daftar kode yang tidak kosong, "
+                'mis. ["16", "22", "2D25"]. Kosongkan (null) bila tidak dipakai.'
+            )
+        known = _known_config_codes()
+        unknown = [c for c in codes if str(c).upper().strip() not in known]
+        if unknown:
+            raise InputError(
+                f"`design.rebar_select_codes` memuat kode yang tidak dikenal: {unknown}.\n"
+                f"  Kode tersedia: {', '.join(known)}"
+            )
+
+
+def _validate_stirrups(design: dict) -> None:
+    """Spasi sengkang WAJIB -- keduanya menentukan diameter sengkang terpilih.
+
+    Diperlakukan seperti `design.fy`: tanpa keduanya, `calc_shear_diameter` tidak punya
+    luas per kaki untuk dihitung, dan menebak grid sengkang berarti melaporkan diameter
+    yang tidak pernah ditetapkan siapa pun.
+    """
+    for key, contoh in (("stirrup_spacing_long", 200), ("stirrup_spacing_trans", 200)):
+        if design.get(key) is None:
+            raise InputError(
+                f"`design.{key}` belum diisi.\n"
+                "  Diameter sengkang dihitung dari luas per kaki "
+                "`Av/s x s_long x s_trans`, sehingga KEDUA spasi menentukan hasilnya.\n"
+                f"  Isi `design.{key}` [mm], mis. {contoh}."
+            )
+        _require_positive(float(design[key]), f"design.{key}")
+
+    diameters = design.get("stirrup_select_diameters")
+    if diameters is not None:
+        if not isinstance(diameters, list) or not diameters:
+            raise InputError(
+                "`design.stirrup_select_diameters` harus berupa daftar diameter [mm] yang "
+                "tidak kosong, mis. [10, 13, 16]. Kosongkan (null) untuk memakai daftar "
+                "bawaan shell-kit."
+            )
+        for value in diameters:
+            _require_positive(float(value), "design.stirrup_select_diameters")
 
 
 # ---------------------------------------------------------------------------

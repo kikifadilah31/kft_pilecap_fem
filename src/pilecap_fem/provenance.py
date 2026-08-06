@@ -149,6 +149,32 @@ class Manifest:
         return self.path
 
 
+def record_capacity(run_dir: Path, capacity_provenance: dict[str, Any]) -> Path:
+    """Sisipkan blok provenance kapasitas ke `run_manifest.json` yang sudah ada.
+
+    `pilecap-analyze` yang menulis manifest, tetapi kapasitas baru dihitung
+    `pilecap-report` -- tanpa langkah ini, asumsi yang MENGUBAH angka desain
+    (`as_min_surface_zone`, mode tulangan, grid sengkang, asumsi `dv`) hanya hidup di
+    calc sheet dan tidak pernah masuk catatan provenance run (PRD Core 5).
+
+    Manifest ditulis ulang setiap kali laporan dibuat, sehingga isinya selalu
+    mencerminkan pelaporan terakhir -- bukan pelaporan pertama.
+    """
+    path = run_dir / MANIFEST_FILENAME
+    data = json.loads(path.read_text(encoding="utf-8"))
+    standards = data.setdefault("standards", {})
+    standards["capacity"] = capacity_provenance
+    standards["catatan"] = (
+        "Kapasitas lentur & geser SATU ARAH dihitung shell-kit menurut SNI 2847:2019 "
+        "(lihat blok `capacity`). Geser PONS tetap NOT_EVALUATED."
+    )
+    path.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8"
+    )
+    _log.debug("run_manifest.json diperbarui dengan blok kapasitas")
+    return path
+
+
 def make_run_dir(output_root: Path, now: datetime | None = None) -> Path:
     """Folder run baru `pilecap_YYYYMMDD_HHMMSS`. Tidak pernah menimpa (PRD Bagian 9.1)."""
     stamp = (now or datetime.now()).strftime(config.RUN_DIR_FORMAT)

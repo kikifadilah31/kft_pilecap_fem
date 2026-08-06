@@ -147,7 +147,9 @@ def _run_inner(
     manifest: provenance.Manifest,
 ) -> Path:
     prepared = cli_pilecap_mesh.prepare_model(args, model_dir, manifest, require_material=True)
-    cli_pilecap_mesh.write_model_artifacts(prepared, run_dir, model_dir, dpi=args.dpi)
+    cli_pilecap_mesh.write_model_artifacts(
+        prepared, run_dir, model_dir, style=renderer.PlotStyle.from_args(args)
+    )
     cli_pilecap_mesh.record_model_stats(prepared, manifest)
 
     # Geometri hasil resolusi ditulis apa adanya agar folder run SWASEMBADA:
@@ -255,7 +257,7 @@ def _run_inner(
                 n_elements=prepared.mesh.n_elements,
                 n_fixed_nodes=len(result.reaction_nodes),
                 force=args.opsvis,
-                dpi=args.dpi,
+                style=renderer.PlotStyle.from_args(args),
                 warnings=plot_warnings,
             )
             opsvis_plotted = True
@@ -266,7 +268,7 @@ def _run_inner(
             max_deflection_m=result.max_deflection,
             n_elements=prepared.mesh.n_elements,
             force=args.opsvis,
-            dpi=args.dpi,
+            style=renderer.PlotStyle.from_args(args),
             warnings=plot_warnings,
         )
 

@@ -52,12 +52,17 @@ _LENGTH_SCALARS: tuple[tuple[str, str], ...] = (
     ("mesh", "size_local_pier"),
     ("design", "cover"),
     ("design", "rebar_spacing"),
+    ("design", "stirrup_spacing_long"),
+    ("design", "stirrup_spacing_trans"),
+    ("design", "as_min_surface_zone"),
 )
 _LENGTH_PAIRS: tuple[tuple[str, str], ...] = (
     ("pilecap", "origin"),
     ("pile", "grid_origin"),
     ("pier", "centerline"),
 )
+#: Daftar besaran panjang berpanjang bebas (bukan pasangan [x, y]).
+_LENGTH_LISTS: tuple[tuple[str, str], ...] = (("design", "stirrup_select_diameters"),)
 _STRESS_SCALARS: tuple[tuple[str, str], ...] = (
     ("material", "fc"),
     ("material", "E"),
@@ -204,6 +209,19 @@ def _scale_pair(block: dict[str, Any] | None, key: str, factor: float) -> None:
     block[key] = [float(value[0]) * factor, float(value[1]) * factor]
 
 
+def _scale_list(block: dict[str, Any] | None, key: str, factor: float) -> None:
+    """Daftar besaran berdimensi, mis. daftar diameter sengkang yang diizinkan.
+
+    Panjangnya bebas -- berbeda dari `_scale_pair` yang justru menuntut tepat dua elemen.
+    """
+    if block is None or block.get(key) is None:
+        return
+    value = block[key]
+    if not isinstance(value, (list, tuple)) or not value:
+        raise InputError(f"Nilai {key!r} = {value!r} harus berupa daftar angka tak kosong.")
+    block[key] = [float(v) * factor for v in value]
+
+
 def load_config(path: Path) -> LoadedConfig:
     """Baca config JSON dan konversikan seluruh besaran berdimensi ke SI.
 
@@ -238,6 +256,8 @@ def load_config(path: Path) -> LoadedConfig:
         _scale(si.get(block), key, f_length)
     for block, key in _LENGTH_PAIRS:
         _scale_pair(si.get(block), key, f_length)
+    for block, key in _LENGTH_LISTS:
+        _scale_list(si.get(block), key, f_length)
     for block, key in _STRESS_SCALARS:
         _scale(si.get(block), key, f_stress)
     for block, key in _FORCE_PER_CUBIC_METRE_SCALARS:

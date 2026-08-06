@@ -584,10 +584,90 @@ def write_shear_checks_csv(path: Path, checks: list[ShearCheck]) -> Path:
     return path
 
 
+def write_shear_rebar_csv(
+    path: Path,
+    shear_maps: dict[str, capacity_engine.ShearRebarMap],
+    mesh: MeshModel,
+) -> Path:
+    """`shear_rebar.csv` -- kebutuhan sengkang per elemen, kedua arah.
+
+    Kolom `Av_s` dan `Av_s_tanpa_min` sengaja DIPISAH. Dengan `Av,min` aktif, jumlah elemen
+    ber-`Av/s > 0` jauh lebih besar daripada yang beton-nya benar-benar tidak cukup
+    (DIUKUR pada ex01: 307 versus 31). Tanpa kolom kedua, pembaca tidak punya cara
+    membedakan "perlu sengkang" dari "kena minimum".
+    """
+    unit_len = io_utils.display_unit("length")
+    unit_q = io_utils.display_unit("shear_per_width")
+    unit_av = io_utils.display_unit("shear_steel_ratio")
+    to_disp = io_utils.to_display
+
+    directions = list(shear_maps)
+    header = [
+        "elem_tag",
+        f"centroid_x [{unit_len}]",
+        f"centroid_y [{unit_len}]",
+        "group",
+    ]
+    for direction in directions:
+        header += [
+            f"V_u_{direction} [{unit_q}]",
+            f"phi_Vc_{direction} [{unit_q}]",
+            f"Av_s_{direction} [{unit_av}]",
+            f"Av_s_tanpa_min_{direction} [{unit_av}]",
+            f"D_sengkang_{direction} [{unit_len}]",
+            f"status_{direction}",
+        ]
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(header)
+        for i in range(mesh.n_elements):
+            row: list[Any] = [
+                int(mesh.elem_tags[i]),
+                f"{to_disp(mesh.elem_centroid[i, 0], 'length'):.3f}",
+                f"{to_disp(mesh.elem_centroid[i, 1], 'length'):.3f}",
+                mesh.group_names[int(mesh.elem_group[i])],
+            ]
+            for direction in directions:
+                smap = shear_maps[direction]
+                row += [
+                    f"{to_disp(smap.v_u[i], 'shear_per_width'):.4f}",
+                    f"{to_disp(smap.phi_v_c, 'shear_per_width'):.4f}",
+                    f"{to_disp(smap.av_per_s[i], 'shear_steel_ratio'):.6f}",
+                    f"{to_disp(smap.av_per_s_no_min[i], 'shear_steel_ratio'):.6f}",
+                    f"{to_disp(smap.stirrup_diameter[i], 'length'):.1f}",
+                    str(smap.status[i]),
+                ]
+            writer.writerow(row)
+    _log.debug("shear_rebar.csv ditulis: %s", path)
+    return path
+
+
+def _selection_cell(selection: capacity_engine.RebarSelection, index: int) -> str:
+    """Nilai seleksi satu elemen sebagai teks siap-baca.
+
+    Kategorikal dicetak sebagai LABEL (`2D25`, `D16`), bukan indeks -- indeks hanya
+    bermakna bersama daftar kodenya, dan CSV harus dapat dibaca tanpa berkas lain.
+    """
+    value = float(selection.values[index])
+    if not np.isfinite(value):
+        return "nan"
+    if selection.kind == capacity_engine.SELECTION_CONFIG:
+        position = int(value)
+        return "-" if position == 0 else selection.labels[position - 1]
+    if selection.kind == capacity_engine.SELECTION_DIAMETER:
+        mm = io_utils.to_display(value, "length")
+        return "-" if mm <= 0.0 else f"D{mm:.0f}"
+    return f"{io_utils.to_display(value, 'length'):.1f}"
+
+
 def write_rebar_design_csv(
     path: Path,
     designs: dict[tuple[str, str], FlexureDesign],
     mesh: MeshModel,
+    *,
+    selections: dict[tuple[str, str], capacity_engine.RebarSelection] | None = None,
 ) -> Path:
     """`rebar_design.csv` -- `As perlu` per elemen untuk keempat kombinasi arah x muka.
 
@@ -609,6 +689,7 @@ def write_rebar_design_csv(
         f"centroid_y [{unit_len}]",
         "group",
     ]
+    kind = next(iter(selections.values())).kind if selections else ""
     for direction, face in keys:
         tag = f"{direction}_{face}"
         header += [
@@ -617,8 +698,13 @@ def write_rebar_design_csv(
             f"D_bar_{tag} [{unit_len}]",
             f"As_perlu_{tag} [{unit_as}]",
             f"As_pakai_{tag} [{unit_as}]",
-            f"status_{tag}",
         ]
+        if selections:
+            # Satuan menyusul jenis seleksinya: spasi dalam mm, diameter/konfigurasi
+            # sebagai label. Header karena itu tidak dapat ditulis satu bentuk untuk semua.
+            suffix = f" [{unit_len}]" if kind == capacity_engine.SELECTION_SPACING else ""
+            header.append(f"{kind}_{tag}{suffix}")
+        header.append(f"status_{tag}")
     # As minimum sama untuk semua elemen (fungsi fy & tebal saja), jadi satu kolom cukup.
     header.append(f"As_min [{unit_as}]")
 
@@ -644,8 +730,10 @@ def write_rebar_design_csv(
                     f"{to_disp(design.bar_diameter[i], 'length'):.1f}",
                     f"{to_disp(design.as_required[i], 'steel_area'):.2f}",
                     f"{to_disp(as_design[key][i], 'steel_area'):.2f}",
-                    str(design.status[i]),
                 ]
+                if selections:
+                    row.append(_selection_cell(selections[key], i))
+                row.append(str(design.status[i]))
             row.append(f"{to_disp(designs[keys[0]].as_min, 'steel_area'):.2f}")
             writer.writerow(row)
     _log.debug("rebar_design.csv ditulis: %s", path)
@@ -875,10 +963,85 @@ def _capacity_provenance_table(provenance: dict[str, Any]) -> str:
     return f"{table}\n\nFungsi yang dipanggil:\n\n{functions}\n\nPasal yang dirujuk:\n\n{clauses}"
 
 
+def _stirrup_section(
+    shear_maps: dict[str, capacity_engine.ShearRebarMap],
+    inputs: CapacityInputs,
+) -> str:
+    """Bagian 7b -- peta sengkang per elemen.
+
+    Kolom "hanya Av,min" dipisahkan dari "perlu sengkang" dengan sengaja: dengan `Av,min`
+    aktif, jumlah elemen ber-`Av/s > 0` sepuluh kali lipat jumlah elemen yang beton-nya
+    benar-benar tidak cukup, dan satu angka gabungan akan terbaca seolah sebagian besar
+    pelat butuh sengkang.
+    """
+    if not shear_maps:
+        return ""
+
+    unit_av = io_utils.display_unit("shear_steel_ratio")
+    unit_len = io_utils.display_unit("length")
+    unit_q = io_utils.display_unit("shear_per_width")
+    to_disp = io_utils.to_display
+    any_map = next(iter(shear_maps.values()))
+
+    rows = []
+    for direction, smap in shear_maps.items():
+        finite = smap.stirrup_diameter[np.isfinite(smap.stirrup_diameter)]
+        dipakai = sorted({round(float(to_disp(d, "length"))) for d in finite if d > 0})
+        rows.append(
+            [
+                direction.upper(),
+                f"{to_disp(float(np.nanmax(np.abs(smap.v_u))), 'shear_per_width'):,.1f}",
+                f"{to_disp(smap.phi_v_c, 'shear_per_width'):,.1f}",
+                f"**{smap.n_needs_stirrup}**",
+                str(smap.n_av_min_only),
+                f"{to_disp(float(np.nanmax(smap.av_per_s)), 'shear_steel_ratio'):.4f}",
+                ", ".join(f"D{d}" for d in dipakai) if dipakai else "-",
+                str(smap.n_web_crushed),
+            ]
+        )
+
+    return f"""\
+## 7b. TULANGAN GESER (SENGKANG) - peta per elemen
+
+> [!NOTE]
+> **Ini PETA ORIENTASI, bukan angka desain.** Geser satu arah pilecap didesain pada
+> penampang `d` dari muka pier (bagian 7 di atas), bukan per elemen. Peta ini berguna
+> untuk melihat DI MANA sengkang terkonsentrasi.
+
+`Av/s` dihitung `shell_kit.rebar.calc_shear_Av_per_s`, diameter sengkang oleh
+`calc_shear_diameter` dengan luas per kaki `Av/s x s_long x s_trans`.
+Grid sengkang: **{inputs.stirrup_long_mm:,.0f} x {inputs.stirrup_trans_mm:,.0f} {unit_len}**
+(ditetapkan user). `dv` = {to_disp(any_map.d_shear, "length"):,.0f} {unit_len}, dihitung
+untuk **asumsi batang D16 di muka bawah** dan TIDAK diiterasi terhadap diameter sengkang
+terpilih -- asumsi ini memengaruhi `V_c` dan tidak dapat dibaca dari hasil.
+
+{
+        _markdown_table(
+            [
+                "arah",
+                f"\\|V_u\\| maks [{unit_q}]",
+                f"phi V_c [{unit_q}]",
+                "elemen perlu sengkang",
+                "elemen hanya Av,min",
+                f"Av/s maks [{unit_av}]",
+                "diameter dipakai",
+                "badan hancur",
+            ],
+            rows,
+        )
+    }
+
+Kolom **"elemen perlu sengkang"** menghitung `V_u > phi V_c` -- beton benar-benar tidak
+cukup. Kolom **"elemen hanya Av,min"** adalah elemen yang beton-nya cukup tetapi tetap
+mendapat tulangan minimum. Keduanya dipisah karena menuntut kesimpulan yang berbeda.
+"""
+
+
 def _flexure_section(
     *,
     strip_design: list[dict[str, Any]],
     designs: dict[tuple[str, str], FlexureDesign],
+    selections: dict[tuple[str, str], capacity_engine.RebarSelection],
     inputs: CapacityInputs,
     deep_ratio: dict[str, Any],
 ) -> str:
@@ -906,14 +1069,18 @@ def _flexure_section(
         for r in strip_design
     ]
 
-    per_element = [
-        [
-            f"{direction} / {face}",
-            f"{to_disp(designs[(direction, face)].as_governing, 'steel_area'):,.0f}",
-            designs[(direction, face)].n_inadequate,
-        ]
-        for direction, face in config.REBAR_FACES
-    ]
+    per_element = []
+    for direction, face in config.REBAR_FACES:
+        design = designs[(direction, face)]
+        selection = selections[(direction, face)]
+        per_element.append(
+            [
+                f"{direction} / {face}",
+                f"{to_disp(design.as_governing, 'steel_area'):,.0f}",
+                _selection_range(selection),
+                design.n_inadequate,
+            ]
+        )
 
     as_min_disp = to_disp(next(iter(designs.values())).as_min, "steel_area")
 
@@ -970,12 +1137,34 @@ merupakan **singularitas numerik**, bukan kebutuhan nyata.
             [
                 "arah / muka",
                 f"As perlu maks [{unit_as}]",
+                f"{next(iter(selections.values())).kind} yang muncul",
                 "elemen PENAMPANG_TIDAK_MEMADAI",
             ],
             per_element,
         )
     }
 """
+
+
+def _selection_range(selection: capacity_engine.RebarSelection) -> str:
+    """Ringkas seleksi satu muka menjadi daftar yang muncul, bukan satu angka.
+
+    Satu nilai maksimum tidak cukup untuk seleksi: yang ingin dibaca engineer adalah
+    batang APA SAJA yang muncul di pelat, karena itulah yang harus disediakan.
+    """
+    values = np.asarray(selection.values, dtype=np.float64)
+    finite = values[np.isfinite(values) & (values > 0)]
+    if finite.size == 0:
+        return "-"
+    if selection.kind == capacity_engine.SELECTION_CONFIG:
+        return ", ".join(selection.labels[i - 1] for i in sorted({int(v) for v in finite}))
+    if selection.kind == capacity_engine.SELECTION_DIAMETER:
+        return ", ".join(
+            f"D{d:.0f}" for d in sorted({io_utils.to_display(v, "length") for v in finite})
+        )
+    lo = io_utils.to_display(float(finite.min()), "length")
+    hi = io_utils.to_display(float(finite.max()), "length")
+    return f"{lo:,.0f} - {hi:,.0f} mm"
 
 
 def _one_way_section_outboard_note(deep_ratio: dict[str, Any]) -> str:
@@ -1061,6 +1250,8 @@ def write_calc_sheet(
     capacity_inputs: CapacityInputs,
     strip_design: list[dict[str, Any]],
     designs: dict[tuple[str, str], FlexureDesign],
+    selections: dict[tuple[str, str], capacity_engine.RebarSelection],
+    shear_maps: dict[str, capacity_engine.ShearRebarMap],
     shear_capacities: dict[str, OneWayShearCapacity],
     trace: dict[str, Any],
     deep_ratio: dict[str, Any],
@@ -1320,10 +1511,13 @@ dengan `d` = {io_utils.to_display(deep_ratio["d_m"], "length"):,.0f} {unit_len}.
         _flexure_section(
             strip_design=strip_design,
             designs=designs,
+            selections=selections,
             inputs=capacity_inputs,
             deep_ratio=deep_ratio,
         )
     }
+
+{_stirrup_section(shear_maps, capacity_inputs)}
 
 ## 8. ASUMSI & KETERBATASAN
 

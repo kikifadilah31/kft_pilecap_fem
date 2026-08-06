@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -270,6 +271,143 @@ CMAP_MAGNITUDE: Final[str] = "viridis"
 COLOR_NAN: Final[str] = "#9e9e9e"
 LABEL_NAN: Final[str] = "NaN - tidak terdefinisi"
 
+
+# ---------------------------------------------------------------------------
+# Tema plot (gaya shell-kit)
+# ---------------------------------------------------------------------------
+#
+# Angka warna di bawah adalah CERMINAN `shell_kit.plotting` / `plotting_rebar`, bukan
+# impor. Alasannya spesifik dan bukan kelalaian:
+#
+#   `shell_kit.plotting.generate_plot_worker` menerima tuple posisional, menyimpan PNG,
+#   lalu mengembalikan path saja -- TIDAK ada Figure/Axes yang dikembalikan dan tidak ada
+#   hook untuk menambah gambar. Anotasi denah pilecap (lingkaran pile bertanda Pz, arsir
+#   pier "JEPIT") karena itu MUSTAHIL ditambahkan bila plotter shell-kit dipanggil,
+#   padahal PRD Bagian 9.3 mewajibkannya.
+#
+# Pembedaan yang dipegang: RUMUS kapasitas menentukan kebenaran angka desain sehingga
+# wajib satu sumber dan tetap diimpor dari `shell_kit.rebar` (lihat capacity_engine).
+# GAYA VISUAL hanya penyajian -- salinan yang menyimpang paling jauh menghasilkan warna
+# berbeda, bukan angka berbeda.
+
+
+@dataclass(frozen=True)
+class Theme:
+    """Palet satu tema plot. Seluruh warna renderer berasal dari sini."""
+
+    name: str
+    #: Figur & sumbu
+    background: str
+    text: str
+    grid: str
+    #: Colormap
+    cmap_force: str  # diverging, untuk momen/geser bertanda
+    cmap_magnitude: str  # sequential, untuk magnitudo bertanda tunggal
+    cmap_rebar: str  # sequential, untuk As / Av-s
+    #: Penanda ekstrem & status
+    color_max: str
+    color_min: str
+    color_inadequate: str
+    color_nan: str
+    annotation_face: str
+    #: Denah pilecap
+    cap: str
+    pile: str
+    pier: str
+    edge: str
+    pile_line: str
+    pier_line: str
+    pile_label: str
+    outline: str
+
+
+THEMES: Final[dict[str, Theme]] = {
+    "light": Theme(
+        name="light",
+        background="#FFFFFF",
+        text="#2C3E50",
+        grid="#E5E5E5",
+        cmap_force=CMAP_MOMENT,
+        cmap_magnitude=CMAP_MAGNITUDE,
+        cmap_rebar="YlOrRd",
+        color_max="#DC143C",
+        color_min="#1E90FF",
+        color_inadequate="#404040",
+        color_nan=COLOR_NAN,
+        annotation_face="#FFFFFF",
+        cap="#eef2f6",
+        pile="#bcd9f0",
+        pier="#f2c4c4",
+        edge="#9aa5b1",
+        pile_line="#1f5f9c",
+        pier_line="#8b1e1e",
+        pile_label="#0d3b66",
+        outline="#000000",
+    ),
+    "dark": Theme(
+        name="dark",
+        background="#1E1E1E",
+        text="#E0E0E0",
+        grid="#333333",
+        # shell-kit menukar colormap gaya pada tema gelap: `RdBu_r` kehilangan kontras
+        # di tengah skala pada latar gelap, `seismic` tidak.
+        cmap_force="seismic",
+        cmap_magnitude=CMAP_MAGNITUDE,
+        cmap_rebar="YlOrRd",
+        color_max="#DC143C",
+        color_min="#1E90FF",
+        color_inadequate="#404040",
+        color_nan=COLOR_NAN,
+        annotation_face="#2A2A2A",
+        cap="#2B3138",
+        pile="#24405c",
+        pier="#4a2626",
+        edge="#5a636b",
+        pile_line="#5fa8e0",
+        pier_line="#e06666",
+        pile_label="#9ec9ec",
+        outline="#E0E0E0",
+    ),
+}
+
+DEFAULT_THEME: Final[str] = "light"
+
+
+def theme(name: str | None = None) -> Theme:
+    """Ambil tema bernama; RAISE bila tidak dikenal (Core 3, tanpa fallback diam-diam)."""
+    key = name or DEFAULT_THEME
+    if key not in THEMES:
+        raise KeyError(f"Tema {key!r} tidak dikenal. Pilihan: {sorted(THEMES)}")
+    return THEMES[key]
+
+
+#: Palet kategorikal untuk plot diameter/konfigurasi tulangan. Indeks 0 SELALU berarti
+#: "tidak perlu tulangan" dan sengaja putih, sehingga daerah tanpa kebutuhan terbaca
+#: sebagai kosong dan bukan sebagai salah satu kategori. Cerminan
+#: `shell_kit.plotting_rebar.CATEGORICAL_COLORS`.
+CATEGORICAL_COLORS: Final[tuple[str, ...]] = (
+    "#FFFFFF", "#3498DB", "#2ECC71", "#F1C40F", "#E67E22",
+    "#E74C3C", "#9B59B6", "#FF1493", "#00CED1", "#FF6347",
+    "#00FA9A", "#BA55D3", "#FF8C00", "#4169E1", "#DC143C",
+    "#00FF7F", "#8B008B", "#FFD700", "#1E90FF", "#FF4500",
+    "#7B68EE", "#32CD32", "#FF69B4", "#20B2AA", "#CD853F",
+)  # fmt: skip
+
+#: Jumlah level `tricontourf` pada metode `average-nodal` (cerminan shell-kit).
+CONTOUR_LEVELS: Final[int] = 24
+
+#: Metode penggambaran kontur.
+#:
+#: `element-center` menggambar SATU warna datar per elemen (PolyCollection). Ini default
+#: dan tetap default: nilai resultant memang dihitung per elemen, sehingga gambar datar
+#: adalah representasi yang jujur.
+#:
+#: `average-nodal` menghaluskan lewat `tricontourf`. Tampilannya lebih rapi TETAPI
+#: menyiratkan kehalusan yang tidak pernah dihitung, dan paling menyesatkan justru di
+#: singularitas tepi zona jepit pier -- tempat pembaca paling mungkin salah menyimpulkan.
+CONTOUR_METHODS: Final[tuple[str, str]] = ("element-center", "average-nodal")
+DEFAULT_CONTOUR_METHOD: Final[str] = "element-center"
+
 #: Bahasa laporan & plot. DIKONFIRMASI USER (PRD Bagian 17 item 9):
 #: narasi Indonesia, istilah teknis dibiarkan Inggris.
 REPORT_LANGUAGE: Final[str] = "id"
@@ -310,6 +448,13 @@ CONTOUR_FIELDS: Final[dict[str, tuple[str, str, str]]] = {
 FILE_CONTOUR_DEFLECTION: Final[str] = "contour_deflection.png"
 FILE_REBAR_DESIGN: Final[str] = "rebar_design.csv"
 FILE_REBAR_ENVELOPE: Final[str] = "rebar_design_envelope.csv"
+FILE_SHEAR_REBAR: Final[str] = "shear_rebar.csv"
+
+#: Arah geser -> (field ElementResults, berkas Av/s, berkas diameter sengkang, label).
+SHEAR_REBAR_FIELDS: Final[dict[str, tuple[str, str, str, str]]] = {
+    "x": ("q_x", "contour_Avs_x.png", "contour_Dsengkang_x.png", "arah X"),
+    "y": ("q_y", "contour_Avs_y.png", "contour_Dsengkang_y.png", "arah Y"),
+}
 
 #: Empat kombinasi arah x muka yang didesain. Kunci = (arah, muka); nilai = (berkas, judul).
 #: Muka BAWAH lahir dari momen POSITIF dan muka ATAS dari momen NEGATIF -- pemisahan itu

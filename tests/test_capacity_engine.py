@@ -8,6 +8,8 @@ yang bermakna ganda, momen bertanda) memang tidak terjadi diam-diam.
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pytest
 from shell_kit import rebar as sk_rebar
@@ -27,6 +29,8 @@ INPUTS = ce.CapacityInputs(
     phi_shear=0.75,
     phi_source="test",
     fy_source="test",
+    stirrup_spacing_long=0.200,
+    stirrup_spacing_trans=0.200,
 )
 
 
@@ -34,10 +38,13 @@ def _config_si(**design_override: object) -> dict:
     design: dict[str, object] = {
         "fy": 420e6,
         "fy_source": "test",
+        "rebar_mode": "spacing_fixed",
         "rebar_spacing": 0.15,
         "cover": 0.075,
         "phi_flexure": None,
         "phi_shear": None,
+        "stirrup_spacing_long": 0.200,
+        "stirrup_spacing_trans": 0.200,
     }
     design.update(design_override)
     return {
@@ -361,3 +368,188 @@ def test_design_all_faces_menghasilkan_keempat_kombinasi():
     designs = ce.design_all_faces(moments, INPUTS)
     assert set(designs) == set(config.REBAR_FACES)
     assert designs[("x", "atas")].mu.tolist() == [0.0, 200_000.0]
+
+
+# ---------------------------------------------------------------------------
+# Seleksi batang -- tiga mode
+# ---------------------------------------------------------------------------
+
+
+def _design_x(inputs: ce.CapacityInputs) -> ce.FlexureDesign:
+    """Momen yang menutup rentang: kecil (As_min), sedang, besar."""
+    moments = np.array([50_000.0, 642_323.4, 1_800_000.0, 0.0])
+    return ce.flexure_design(moments, inputs, direction="x", face="bawah")
+
+
+def test_mode_spasi_tetap_memilih_diameter():
+    design = _design_x(INPUTS)
+    selection = ce.select_flexure_bars(design, INPUTS)
+
+    assert selection.kind == ce.SELECTION_DIAMETER
+    assert selection.is_categorical
+    # Nilainya HARUS diameter yang sudah dipakai solver menghitung As -- memanggil
+    # pemilih ulang bisa memberi jawaban lain dari `d` yang melahirkan As itu.
+    assert np.allclose(selection.values, design.bar_diameter, equal_nan=True)
+    dipakai = {round(v * 1e3) for v in selection.values if np.isfinite(v) and v > 0}
+    assert dipakai <= set(sk_rebar.AVAILABLE_DIAMETERS.astype(int))
+
+
+def test_mode_diameter_tetap_menghitung_spasi():
+    inputs = dataclasses.replace(INPUTS, rebar_mode="diameter_fixed", rebar_config="2D25")
+    design = _design_x(inputs)
+    selection = ce.select_flexure_bars(design, inputs)
+
+    assert selection.kind == ce.SELECTION_SPACING
+    assert not selection.is_categorical
+
+    spacing_mm = selection.values * 1e3
+    as_mm2 = ce.as_design_array(design) * 1e6
+    expected = sk_rebar.check_spacing_limits(
+        sk_rebar.calc_spacing_from_diameter(as_mm2, 25.0), 1200.0, 25.0
+    )
+    assert np.allclose(spacing_mm, expected, equal_nan=True)
+
+
+def test_mode_diameter_tetap_membatasi_spasi_maksimum():
+    """`check_spacing_limits` memotong ke min(2h, 450) -- bukan angka bebas."""
+    inputs = dataclasses.replace(INPUTS, rebar_mode="diameter_fixed", rebar_config="4D32")
+    design = ce.flexure_design(np.array([20_000.0]), inputs, direction="x", face="bawah")
+    selection = ce.select_flexure_bars(design, inputs)
+
+    finite = selection.values[np.isfinite(selection.values)]
+    assert np.all(finite * 1e3 <= min(2 * 1200.0, 450.0) + 1e-9)
+
+
+def test_mode_kode_konfigurasi_menghasilkan_indeks_dan_label():
+    codes = ("16", "22", "2D25")
+    inputs = dataclasses.replace(INPUTS, rebar_select_codes=codes)
+    design = _design_x(inputs)
+    selection = ce.select_flexure_bars(design, inputs)
+
+    assert selection.kind == ce.SELECTION_CONFIG
+    assert selection.labels == tuple(sorted(codes, key=lambda c: sk_rebar.REBAR_CONFIG_TABLE[c][2]))
+    dipakai = {int(v) for v in selection.values if np.isfinite(v) and v > 0}
+    assert dipakai, "harus ada elemen yang memilih konfigurasi"
+    assert max(dipakai) <= len(selection.labels)
+
+
+def test_seleksi_membedakan_tanpa_tulangan_dari_tidak_memadai():
+    """Dua sebab NaN yang berbeda tidak boleh dilaporkan sama.
+
+    `As` NaN = penampang tidak memadai (tebalkan pelat). Seleksi NaN sementara `As`
+    terdefinisi = tidak ada batang yang cukup besar (perbesar daftar batang).
+    """
+    inputs = dataclasses.replace(INPUTS, rebar_select_codes=("13",))
+    design = ce.flexure_design(np.array([0.0, 2_500_000.0]), inputs, direction="x", face="bawah")
+    selection = ce.select_flexure_bars(design, inputs)
+
+    assert selection.status[0] == ce.STATUS_NO_MOMENT
+    assert selection.status[1] == ce.STATUS_SECTION_INADEQUATE
+    assert not np.isfinite(selection.values[1])
+
+
+# ---------------------------------------------------------------------------
+# As_min surface zone (ACI 350 -- opt-in)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("thickness_m", "tanpa_cap", "dengan_cap"),
+    [(1.2, 1080.0, 540.0), (1.4, 1260.0, 540.0), (1.5, 1350.0, 540.0)],
+)
+def test_surface_zone_menurunkan_as_min(thickness_m, tanpa_cap, dengan_cap):
+    """Satu opsi ini mengubah hampir seluruh hasil lentur pilecap tebal.
+
+    DIUKUR pada ex01: 18 dari 20 lajur dikendalikan `As_min`, bukan momen. Karena itu
+    nilainya diekspos dan dicatat, bukan dipakai diam-diam maupun disembunyikan.
+    """
+    polos = dataclasses.replace(INPUTS, thickness=thickness_m)
+    dibatasi = dataclasses.replace(polos, as_min_surface_zone=0.300)
+
+    a = ce.flexure_design(np.array([0.0]), polos, direction="x", face="bawah")
+    b = ce.flexure_design(np.array([0.0]), dibatasi, direction="x", face="bawah")
+
+    assert a.as_min * 1e6 == pytest.approx(tanpa_cap, rel=1e-9)
+    assert b.as_min * 1e6 == pytest.approx(dengan_cap, rel=1e-9)
+
+
+def test_surface_zone_dicatat_di_provenance_dengan_sitasinya():
+    tanpa = ce.provenance_block(INPUTS)
+    assert tanpa["as_min_surface_zone_mm"] is None
+    assert "murni SNI" in tanpa["catatan_as_min"]
+
+    dengan = ce.provenance_block(dataclasses.replace(INPUTS, as_min_surface_zone=0.300))
+    assert dengan["as_min_surface_zone_mm"] == pytest.approx(300.0)
+    assert "ACI 350-06" in dengan["catatan_as_min"]
+    assert "TIDAK menyatakan" in dengan["catatan_as_min"]
+
+
+# ---------------------------------------------------------------------------
+# Peta sengkang per elemen
+# ---------------------------------------------------------------------------
+
+
+def _shear_map(v_kn_per_m: np.ndarray) -> ce.ShearRebarMap:
+    return ce.shear_rebar_map(v_kn_per_m * 1e3, INPUTS, direction="x")
+
+
+def test_av_min_dan_tanpa_av_min_dihitung_terpisah():
+    """Tanpa pemisahan ini, "perlu sengkang" dan "kena minimum" tidak dapat dibedakan.
+
+    DIUKUR pada ex01: 307 elemen ber-`Av/s > 0` versus 31 elemen yang beton-nya benar-
+    benar tidak cukup. Satu angka gabungan terbaca seolah sepertiga pelat butuh sengkang.
+    """
+    smap = _shear_map(np.array([100.0, 600.0, 1_400.0]))
+
+    # V_u kecil: tidak perlu apa pun. Sedang: hanya Av,min. Besar: sengkang nyata.
+    assert smap.av_per_s_no_min[0] == 0.0
+    assert smap.av_per_s[1] > 0.0 and smap.av_per_s_no_min[1] == 0.0
+    assert smap.av_per_s_no_min[2] > 0.0
+
+
+def test_n_needs_stirrup_menghitung_vu_melebihi_phi_vc():
+    smap = _shear_map(np.array([100.0, 600.0, 1_400.0]))
+    manual = int(np.count_nonzero(np.abs(smap.v_u) > smap.phi_v_c))
+
+    assert smap.n_needs_stirrup == manual
+    # Justru INI yang harus berbeda dari hitungan naif berbasis Av/s > 0.
+    assert smap.n_needs_stirrup < int(np.count_nonzero(smap.av_per_s > 0.0))
+
+
+def test_diameter_sengkang_cocok_dengan_shell_kit():
+    smap = _shear_map(np.array([1_400.0, 900.0]))
+    expected = sk_rebar.calc_shear_diameter(smap.av_per_s * 1e3, 200.0, 200.0)
+    assert np.allclose(smap.stirrup_diameter * 1e3, expected, equal_nan=True)
+
+
+def test_dv_geser_memakai_asumsi_d16_muka_bawah():
+    """Asumsi ini memengaruhi `V_c` dan tidak dapat dibaca dari hasil -- harus tercatat."""
+    smap = _shear_map(np.array([500.0]))
+    expected = sk_rebar.calc_effective_depth(1200.0, 75.0, 16.0, "x", "bottom")
+
+    assert smap.d_shear * 1e3 == pytest.approx(expected)
+    assert ce.provenance_block(INPUTS)["dv_assumed_bar_mm"] == pytest.approx(16.0)
+    assert "D16" in ce.provenance_block(INPUTS)["catatan_dv"]
+
+
+def test_daftar_diameter_sengkang_kustom_dihormati():
+    inputs = dataclasses.replace(INPUTS, stirrup_diameters=(0.016, 0.019))
+    smap = ce.shear_rebar_map(np.array([1_400e3]), inputs, direction="x")
+    dipakai = {round(d * 1e3) for d in smap.stirrup_diameter if np.isfinite(d) and d > 0}
+    assert dipakai <= {16, 19}
+
+
+def test_arah_geser_tidak_dikenal_ditolak():
+    with pytest.raises(ValueError, match="'x' atau 'y'"):
+        ce.shear_rebar_map(np.array([1.0]), INPUTS, direction="z")
+
+
+def test_provenance_mencatat_mode_dan_grid_sengkang():
+    """Asumsi yang MENGUBAH angka desain harus dapat ditelusuri dari manifest."""
+    block = ce.provenance_block(INPUTS)
+    assert block["rebar_mode"] == "spacing_fixed"
+    assert block["rebar_spacing_mm"] == pytest.approx(150.0)
+    assert block["stirrup_grid_mm"] == [pytest.approx(200.0), pytest.approx(200.0)]
+
+    codes = dataclasses.replace(INPUTS, rebar_select_codes=("16", "2D25"))
+    assert ce.provenance_block(codes)["rebar_select_codes"] == ["16", "2D25"]

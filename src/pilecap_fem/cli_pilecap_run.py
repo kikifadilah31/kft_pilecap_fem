@@ -46,15 +46,16 @@ def run(args: argparse.Namespace, command: str) -> Path:
     run_dir = cli_pilecap_analyze.run(args, command)
 
     report_args = cli_pilecap_report.build_parser().parse_args([])
+
+    # Seluruh argumen yang dikenal parser laporan disalin dari argumen `pilecap-run`,
+    # BUKAN didaftar satu per satu. Daftar manual pernah membuat `--theme` diterima di
+    # baris perintah tetapi jatuh diam-diam sebelum sampai ke pelaporan -- dan bentuk
+    # kegagalan itu akan terulang setiap kali ada flag baru.
+    for key in vars(report_args):
+        if hasattr(args, key):
+            setattr(report_args, key, getattr(args, key))
+
     report_args.result_dir = run_dir
-    report_args.output_dir = args.output_dir
-    report_args.strips_x = args.strips_x
-    report_args.strips_y = args.strips_y
-    report_args.moment_at = args.moment_at
-    report_args.wood_armer = args.wood_armer
-    report_args.no_envelope = args.no_envelope
-    report_args.dpi = args.dpi
-    report_args.log_level = args.log_level
     # Input baru saja dibaca oleh tahap analisis pada proses yang sama; memeriksa
     # hash-nya lagi hanya membuang waktu tanpa menambah jaminan apa pun.
     report_args.no_verify_hash = True

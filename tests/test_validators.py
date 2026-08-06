@@ -516,3 +516,63 @@ def test_jumlah_elemen_besar_menghasilkan_warning():
         **_mesh_result_kwargs(n_quad=config.MESH_ELEMENT_WARN_LIMIT + 1)
     )
     assert any("melebihi" in w for w in warnings)
+
+
+# ---------------------------------------------------------------------------
+# Skema desain: mode tulangan & sengkang
+# ---------------------------------------------------------------------------
+
+
+def _design_cfg(**override: object) -> dict:
+    design: dict[str, object] = {
+        "fy": 420e6,
+        "fy_source": "uji",
+        "rebar_mode": "spacing_fixed",
+        "rebar_spacing": 0.15,
+        "cover": 0.075,
+        "stirrup_spacing_long": 0.200,
+        "stirrup_spacing_trans": 0.200,
+    }
+    design.update(override)
+    return {"pilecap": {"thickness": 1.2}, "material": {"fc": 30e6}, "design": design}
+
+
+def test_design_lengkap_lolos():
+    validators.validate_design(_design_cfg())
+
+
+@pytest.mark.parametrize(
+    ("override", "pesan"),
+    [
+        ({"rebar_mode": None}, "rebar_mode"),
+        ({"rebar_mode": "entah"}, "tidak dikenal"),
+        ({"rebar_spacing": None}, "spacing_fixed"),
+        ({"rebar_mode": "diameter_fixed", "rebar_config": None}, "diameter_fixed"),
+        ({"rebar_mode": "diameter_fixed", "rebar_config": "D99"}, "bukan kode yang dikenal"),
+        ({"rebar_select_codes": ["16", "ZZ"]}, "tidak dikenal"),
+        ({"rebar_select_codes": []}, "tidak kosong"),
+        ({"stirrup_spacing_long": None}, "stirrup_spacing_long"),
+        ({"stirrup_spacing_trans": None}, "stirrup_spacing_trans"),
+        ({"stirrup_spacing_long": -1.0}, "harus > 0"),
+        ({"stirrup_select_diameters": []}, "tidak kosong"),
+        ({"as_min_surface_zone": 0.0}, "harus > 0"),
+    ],
+)
+def test_skema_desain_menolak_masukan_tidak_sah(override: dict, pesan: str):
+    with pytest.raises(validators.InputError, match=pesan):
+        validators.validate_design(_design_cfg(**override))
+
+
+def test_pesan_kode_salah_menyebutkan_kode_yang_tersedia():
+    """Tanpa daftar ini user hanya tahu kodenya salah, bukan apa yang boleh dipakai."""
+    with pytest.raises(validators.InputError) as excinfo:
+        validators.validate_design(_design_cfg(rebar_mode="diameter_fixed", rebar_config="D99"))
+    pesan = str(excinfo.value)
+    assert "2D25" in pesan and "32" in pesan
+
+
+def test_mode_diameter_fixed_tidak_menuntut_rebar_spacing():
+    """Pada mode ini spasi adalah HASIL, bukan masukan -- menuntutnya akan keliru."""
+    validators.validate_design(
+        _design_cfg(rebar_mode="diameter_fixed", rebar_config="2D25", rebar_spacing=None)
+    )

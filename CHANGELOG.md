@@ -2,6 +2,97 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.5.0] — 2026-08-06 — Plot tulangan lengkap + tema terang/gelap gaya `shell-kit`
+
+v0.4.0 sudah menghitung kapasitas, tetapi keluaran visualnya baru separuh: plot tulangan
+hanya menampilkan `As` perlu, tulangan **geser tidak diplot sama sekali**, dan gambar tidak
+memuat konteks material sehingga kehilangan asumsinya begitu dicetak. Rilis ini
+menyetarakan keluaran dengan `shell-kit rebar` **penuh**.
+
+### Added
+- **Plot seleksi batang** — 4 plot baru per kombinasi menjawab "pakai D berapa di mana",
+  bukan sekadar "berapa mm² baja". Tiga mode, dipilih lewat `design.rebar_mode`:
+  spasi tetap → **diameter** (kategorikal), diameter tetap → **spasi** (kontinu), dan
+  spasi tetap + `rebar_select_codes` → **konfigurasi** (`2D25` dst., kategorikal).
+- **Tulangan geser** — `capacity_engine.shear_rebar_map` + 4 plot (`Av/s` dan diameter
+  sengkang, dua arah) + `Combo_*/shear_rebar.csv`.
+- **Tema terang/gelap** — `--theme {light,dark}` pada keempat CLI, warna mengikuti
+  `shell-kit` (`#FFFFFF`/`#1E1E1E`, cmap gaya `RdBu_r`/`seismic`, tulangan `YlOrRd`).
+  Seluruh warna kini berasal dari `config.Theme`, tidak lagi hardcoded di `renderer`.
+- **Gaya shell-kit** pada semua plot: marker MAKS/MIN berlian dengan callout melengkung,
+  badge `PENAMPANG TIDAK MEMADAI`, watermark, dan **baris konteks material**
+  (`f'c`, `fy`, tebal, selimut, mode) di bawah judul.
+- **`--contour-method {element-center,average-nodal}`** — `element-center` tetap bawaan.
+- **`design.as_min_surface_zone`** (opsional) — lihat catatan di bawah.
+- `--no-rebar-plots` untuk melewati 8 plot tulangan bila pelaporan terasa lambat.
+
+### Changed
+- **`design.rebar_mode`, `stirrup_spacing_long`, dan `stirrup_spacing_trans` kini WAJIB.**
+  Config v0.4.0 akan RAISE. Disengaja: diameter sengkang dihitung dari luas per kaki
+  `Av/s x s_long x s_trans`, sehingga menebak grid sengkang berarti melaporkan diameter
+  yang tidak pernah ditetapkan siapa pun (perlakuan sama dengan `design.fy`).
+- `renderer` menerima `PlotStyle` (tema, metode, dpi, preview) menggantikan parameter
+  terpisah; `render_contour` sudah 11 argumen sebelum tema ada.
+
+### Fixed
+- **`pilecap-run` menjatuhkan flag baru diam-diam.** Argumen laporan disalin satu per satu
+  dari daftar manual, sehingga `--theme dark` diterima di baris perintah lalu hilang
+  sebelum sampai ke pelaporan — laporan tetap terang tanpa pesan apa pun. Kini seluruh
+  argumen yang dikenal parser laporan disalin otomatis, jadi bentuk kegagalan ini tidak
+  terulang untuk flag berikutnya.
+
+### Temuan: `As_min` mendominasi hasil, dan ada opsi resmi yang mengubahnya
+
+DIUKUR pada ex01: **18 dari 20 lajur** mendapat `As = As_min`, hanya 2 yang dikendalikan
+momen. `shell_kit.rebar.calc_as_min_per_face` menyediakan `surface_zone`:
+
+| tebal | `As_min` tanpa batas | dengan batas 300 mm |
+|-------|----------------------|---------------------|
+| 1.200 mm | 1.080 mm²/m | 540 mm²/m |
+| 1.400 mm | 1.260 mm²/m | 540 mm²/m |
+| 1.500 mm | 1.350 mm²/m | 540 mm²/m |
+
+**ACI 350-06 Ps. 7.12.2.1** membatasi 300 mm per muka untuk elemen >600 mm; **SNI 2847:2019
+tidak menyatakan batas ini**. Karena satu opsi ini menggeser hampir seluruh hasil lentur
+pilecap tebal, ia diekspos sebagai `design.as_min_surface_zone` — **opsional, `null` =
+murni SNI**, dan bila dipakai nilainya beserta sitasinya dicetak di `run_manifest.json`.
+Bukan dipakai diam-diam, bukan pula disembunyikan.
+
+### Temuan: peta geser per elemen mudah disalahbaca
+
+DIUKUR pada ex01 kombinasi `1.2D+1.6L`: **307** elemen ber-`Av/s > 0`, tetapi hanya **31**
+yang `V_u > phi V_c`. Selisihnya adalah elemen yang beton-nya cukup dan hanya terkena
+`Av,min`. Satu angka gabungan akan terbaca seolah sepertiga pelat butuh sengkang.
+
+`Av/s` karena itu dihitung **dua kali**, dengan dan tanpa `Av,min`, dan keduanya muncul
+sebagai kolom terpisah di `shear_rebar.csv`, sebagai dua kolom di calc sheet bagian 7b,
+dan sebagai caption di plot. `ShearRebarMap.n_needs_stirrup` sengaja menghitung
+`V_u > phi V_c`, bukan `Av/s > 0`.
+
+Catatan kedua: diameter sengkang bisa **nyaris seragam** (pada ex01: hanya D10) karena grid
+200×200 mm membuat luas per kaki mudah terpenuhi. **`Av/s` yang membawa informasi**, bukan
+diameternya — dinyatakan di caption agar "sengkang seragam" tidak terbaca sebagai "aman".
+
+### Mengapa gaya shell-kit direplikasi, bukan diimpor
+
+`shell_kit.plotting.generate_plot_worker` menerima tuple posisional, menyimpan PNG, dan
+mengembalikan path saja — **tidak ada Figure/Axes yang dikembalikan, tidak ada hook**.
+Anotasi denah pilecap (lingkaran pile bertanda `Pz`, arsir pier `JEPIT`) yang diwajibkan
+PRD Bagian 9.3 karena itu MUSTAHIL ditambahkan bila plotter itu dipanggil.
+
+Pembedaannya tetap dipegang: **rumus** kapasitas menentukan kebenaran angka desain sehingga
+wajib satu sumber dan tetap diimpor dari `shell_kit.rebar` — tidak satu baris pun disalin.
+**Gaya visual** hanya penyajian; salinan yang menyimpang paling jauh menghasilkan warna
+berbeda, bukan angka berbeda.
+
+### Golden file: sengaja TIDAK diregenerasi
+
+Ketiga contoh tetap `rebar_mode: "spacing_fixed"` dengan `rebar_spacing` yang sama dan
+`as_min_surface_zone: null`, sehingga seluruh angka lentur harus identik dengan v0.4.0.
+`tests/test_golden.py` yang tetap hijau adalah buktinya — penambahan besar ini murni aditif.
+
+---
+
 ## [0.4.0] — 2026-08-05 — Integrasi `shell-kit`: cek kapasitas SNI 2847:2019 + golden file
 
 Sampai v0.3.1 seluruh cek kapasitas berstatus `NOT_EVALUATED` karena PRD Bagian 17 item 2

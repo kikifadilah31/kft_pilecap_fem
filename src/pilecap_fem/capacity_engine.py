@@ -84,11 +84,24 @@ class CapacityInputs:
     fy: float  # Pa
     thickness: float  # m
     cover: float  # m
-    spacing: float  # m
+    spacing: float  # m -- spasi tulangan lentur (mode spacing_fixed)
     phi_flexure: float
     phi_shear: float
     phi_source: str
     fy_source: str
+    #: Mode seleksi batang: mana yang ditetapkan user, mana yang dihitung tool.
+    rebar_mode: str = "spacing_fixed"
+    #: Kode konfigurasi batang yang ditetapkan user (mode diameter_fixed).
+    rebar_config: str | None = None
+    #: Daftar kode yang boleh dipilih; mengaktifkan seleksi KATEGORIKAL.
+    rebar_select_codes: tuple[str, ...] = ()
+    #: Grid sengkang [m]. Keduanya menentukan luas per kaki, karena itu wajib.
+    stirrup_spacing_long: float = 0.0
+    stirrup_spacing_trans: float = 0.0
+    #: Diameter sengkang yang diizinkan [m]; kosong = daftar bawaan shell-kit.
+    stirrup_diameters: tuple[float, ...] = ()
+    #: Batas tebal per muka untuk `As_min` [m]. `None` = murni SNI (tanpa batas).
+    as_min_surface_zone: float | None = None
 
     # -- satuan shell-kit ---------------------------------------------------
 
@@ -111,6 +124,42 @@ class CapacityInputs:
     @property
     def spacing_mm(self) -> float:
         return float(config.DISPLAY_UNITS["length"][1] * self.spacing)
+
+    @property
+    def stirrup_long_mm(self) -> float:
+        return float(config.DISPLAY_UNITS["length"][1] * self.stirrup_spacing_long)
+
+    @property
+    def stirrup_trans_mm(self) -> float:
+        return float(config.DISPLAY_UNITS["length"][1] * self.stirrup_spacing_trans)
+
+    @property
+    def stirrup_diameters_mm(self) -> list[float] | None:
+        """Daftar diameter sengkang dalam mm, atau `None` untuk bawaan shell-kit."""
+        if not self.stirrup_diameters:
+            return None
+        factor = config.DISPLAY_UNITS["length"][1]
+        return [float(factor * d) for d in self.stirrup_diameters]
+
+    @property
+    def surface_zone_mm(self) -> float | None:
+        if self.as_min_surface_zone is None:
+            return None
+        return float(config.DISPLAY_UNITS["length"][1] * self.as_min_surface_zone)
+
+    @property
+    def config_diameter_mm(self) -> float:
+        """Diameter batang pada mode `diameter_fixed`, dari tabel konfigurasi shell-kit."""
+        if not self.rebar_config:
+            raise ValueError("rebar_config kosong; hanya berlaku pada mode diameter_fixed.")
+        return float(sk_rebar.REBAR_CONFIG_TABLE[self.rebar_config.upper().strip()][0])
+
+    @property
+    def config_area_mm2(self) -> float:
+        """Luas satu konfigurasi batang [mm^2], mis. `2D25` -> 982."""
+        if not self.rebar_config:
+            raise ValueError("rebar_config kosong; hanya berlaku pada mode diameter_fixed.")
+        return float(sk_rebar.get_config_area(self.rebar_config))
 
     @classmethod
     def from_config(cls, cfg: dict[str, Any]) -> CapacityInputs:
@@ -135,16 +184,30 @@ class CapacityInputs:
             phi_flexure = float(phi_flexure if phi_flexure is not None else sk_rebar.PHI_FLEXURE)
             phi_shear = float(phi_shear if phi_shear is not None else sk_rebar.PHI_SHEAR)
 
+        codes = design.get("rebar_select_codes") or ()
+        diameters = design.get("stirrup_select_diameters") or ()
+        surface_zone = design.get("as_min_surface_zone")
+
         return cls(
             fc=float(material["fc"]),
             fy=float(design["fy"]),
             thickness=float(cfg["pilecap"]["thickness"]),
             cover=float(design["cover"]),
-            spacing=float(design["rebar_spacing"]),
+            # Pada mode diameter_fixed spasi bukan masukan; 0.0 menandainya tidak dipakai.
+            spacing=float(design.get("rebar_spacing") or 0.0),
             phi_flexure=phi_flexure,
             phi_shear=phi_shear,
             phi_source=phi_source,
             fy_source=str(design.get("fy_source") or "TIDAK DICATAT"),
+            rebar_mode=str(design["rebar_mode"]),
+            rebar_config=(
+                str(design["rebar_config"]).upper().strip() if design.get("rebar_config") else None
+            ),
+            rebar_select_codes=tuple(str(c).upper().strip() for c in codes),
+            stirrup_spacing_long=float(design["stirrup_spacing_long"]),
+            stirrup_spacing_trans=float(design["stirrup_spacing_trans"]),
+            stirrup_diameters=tuple(float(d) for d in diameters),
+            as_min_surface_zone=(None if surface_zone is None else float(surface_zone)),
         )
 
 
@@ -208,34 +271,63 @@ def flexure_design(
     face: str,
     layer: int = 1,
 ) -> FlexureDesign:
-    """Desain lentur per elemen memakai `shell_kit.rebar.solve_rebar_iterative`.
+    """Desain lentur per elemen, bercabang menurut `inputs.rebar_mode`.
 
-    Dipakai solver iteratif, bukan `calc_as_required` langsung, karena kedalaman efektif
-    bergantung pada diameter batang yang terpilih dan sebaliknya.
+    * ``spacing_fixed`` -- spasi ditetapkan user, DIAMETER dihitung. Dipakai
+      `solve_rebar_iterative` (bukan `calc_as_required` langsung) karena kedalaman efektif
+      bergantung pada diameter terpilih dan sebaliknya.
+    * ``diameter_fixed`` -- batang ditetapkan user, jadi `d` adalah SATU skalar dan tidak
+      perlu diiterasi; spasinya yang kemudian dihitung (lihat `select_flexure_bars`).
     """
     if direction not in ("x", "y"):
         raise ValueError(f"direction = {direction!r} harus 'x' atau 'y'.")
 
     mu_si = _face_moments(moments_si, face)
     # SI (N.m/m) -> kN.m/m yang diminta shell-kit.
-    mu_knm = mu_si * config.DISPLAY_UNITS["moment_per_width"][1]
+    mu_knm = np.nan_to_num(mu_si * config.DISPLAY_UNITS["moment_per_width"][1], nan=0.0)
+    surface_zone = inputs.surface_zone_mm
 
-    as_mm2, d_mm, diameter_mm, _ = sk_rebar.solve_rebar_iterative(
-        np.nan_to_num(mu_knm, nan=0.0),
-        inputs.fc_mpa,
-        inputs.fy_mpa,
-        inputs.thickness_mm,
-        inputs.cover_mm,
-        direction,
-        layer,
-        inputs.spacing_mm,
-        phi=inputs.phi_flexure,
+    if inputs.rebar_mode == "diameter_fixed":
+        diameter = inputs.config_diameter_mm
+        d_scalar = float(
+            sk_rebar.calc_effective_depth(
+                inputs.thickness_mm, inputs.cover_mm, diameter, direction, layer
+            )
+        )
+        as_mm2 = np.asarray(
+            sk_rebar.calc_as_required(
+                mu_knm, inputs.fc_mpa, inputs.fy_mpa, d_scalar, phi=inputs.phi_flexure
+            ),
+            dtype=np.float64,
+        )
+        as_mm2 = np.asarray(
+            sk_rebar.apply_as_min(
+                as_mm2, inputs.fy_mpa, inputs.thickness_mm, surface_zone=surface_zone
+            ),
+            dtype=np.float64,
+        )
+        d_mm = np.full(as_mm2.shape, d_scalar, dtype=np.float64)
+        diameter_mm = np.full(as_mm2.shape, diameter, dtype=np.float64)
+    else:
+        as_mm2, d_mm, diameter_mm, _ = sk_rebar.solve_rebar_iterative(
+            mu_knm,
+            inputs.fc_mpa,
+            inputs.fy_mpa,
+            inputs.thickness_mm,
+            inputs.cover_mm,
+            direction,
+            layer,
+            inputs.spacing_mm,
+            phi=inputs.phi_flexure,
+            surface_zone=surface_zone,
+        )
+        as_mm2 = np.asarray(as_mm2, dtype=np.float64)
+        d_mm = np.asarray(d_mm, dtype=np.float64)
+        diameter_mm = np.asarray(diameter_mm, dtype=np.float64)
+
+    as_min_mm2 = float(
+        sk_rebar.calc_as_min_per_face(inputs.fy_mpa, inputs.thickness_mm, surface_zone=surface_zone)
     )
-    as_mm2 = np.asarray(as_mm2, dtype=np.float64)
-    d_mm = np.asarray(d_mm, dtype=np.float64)
-    diameter_mm = np.asarray(diameter_mm, dtype=np.float64)
-
-    as_min_mm2 = float(sk_rebar.calc_as_min_per_face(inputs.fy_mpa, inputs.thickness_mm))
 
     # `shell-kit` memakai NaN untuk "penampang tidak memadai". Di sini dipisahkan dari
     # "tidak terdefinisi" supaya pembaca laporan tidak mengira datanya hilang.
@@ -266,6 +358,129 @@ def flexure_design(
         bar_diameter=diameter_mm * to_si_len,
         status=status,
     )
+
+
+# ---------------------------------------------------------------------------
+# Seleksi batang -- "pakai D berapa, spasi berapa"
+# ---------------------------------------------------------------------------
+
+SELECTION_DIAMETER = "diameter"
+SELECTION_SPACING = "spasi"
+SELECTION_CONFIG = "konfigurasi"
+
+
+@dataclass(frozen=True)
+class RebarSelection:
+    """Batang yang terpilih per elemen. Nilai SI kecuali `kind == "konfigurasi"`.
+
+    `As perlu` menjawab "berapa luas baja", bukan "pakai batang apa". Kelas ini menjawab
+    yang kedua -- dan itulah yang dibaca pelaksana di lapangan.
+    """
+
+    kind: str  # SELECTION_DIAMETER | SELECTION_SPACING | SELECTION_CONFIG
+    direction: str
+    face: str
+    #: Diameter [m], spasi [m], atau indeks 1-basis ke `labels` bila kategorikal.
+    values: np.ndarray
+    #: Label kategori untuk colorbar diskret; kosong bila besaran kontinu.
+    labels: tuple[str, ...]
+    #: Besaran tampilan untuk `io_utils.display_unit` (kosong bila kategorikal).
+    quantity: str
+    status: np.ndarray
+
+    @property
+    def is_categorical(self) -> bool:
+        return bool(self.labels)
+
+    @property
+    def n_inadequate(self) -> int:
+        return int(np.count_nonzero(self.status == STATUS_SECTION_INADEQUATE))
+
+
+def select_flexure_bars(design: FlexureDesign, inputs: CapacityInputs) -> RebarSelection:
+    """Terjemahkan `As perlu` menjadi batang nyata, menurut `inputs.rebar_mode`.
+
+    Tiga jalur, seluruhnya memakai fungsi `shell_kit.rebar` -- tidak satu pun rumus
+    seleksi ditulis di sini:
+
+    1. ``spacing_fixed`` + `rebar_select_codes` -> `select_config_from_As`, hasilnya
+       indeks konfigurasi (kategorikal, mis. `2D25`).
+    2. ``spacing_fixed`` tanpa daftar kode -> diameter yang SUDAH dipilih
+       `solve_rebar_iterative` saat menghitung `As`. Memanggil ulang pemilih di sini akan
+       memberi jawaban yang bisa berbeda dari `d` yang dipakai menghitung `As` itu sendiri.
+    3. ``diameter_fixed`` -> `calc_spacing_from_diameter` lalu `check_spacing_limits`,
+       sehingga spasi yang melanggar batas SNI muncul sebagai NaN, bukan sebagai angka
+       yang tampak wajar.
+    """
+    as_design_mm2 = as_design_array(design) * config.DISPLAY_UNITS["steel_area"][1]
+    to_si_len = 1.0 / config.DISPLAY_UNITS["length"][1]
+
+    if inputs.rebar_mode == "diameter_fixed":
+        diameter = inputs.config_diameter_mm
+        spacing_mm = np.asarray(
+            sk_rebar.calc_spacing_from_diameter(as_design_mm2, diameter), dtype=np.float64
+        )
+        spacing_mm = np.asarray(
+            sk_rebar.check_spacing_limits(spacing_mm, inputs.thickness_mm, diameter),
+            dtype=np.float64,
+        )
+        status = _selection_status(design.status, spacing_mm, no_need=np.isinf(spacing_mm))
+        # `inf` berarti "tidak perlu tulangan"; dibiarkan inf agar tidak tertukar dengan
+        # NaN yang di sini berarti spasi melanggar batas.
+        return RebarSelection(
+            kind=SELECTION_SPACING,
+            direction=design.direction,
+            face=design.face,
+            values=spacing_mm * to_si_len,
+            labels=(),
+            quantity="length",
+            status=status,
+        )
+
+    if inputs.rebar_select_codes:
+        index, sorted_codes, _ = sk_rebar.select_config_from_As(
+            as_design_mm2, list(inputs.rebar_select_codes), inputs.spacing_mm
+        )
+        index = np.asarray(index, dtype=np.float64)
+        status = _selection_status(design.status, index, no_need=index == 0.0)
+        return RebarSelection(
+            kind=SELECTION_CONFIG,
+            direction=design.direction,
+            face=design.face,
+            values=index,
+            labels=tuple(sorted_codes),
+            quantity="",
+            status=status,
+        )
+
+    diameter_mm = design.bar_diameter * config.DISPLAY_UNITS["length"][1]
+    status = _selection_status(design.status, diameter_mm, no_need=diameter_mm == 0.0)
+    return RebarSelection(
+        kind=SELECTION_DIAMETER,
+        direction=design.direction,
+        face=design.face,
+        values=design.bar_diameter,
+        labels=tuple(f"D{int(d)}" for d in sk_rebar.AVAILABLE_DIAMETERS),
+        quantity="length",
+        status=status,
+    )
+
+
+def _selection_status(
+    base_status: np.ndarray, values: np.ndarray, *, no_need: np.ndarray
+) -> np.ndarray:
+    """Status seleksi, memisahkan "tidak perlu" dari "tidak ada batang yang muat".
+
+    `shell-kit` memakai NaN untuk keduanya-berbeda: NaN pada `As` berarti penampang tidak
+    memadai, sedangkan NaN pada hasil seleksi berarti `As` tercapai tetapi tidak ada batang
+    dalam daftar yang cukup besar. Dua sebab itu menuntut tindakan berbeda -- menebalkan
+    pelat versus memperbesar daftar batang -- sehingga tidak boleh dilaporkan sama.
+    """
+    status = np.array(base_status, dtype=object, copy=True)
+    unresolved = ~np.isfinite(values) & (status == STATUS_OK)
+    status[unresolved] = STATUS_SECTION_INADEQUATE
+    status[no_need & (status == STATUS_OK)] = STATUS_NO_MOMENT
+    return status
 
 
 def design_all_faces(
@@ -448,6 +663,133 @@ def one_way_shear_capacity(
     )
 
 
+# ---------------------------------------------------------------------------
+# Peta sengkang per elemen
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ShearRebarMap:
+    """Kebutuhan sengkang per elemen untuk satu arah. Seluruh nilai SI.
+
+    .. warning::
+       Ini **peta orientasi**, bukan angka desain -- sama seperti peta `As` per elemen.
+       Geser satu arah pilecap didesain pada penampang `d` dari muka pier
+       (`one_way_shear_capacity`), bukan per elemen.
+    """
+
+    direction: str
+    v_u: np.ndarray  # N/m
+    d_shear: float  # m
+    phi_v_c: float  # N/m
+    #: `Av/s` [m^2/m] SETELAH `Av,min` diterapkan -- ini yang dipakai memilih diameter.
+    av_per_s: np.ndarray
+    #: `Av/s` [m^2/m] TANPA `Av,min`; > 0 hanya bila beton memang tidak cukup.
+    av_per_s_no_min: np.ndarray
+    stirrup_diameter: np.ndarray  # m
+    status: np.ndarray
+
+    @property
+    def n_needs_stirrup(self) -> int:
+        """Elemen yang beton-nya BENAR-BENAR tidak cukup (`V_u > phi V_c`).
+
+        Sengaja BUKAN `av_per_s > 0`: dengan `Av,min` aktif, jumlah itu jauh lebih besar
+        dan terbaca seolah sebagian besar pelat butuh sengkang. DIUKUR pada ex01: 31
+        elemen di sini versus 307 bila memakai `av_per_s > 0`.
+        """
+        return int(np.count_nonzero(np.abs(self.v_u) > self.phi_v_c))
+
+    @property
+    def n_av_min_only(self) -> int:
+        """Elemen yang hanya terkena `Av,min` -- beton cukup, tetapi kode minta minimum."""
+        return int(np.count_nonzero((self.av_per_s > 0.0) & (self.av_per_s_no_min <= 0.0)))
+
+    @property
+    def n_web_crushed(self) -> int:
+        return int(np.count_nonzero(self.status == STATUS_WEB_CRUSHED))
+
+
+def shear_rebar_map(
+    v_u_si: np.ndarray,
+    inputs: CapacityInputs,
+    *,
+    direction: str,
+) -> ShearRebarMap:
+    """`Av/s` dan diameter sengkang per elemen dari geser transversal `q`.
+
+    `dv` mengikuti konvensi `shell-kit`: kedalaman efektif untuk **asumsi D16 di muka
+    bawah**, TIDAK diiterasi terhadap diameter sengkang yang nanti terpilih. Asumsi itu
+    dicetak di laporan karena ia memengaruhi `V_c` dan tidak dapat dibaca dari hasil.
+
+    `calc_shear_Av_per_s` dipanggil DUA KALI, dengan dan tanpa `Av,min`. Tanpa itu
+    "beton tidak cukup" dan "kode minta minimum" tidak dapat dibedakan di hilir -- dan
+    keduanya menuntut kesimpulan yang sangat berbeda dari pembaca.
+    """
+    if direction not in ("x", "y"):
+        raise ValueError(f"direction = {direction!r} harus 'x' atau 'y'.")
+
+    values = np.asarray(v_u_si, dtype=np.float64)
+    dv_mm = float(
+        sk_rebar.calc_effective_depth(
+            inputs.thickness_mm, inputs.cover_mm, _SHEAR_DEPTH_DIAMETER_MM, direction, "bottom"
+        )
+    )
+    vu_kn_per_m = np.abs(values) * config.DISPLAY_UNITS["shear_per_width"][1]
+
+    av_mm = np.asarray(
+        sk_rebar.calc_shear_Av_per_s(vu_kn_per_m, inputs.fc_mpa, inputs.fy_mpa, dv_mm),
+        dtype=np.float64,
+    )
+    av_no_min_mm = np.asarray(
+        sk_rebar.calc_shear_Av_per_s(
+            vu_kn_per_m, inputs.fc_mpa, inputs.fy_mpa, dv_mm, apply_av_min=False
+        ),
+        dtype=np.float64,
+    )
+    diameter_mm = np.asarray(
+        sk_rebar.calc_shear_diameter(
+            av_mm,
+            inputs.stirrup_long_mm,
+            inputs.stirrup_trans_mm,
+            available_diameters=inputs.stirrup_diameters_mm,
+        ),
+        dtype=np.float64,
+    )
+
+    status = np.full(values.shape, STATUS_OK, dtype=object)
+    status[~np.isfinite(values)] = STATUS_UNDEFINED
+    status[np.isfinite(values) & ~np.isfinite(av_mm)] = STATUS_WEB_CRUSHED
+    # Diameter NaN sementara Av/s terdefinisi = tidak ada sengkang yang cukup besar.
+    status[np.isfinite(av_mm) & ~np.isfinite(diameter_mm)] = STATUS_SECTION_INADEQUATE
+
+    v_c_n = float(sk_rebar.calc_Vc(inputs.fc_mpa, float(sk_rebar.STRIP_WIDTH_MM), dv_mm))
+    to_si_area = 1.0 / config.DISPLAY_UNITS["shear_steel_ratio"][1]
+    to_si_len = 1.0 / config.DISPLAY_UNITS["length"][1]
+
+    result = ShearRebarMap(
+        direction=direction,
+        v_u=values,
+        d_shear=dv_mm * to_si_len,
+        phi_v_c=inputs.phi_shear * v_c_n,
+        av_per_s=av_mm * to_si_area,
+        av_per_s_no_min=av_no_min_mm * to_si_area,
+        stirrup_diameter=diameter_mm * to_si_len,
+        status=status,
+    )
+    if result.n_web_crushed:
+        _log.warning(
+            "Peta geser arah %s: %d elemen BADAN HANCUR (V_u melampaui V_s maksimum).",
+            direction,
+            result.n_web_crushed,
+        )
+    return result
+
+
+#: Diameter yang diasumsikan untuk menghitung `dv` geser. Mengikuti `shell-kit`, yang
+#: TIDAK mengiterasi kedalaman geser terhadap diameter sengkang terpilih.
+_SHEAR_DEPTH_DIAMETER_MM: float = 16.0
+
+
 def one_way_shear_from_checks(
     checks: list[ShearCheck],
     inputs: CapacityInputs,
@@ -504,6 +846,28 @@ def provenance_block(inputs: CapacityInputs) -> dict[str, Any]:
         "fy_MPa": inputs.fy_mpa,
         "fy_source": inputs.fy_source,
         "strip_width_mm": float(sk_rebar.STRIP_WIDTH_MM),
+        "rebar_mode": inputs.rebar_mode,
+        "rebar_spacing_mm": inputs.spacing_mm or None,
+        "rebar_config": inputs.rebar_config,
+        "rebar_select_codes": list(inputs.rebar_select_codes) or None,
+        "stirrup_grid_mm": [inputs.stirrup_long_mm, inputs.stirrup_trans_mm],
+        "dv_assumed_bar_mm": _SHEAR_DEPTH_DIAMETER_MM,
+        "catatan_dv": (
+            f"dv geser dihitung untuk asumsi batang D{_SHEAR_DEPTH_DIAMETER_MM:.0f} di muka "
+            "bawah dan TIDAK diiterasi terhadap diameter sengkang terpilih (mengikuti "
+            "shell-kit). Asumsi ini memengaruhi V_c."
+        ),
+        "as_min_surface_zone_mm": inputs.surface_zone_mm,
+        "catatan_as_min": (
+            "As_min dihitung pada setengah tebal penuh (murni SNI 2847:2019)."
+            if inputs.surface_zone_mm is None
+            else (
+                f"As_min dibatasi pada zona permukaan {inputs.surface_zone_mm:.0f} mm per "
+                "muka. SNI 2847:2019 TIDAK menyatakan batas ini; nilainya engineering "
+                "judgement mengikuti ACI 350-06 Ps. 7.12.2.1 (300 mm untuk elemen >600 mm) "
+                "dan merupakan TANGGUNG JAWAB engineer yang menetapkannya."
+            )
+        ),
         "catatan_pons": (
             "shell-kit TIDAK menyediakan cek geser dua arah (pons). calc_Vc adalah geser "
             "SATU ARAH (bw x dv). Kapasitas pons tetap NOT_EVALUATED; V_u dan b_o pons "

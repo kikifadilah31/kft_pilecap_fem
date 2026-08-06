@@ -118,8 +118,12 @@ output/pilecap_20260804_093148/
 │   ├── node_displacements.csv   # sumber contour_deflection.png
 │   ├── equilibrium_check.json   # VC-0 + jejak beban tiap pile
 │   ├── traceability_sample.json # nilai per titik Gauss untuk calc sheet bagian 5
+│   ├── shear_rebar.csv          # Av/s (dengan & tanpa Av,min) + diameter sengkang
 │   ├── contour_mx.png … contour_deflection.png
 │   ├── contour_As_x_bawah.png … contour_As_y_atas.png
+│   ├── contour_diameter_x_bawah.png …   # atau _spasi_/_konfigurasi_ menurut rebar_mode
+│   ├── contour_Avs_x.png, contour_Avs_y.png
+│   ├── contour_Dsengkang_x.png, contour_Dsengkang_y.png
 │   └── deformed_opsvis.png
 └── Envelope/              # nilai ekstrem lintas kombinasi + governing_combo
     ├── envelope_values.csv
@@ -127,6 +131,24 @@ output/pilecap_20260804_093148/
     ├── envelope_summary.md
     └── envelope_*_max.png / _min.png
 ```
+
+### Tema plot
+
+Semua plot mengikuti gaya `shell-kit` dan tersedia dalam dua tema:
+
+```bash
+uv run pilecap-run --config input/pilecap_config.json --input-dir input --theme dark
+```
+
+Anotasi khas pilecap — lingkaran pile bertanda `Pz`, arsir pier `JEPIT`, outline pilecap —
+**tetap ada di seluruh plot**, termasuk plot tulangan. Ini yang tidak dimiliki `shell-kit`,
+dan alasan gaya visualnya direplikasi alih-alih memanggil plotter-nya (yang tidak
+menyediakan hook untuk menambah gambar).
+
+`--contour-method average-nodal` menghaluskan kontur seperti tampilan `shell-kit` yang
+paling rapi. Bawaannya `element-center` (satu warna datar per elemen) karena nilai
+resultant memang dihitung per elemen; penghalusan menyiratkan kehalusan yang tidak pernah
+dihitung, dan paling menyesatkan di singularitas tepi zona jepit pier.
 
 ### Visualisasi
 
@@ -240,11 +262,39 @@ angka-angka ini menentukan seluruh hasil, dan angka tanpa sumber dilarang
 |-------|--------|-----------|
 | `material.E` + `material.E_source` | MPa | Tool **tidak pernah** menghitung `E` dari `f'c` |
 | `design.fy` + `design.fy_source` | MPa | `shell_kit.rebar.DEFAULT_FY = 420` **tidak** dipakai diam-diam |
-| `design.rebar_spacing` | mm | Menentukan diameter terpilih, karenanya tinggi efektif `d` |
+| `design.rebar_mode` | – | `"spacing_fixed"` atau `"diameter_fixed"` — lihat di bawah |
+| `design.rebar_spacing` | mm | Wajib pada `spacing_fixed`; menentukan diameter terpilih |
+| `design.rebar_config` | – | Wajib pada `diameter_fixed`, mis. `"2D25"` |
+| `design.stirrup_spacing_long` + `_trans` | mm | Grid sengkang; keduanya menentukan luas per kaki |
 | `design.cover` | mm | — |
 
 `design.phi_flexure` dan `design.phi_shear` boleh `null`; artinya memakai konstanta SNI
 bawaan `shell-kit` (0,90 / 0,75), dan **asalnya dicetak** di calc sheet.
+
+### Mode pemilihan tulangan
+
+| `rebar_mode` | Anda tetapkan | Tool hitung | Plot yang dihasilkan |
+|--------------|---------------|-------------|----------------------|
+| `spacing_fixed` | `rebar_spacing` | **diameter** | kategorikal berlabel `D13`…`D32` |
+| `diameter_fixed` | `rebar_config` | **spasi** | kontinu dalam mm, dibatasi `min(2h, 450)` |
+
+Isi `design.rebar_select_codes` (mis. `["16", "22", "2D25"]`) untuk mempersempit pilihan
+ke konfigurasi tertentu; plot berubah menjadi kategorikal berlabel kode tersebut.
+
+### `design.as_min_surface_zone` — opsional, tetapi berdampak besar
+
+`As_min` mendominasi hasil pilecap tebal. DIUKUR pada `ex01`: **18 dari 20 lajur**
+dikendalikan `As_min`, bukan momen.
+
+| tebal | `As_min` tanpa batas | dengan `as_min_surface_zone: 300` |
+|-------|----------------------|-----------------------------------|
+| 1.200 mm | 1.080 mm²/m | 540 mm²/m |
+| 1.500 mm | 1.350 mm²/m | 540 mm²/m |
+
+**ACI 350-06 Ps. 7.12.2.1** membatasi 300 mm per muka untuk elemen >600 mm; **SNI 2847:2019
+tidak menyatakan batas ini**. Karena itu field ini **opsional** (`null` = murni SNI), dan
+bila diisi, nilainya beserta sitasinya dicetak di `run_manifest.json` — keputusan itu
+tercatat sebagai milik engineer yang menetapkannya.
 
 ## Yang BELUM dilakukan tool ini
 
