@@ -31,6 +31,7 @@ from tqdm import tqdm
 
 from pilecap_fem import (
     __version__,
+    capacity_engine,
     config,
     io_utils,
     math_engine,
@@ -211,6 +212,19 @@ def run(args: argparse.Namespace, command: str) -> Path:
             "d = t - cover tidak dapat dihitung dan cek geser tidak dapat dibuat."
         )
 
+    # Dibangun SEBELUM plot apa pun: `CapacityInputs.from_config` memanggil
+    # `validators.validate_design`, sehingga config yang kurang lengkap gagal dalam
+    # hitungan milidetik, bukan setelah seluruh kontur selesai digambar (Core 3).
+    capacity_inputs = capacity_engine.CapacityInputs.from_config(cfg)
+    _log.info(
+        "Cek kapasitas aktif: shell-kit v%s | fy = %.0f MPa | phi = %.2f/%.2f (%s)",
+        capacity_engine.provenance_block(capacity_inputs)["engine_version"],
+        capacity_inputs.fy_mpa,
+        capacity_inputs.phi_flexure,
+        capacity_inputs.phi_shear,
+        capacity_inputs.phi_source,
+    )
+
     deep_ratio = postproc_engine.shear_span_ratio(geom, cover_m)
     combo_dirs = _combo_dirs(run_dir, manifest)
 
@@ -229,6 +243,8 @@ def run(args: argparse.Namespace, command: str) -> Path:
         dpi=args.dpi,
     )
     results_by_combo: dict[str, postproc_engine.ElementResults] = {}
+    designs_by_combo: dict[str, dict[tuple[str, str], capacity_engine.FlexureDesign]] = {}
+    strip_design_by_combo: dict[str, list[dict[str, Any]]] = {}
     combo_rows: list[dict[str, Any]] = []
     checks: dict[str, Any] = {
         k: v for k, v in (manifest.get("checks") or {}).items() if k != "error"
@@ -252,11 +268,16 @@ def run(args: argparse.Namespace, command: str) -> Path:
             command=command,
             dpi=args.dpi,
             combo_rows=combo_rows,
+            capacity_inputs=capacity_inputs,
+            designs_by_combo=designs_by_combo,
+            strip_design_by_combo=strip_design_by_combo,
         )
 
     envelope = None
     if not args.no_envelope and len(results_by_combo) >= 1:
-        envelope = _write_envelope(run_dir, geom, mesh, results_by_combo, dpi=args.dpi)
+        envelope = _write_envelope(
+            run_dir, geom, mesh, results_by_combo, designs_by_combo, dpi=args.dpi
+        )
 
     reporter.write_summary(
         run_dir / config.FILE_SUMMARY,
@@ -274,6 +295,8 @@ def run(args: argparse.Namespace, command: str) -> Path:
         deep_ratio=deep_ratio,
         warnings=warnings + list(manifest.get("warnings") or []),
         envelope=envelope,
+        rebar_governing=capacity_engine.governing_strip_design(strip_design_by_combo),
+        capacity_inputs=capacity_inputs,
     )
 
     _log.info("Laporan selesai: %d kombinasi -> %s", len(combo_dirs), run_dir)
@@ -298,6 +321,9 @@ def _report_one_combo(
     command: str,
     dpi: int,
     combo_rows: list[dict[str, Any]],
+    capacity_inputs: capacity_engine.CapacityInputs,
+    designs_by_combo: dict[str, dict[tuple[str, str], capacity_engine.FlexureDesign]],
+    strip_design_by_combo: dict[str, list[dict[str, Any]]],
 ) -> postproc_engine.ElementResults:
     resultants_csv = combo_dir / "element_resultants.csv"
     if not resultants_csv.is_file():
@@ -354,6 +380,33 @@ def _report_one_combo(
     shear_checks = postproc_engine.shear_demand(results, mesh, geom, pz_by_pile, cover_m=cover_m)
     reporter.write_shear_checks_csv(combo_dir / "shear_checks.csv", shear_checks)
 
+    # --- kapasitas (shell-kit) ----------------------------------------------
+    designs = capacity_engine.design_all_faces(
+        {d: getattr(results, field) for d, field in config.REBAR_MOMENT_FIELD.items()},
+        capacity_inputs,
+    )
+    designs_by_combo[combo] = designs
+    strip_design = capacity_engine.strip_flexure_design(strip_rows, capacity_inputs)
+    strip_design_by_combo[combo] = strip_design
+    shear_capacities = capacity_engine.one_way_shear_from_checks(shear_checks, capacity_inputs)
+
+    reporter.write_rebar_design_csv(combo_dir / config.FILE_REBAR_DESIGN, designs, mesh)
+    for (direction, face), (filename, title) in config.REBAR_FACES.items():
+        renderer.render_contour(
+            combo_dir / filename,
+            geom,
+            mesh,
+            capacity_engine.as_design_array(designs[(direction, face)]),
+            quantity="steel_area",
+            title=title,
+            # `As` tidak bertanda: skala diverging yang dipusatkan di nol akan membuang
+            # separuh rentang warna untuk nilai yang tidak pernah muncul.
+            diverging=False,
+            combo=combo,
+            pz_by_pile=pz_by_pile,
+            dpi=dpi,
+        )
+
     # --- calc sheet ---------------------------------------------------------
     material_cfg = cfg.get("material") or {}
     stats = manifest.get("model_stats") or {}
@@ -387,6 +440,10 @@ def _report_one_combo(
         material=material,
         strip_rows=strip_rows,
         shear_checks=shear_checks,
+        capacity_inputs=capacity_inputs,
+        strip_design=strip_design,
+        designs=designs,
+        shear_capacities=shear_capacities,
         trace=trace,
         deep_ratio=deep_ratio,
         project_name=str(
@@ -421,6 +478,7 @@ def _write_envelope(
     geom: GeometryModel,
     mesh: mesh_model.MeshModel,
     results_by_combo: dict[str, postproc_engine.ElementResults],
+    designs_by_combo: dict[str, dict[tuple[str, str], capacity_engine.FlexureDesign]],
     *,
     dpi: int,
 ) -> postproc_engine.Envelope:
@@ -448,6 +506,9 @@ def _write_envelope(
             )
             plots.append(name)
 
+    reporter.write_rebar_envelope_csv(
+        envelope_dir / config.FILE_REBAR_ENVELOPE, designs_by_combo, mesh
+    )
     reporter.write_envelope_csv(envelope_dir / "envelope_values.csv", envelope, mesh)
     reporter.write_envelope_summary(
         envelope_dir / "envelope_summary.md", envelope, mesh, plots=plots

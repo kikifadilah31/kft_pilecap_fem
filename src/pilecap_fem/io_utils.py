@@ -51,6 +51,7 @@ _LENGTH_SCALARS: tuple[tuple[str, str], ...] = (
     ("mesh", "size_local_pile"),
     ("mesh", "size_local_pier"),
     ("design", "cover"),
+    ("design", "rebar_spacing"),
 )
 _LENGTH_PAIRS: tuple[tuple[str, str], ...] = (
     ("pilecap", "origin"),
@@ -60,6 +61,9 @@ _LENGTH_PAIRS: tuple[tuple[str, str], ...] = (
 _STRESS_SCALARS: tuple[tuple[str, str], ...] = (
     ("material", "fc"),
     ("material", "E"),
+    # Mutu leleh baja tulangan. Masuk di sini -- bukan diserahkan ke capacity_engine --
+    # supaya batas satuan tetap satu: modul hitung mana pun melihat `design.fy` dalam Pa.
+    ("design", "fy"),
 )
 # Berat jenis: PRD Bagian 4.2 menetapkan satuannya kN/m^3 -- gaya per meter kubik,
 # BUKAN per satuan panjang input pangkat tiga. Jadi hanya faktor gaya yang berlaku.

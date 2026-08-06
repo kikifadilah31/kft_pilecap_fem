@@ -29,6 +29,10 @@ TRACKED_DEPENDENCIES = (
     "matplotlib",
     "pandas",
     "shapely",
+    # shell-kit menentukan SETIAP angka kapasitas yang dilaporkan. Pin transitifnya lebih
+    # longgar dari pin kita, jadi mencatat versi yang benar-benar terpasang adalah satu-
+    # satunya cara penyimpangan numerik tetap terdeteksi di kemudian hari.
+    "shell-kit",
 )
 
 MANIFEST_FILENAME = "run_manifest.json"
@@ -87,17 +91,35 @@ class Manifest:
     def set_geometry_resolution(self, resolution: GeometryResolution) -> None:
         self._data["geometry_resolution"] = resolution.to_manifest()
 
-    def set_standards(self, design_cfg: dict[str, Any] | None) -> None:
+    def set_standards(
+        self,
+        design_cfg: dict[str, Any] | None,
+        capacity_provenance: dict[str, Any] | None = None,
+    ) -> None:
+        """Standar & pasal yang dipakai.
+
+        `capacity_provenance` datang dari `capacity_engine.provenance_block()` dan baru
+        ada di jalur `pilecap-report`; `pilecap-analyze` menghasilkan demand saja sehingga
+        blok itu memang tidak berlaku di sana.
+        """
         design_cfg = design_cfg or {}
-        self._data["standards"] = {
+        standards: dict[str, Any] = {
             "design_code": design_cfg.get("code"),
             "phi_flexure": design_cfg.get("phi_flexure"),
             "phi_shear": design_cfg.get("phi_shear"),
-            "catatan": (
-                "Pasal spesifik BELUM dikonfirmasi (PRD Bagian 17 item 2 & 3). "
-                "Cek kapasitas berstatus NOT_EVALUATED."
-            ),
         }
+        if capacity_provenance is None:
+            standards["catatan"] = (
+                "Tahap ini hanya menghasilkan DEMAND. Kapasitas lentur & geser satu arah "
+                "dihitung `pilecap-report` lewat shell-kit."
+            )
+        else:
+            standards["capacity"] = capacity_provenance
+            standards["catatan"] = (
+                "Kapasitas lentur & geser SATU ARAH dihitung shell-kit menurut "
+                "SNI 2847:2019 (lihat blok `capacity`). Geser PONS tetap NOT_EVALUATED."
+            )
+        self._data["standards"] = standards
 
     def update_model_stats(self, stats: dict[str, Any]) -> None:
         self._data["model_stats"].update(stats)

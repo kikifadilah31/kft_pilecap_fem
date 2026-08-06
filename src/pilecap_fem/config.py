@@ -49,6 +49,13 @@ DISPLAY_UNITS: Final[dict[str, tuple[str, float]]] = {
     "stress": ("MPa", 1e-6),
     "pressure": ("kPa", 1e-3),
     "force_density": ("kN/m^3", 1e-3),
+    # Luas tulangan per satuan lebar. SI-nya m^2/m; angka SI-nya sangat kecil
+    # (1.080 mm^2/m = 1,08e-3 m^2/m) tetapi invariant "internal selalu SI" tetap
+    # dipegang, dan konversi tampilan tetap hanya terjadi lewat to_display().
+    "steel_area": ("mm^2/m", 1e6),
+    # Av/s -- luas sengkang per satuan jarak. SI-nya juga m^2/m, tetapi satuan
+    # tampilannya berbeda, sehingga butuh kunci besaran tersendiri.
+    "shear_steel_ratio": ("mm^2/mm", 1e3),
 }
 
 # ---------------------------------------------------------------------------
@@ -301,6 +308,20 @@ CONTOUR_FIELDS: Final[dict[str, tuple[str, str, str]]] = {
     "q_y": ("contour_qy.png", "shear_per_width", "Geser transversal q_y"),
 }
 FILE_CONTOUR_DEFLECTION: Final[str] = "contour_deflection.png"
+FILE_REBAR_DESIGN: Final[str] = "rebar_design.csv"
+FILE_REBAR_ENVELOPE: Final[str] = "rebar_design_envelope.csv"
+
+#: Empat kombinasi arah x muka yang didesain. Kunci = (arah, muka); nilai = (berkas, judul).
+#: Muka BAWAH lahir dari momen POSITIF dan muka ATAS dari momen NEGATIF -- pemisahan itu
+#: dilakukan `capacity_engine._face_moments`, bukan di sini.
+REBAR_FACES: Final[dict[tuple[str, str], tuple[str, str]]] = {
+    ("x", "bawah"): ("contour_As_x_bawah.png", "As perlu arah X - muka BAWAH (m_x > 0)"),
+    ("x", "atas"): ("contour_As_x_atas.png", "As perlu arah X - muka ATAS (m_x < 0)"),
+    ("y", "bawah"): ("contour_As_y_bawah.png", "As perlu arah Y - muka BAWAH (m_y > 0)"),
+    ("y", "atas"): ("contour_As_y_atas.png", "As perlu arah Y - muka ATAS (m_y < 0)"),
+}
+#: Field ElementResults yang menjadi sumber momen tiap arah.
+REBAR_MOMENT_FIELD: Final[dict[str, str]] = {"x": "m_xx", "y": "m_yy"}
 
 #: Rasio geometri deep pile cap DILAPORKAN tanpa vonis: ambangnya (PRD Bagian 17 item 5)
 #: belum dikonfirmasi. Menuliskan angka batas tanpa pasal berarti tool memberi kesimpulan
@@ -353,13 +374,33 @@ KNOWN_LIMITATIONS: Final[str] = """\
 
 8. **Berat sendiri opsional dan default OFF** - user harus sadar apakah `Pz` yang diinput
    sudah memperhitungkan berat pilecap atau belum. Tool tidak bisa mendeteksi ini.
+
+9. **Mesh gmsh TIDAK reproducible bit demi bit.** DIUKUR pada gmsh 4.15.2, dua run dengan
+   input dan versi yang sama: jumlah node & elemen selalu identik, tetapi posisi node dapat
+   berbeda hingga **33 mm** pada model 12 pile. Menyetel `General.NumThreads = 1` **tidak**
+   menghilangkannya - penyebabnya ada di algoritma Quasi-structured Quad itu sendiri.
+   Dampaknya pada angka desain DIUKUR kecil: momen lajur dan `As` bergeser paling banyak
+   **0,02%** antar run. Konsekuensi praktisnya: `As` dan momen lajur dapat dibandingkan
+   antar run, tetapi **nilai per elemen di satu titik tidak** - dua run dapat memberi
+   angka berbeda di lokasi yang sama karena elemennya memang bukan elemen yang sama.
+   Untuk mereproduksi angka secara persis, simpan `00_Model/nodes.csv` dan
+   `elements.csv`; keduanya memuat mesh yang benar-benar dipakai.
 """
+
+#: Sebaran relatif maksimum besaran DESAIN antar run berulang dengan kode & input sama.
+#: DIUKUR pada 3 run: ex01 0,000%, ex02 0,021%, ex03 0,000% (lihat KNOWN_LIMITATIONS #9).
+#: Dipakai `tests/test_golden.py` untuk menetapkan toleransi dari data, bukan dari tebakan.
+MESH_NONDETERMINISM_DESIGN_SPREAD: Final[float] = 2.1e-4
 
 #: Item PRD Bagian 17 yang masih terbuka. Ditampilkan di laporan agar checker tahu
 #: cek mana yang BELUM dilakukan tool (PRD Bagian 1.3 poin 5 & 6).
 OPEN_BLOCKERS: Final[dict[str, str]] = {
-    "#2": "Standar desain & tahun (SNI gedung vs jembatan)",
-    "#3": "Pasal: penampang kritis momen, b_o & d punching, V_c, phi",
+    # #2 (standar & tahun) dan #3 (pasal V_c, phi, penampang kritis) DITUTUP pada v0.4.0:
+    # keduanya terjawab oleh shell-kit, yang mengimplementasikan SNI 2847:2019 beserta
+    # sitasi pasalnya (lihat capacity_engine.SNI_CLAUSES). Yang TIDAK ikut tertutup adalah
+    # b_o & d untuk geser PONS -- shell-kit hanya menyediakan geser satu arah -- sehingga
+    # bagian itu tetap terbuka dan dicatat terpisah di bawah.
+    "#3b": "Pasal kapasitas geser PONS: V_c dua arah, definisi b_o & d, phi",
     "#5": "Kriteria batas deep pile cap + pasal",
     "#6": "Apakah Pz input sudah termasuk berat sendiri pilecap",
     "#7": "Sumber & angka koefisien VC-1 (Timoshenko, tabel mana)",

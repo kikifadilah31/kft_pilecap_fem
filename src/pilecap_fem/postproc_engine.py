@@ -274,6 +274,12 @@ def strip_moments(
                 "cut_actual_m": actual,
                 "n_elements": int(mask.sum()),
                 "M_total_Nm": total,
+                # Lebar yang BENAR-BENAR terintegrasi (jumlah lebar potong elemen), bukan
+                # `bounds[1] - bounds[0]`. Keduanya berbeda karena lajur dibatasi centroid
+                # sedangkan integrasi memakai perpotongan garis-quad yang eksak. Nilai
+                # inilah pembagi yang sah untuk mendapat momen per satuan lebar --
+                # memakai lebar nominal akan menggeser `As perlu` secara diam-diam.
+                "width_m": float(np.nansum(widths[mask])),
                 "width_method": width_method,
             }
         )

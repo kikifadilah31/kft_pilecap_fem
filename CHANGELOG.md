@@ -2,6 +2,105 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.4.0] — 2026-08-05 — Integrasi `shell-kit`: cek kapasitas SNI 2847:2019 + golden file
+
+Sampai v0.3.1 seluruh cek kapasitas berstatus `NOT_EVALUATED` karena PRD Bagian 17 item 2
+(standar & tahun) dan item 3 (pasal `V_c`, `b_o`, `d`, `phi`) belum dikonfirmasi; laporan
+hanya menyajikan **demand**. Keduanya kini tertutup dari sumber yang sah — `shell-kit`
+v3.3.0 milik user sendiri, yang sudah mengimplementasikan SNI 2847:2019 lengkap dengan
+sitasi pasal — **tanpa `pilecap-fem` pernah menebak satu pasal pun**.
+
+### Added
+- **`capacity_engine.py`** — satu-satunya batas satuan menuju `shell-kit`, analog
+  `io_utils.py` untuk masukan. `shell_kit.rebar` bekerja dalam kN·m/m, kN/m, MPa, mm;
+  seluruh `pilecap-fem` murni SI. Konversi terkumpul di satu modul, memakai faktor yang
+  sama dari `config.DISPLAY_UNITS`, dan hasilnya dikembalikan ke SI.
+- **`Combo_*/rebar_design.csv`** — `As perlu` per elemen untuk keempat kombinasi arah ×
+  muka, terpisah dari `element_resultants.csv` agar demand mentah tetap dapat dibaca
+  tanpa tercampur hasil desain.
+- **`Envelope/rebar_design_envelope.csv`** — `As pakai` governing lintas kombinasi beserta
+  `governing_combo` per elemen. Status `PENAMPANG_TIDAK_MEMADAI` **menular**: satu
+  kombinasi yang gagal sudah cukup.
+- **`calc_sheet.md` bagian 7a** (desain lentur) + kapasitas geser satu arah terisi di
+  bagian 7, keduanya dengan blok provenance `shell-kit` dan daftar pasal.
+- **`SUMMARY.md` bagian 3a** — `As` governing lintas kombinasi, dilacak sampai lajur asalnya.
+- **Kontur `As`** arah X & Y × muka atas & bawah, skala sekuensial.
+- **Golden file** `examples/*/expected/golden.json` + `pytest --regen-golden`
+  (PRD Bagian 8.2 & 5.4). Diletakkan di dalam contoh, bukan di `tests/`, sehingga ikut
+  dikemas: pengguna `uvx` dapat memverifikasi instalasinya mereproduksi angka acuan, bukan
+  sekadar berjalan tanpa error. Regenerasi pertama — berkas dibuat baru pada rilis ini.
+
+### Ditemukan saat membangun golden file: mesh gmsh TIDAK reproducible
+
+Golden file berbasis koordinat node gagal berulang tanpa satu pun perubahan kode. Setelah
+diukur: gmsh 4.15.2 menghasilkan mesh yang **berbeda antar run** dengan input dan versi
+yang sama — jumlah node & elemen selalu identik (6994/6844 pada ex02), tetapi posisi node
+berbeda hingga **33 mm**. Menyetel `General.NumThreads = 1` dan `Mesh.MaxNumThreads2D = 1`
+tidak menghilangkannya, jadi penyebabnya bukan threading melainkan algoritma
+Quasi-structured Quad itu sendiri.
+
+Dampaknya pada angka desain **diukur, bukan diasumsikan** — 3 run berturut-turut:
+
+| Contoh | momen lajur | `As` desain | `\|m_xx\|` puncak | lendutan maks |
+|--------|-------------|-------------|-----------------|---------------|
+| ex01 | 0,000% | 0,000% | 0,000% | 0,000% |
+| ex02 | 0,020% | 0,021% | 0,001% | 0,000% |
+| ex03 | 0,000% | 0,000% | 0,000% | 0,000% |
+
+Konsekuensinya diambil, bukan diabaikan. Rancangan golden ditentukan oleh **tiga kegagalan
+berturut-turut yang benar-benar terjadi**, masing-masing menyingkap satu asumsi keliru:
+
+1. Membandingkan **nilai satu elemen terdekat** ke titik probe → berbeda **21%** antar
+   run. Bukan medannya yang berubah, melainkan elemen terdekatnya bukan elemen yang sama.
+2. Diganti **rata-rata berbobot luas dalam radius tegas** → masih gagal. Satu elemen yang
+   berpindah keanggotaan di batas radius menggeser rata-ratanya secara diskrit.
+3. Ditemukan penyebab yang lebih mendasar: **grid probe itu sendiri bergeser**, karena
+   diturunkan dari bounding box centroid elemen (terukur 3,3 mm).
+
+Bentuk akhir: grid probe diturunkan dari **polygon pilecap** (data input, bit-identik
+setiap run), dan nilainya dirata-rata dengan **kernel Gauss berbobot luas** tanpa cutoff,
+sehingga bobot berubah mulus terhadap posisi centroid. Diverifikasi dengan menjalankan
+perbandingan **dua kali terhadap mesh yang dibangkitkan ulang**: 15/15 lulus keduanya.
+
+Toleransi ditetapkan dari sebaran terukur di atas (`VALIDATION_RTOL` = 0,1% memberi margin
+~5x untuk besaran desain), bukan dari tebakan.
+- Ditambahkan sebagai **Known Limitation #9** sehingga muncul di setiap `SUMMARY.md` dan
+  `calc_sheet.md`. Laporan tidak boleh menyiratkan reproducibility yang tidak dimilikinya
+  (PRD Core 5), dan pembaca perlu tahu bahwa `00_Model/nodes.csv` + `elements.csv` adalah
+  satu-satunya cara mereproduksi angka secara persis.
+
+### Changed
+- **`design.fy`, `design.fy_source`, dan `design.rebar_spacing` kini WAJIB**, diperlakukan
+  persis seperti `material.E`: kosong berarti RAISE. `shell_kit.rebar.DEFAULT_FY = 420`
+  **tidak** dipakai diam-diam — mutu baja menentukan seluruh luas tulangan yang dilaporkan
+  (PRD Bagian 1.3 poin 2). Ketiga contoh diisi nilai bertanda `[CONTOH]`.
+- `config.OPEN_BLOCKERS`: **#2 dan #3 ditutup**. Yang tersisa dari #3 hanya bagian pons,
+  dicatat ulang sebagai **#3b** — `shell-kit` hanya menyediakan geser satu arah.
+- `provenance.set_standards()` menerima blok provenance kapasitas; `run_manifest.json`
+  kini merekam versi `shell-kit` beserta pasal yang dirujuk.
+- `postproc_engine.design_moment_sections` menambahkan `width_m` (lebar yang benar-benar
+  terintegrasi). Momen per satuan lebar memakai nilai ini, bukan lebar nominal lajur —
+  memakai lebar nominal akan menggeser `As perlu` secara diam-diam.
+
+### Fixed
+- **Test VC-0 bergantung pada keberuntungan floating point.**
+  `test_vc0_gagal_bila_toleransi_dibuat_mustahil` memaksa gagal dengan `rtol = 1e-30`,
+  padahal residu gaya pada model yang benar kadang tepat `0.0` — dan `0.0 <= rtol` lulus
+  untuk **setiap** rtol. Test itu karena itu lulus/gagal berganti-ganti tanpa ada yang
+  berubah di kode. Diganti dua test deterministik: deteksi ketidakseimbangan diuji
+  langsung pada `_check_equilibrium` dengan masukan yang memang tidak seimbang, dan
+  penyambungan "gagal berarti memblokir" diuji lewat monkeypatch.
+
+### Yang TETAP tidak dikerjakan
+- **Kapasitas geser pons** tetap `NOT_EVALUATED`. `shell_kit.rebar.calc_Vc` adalah geser
+  SATU ARAH (`b_w × d_v`); memakainya untuk keruntuhan dua arah berarti menerapkan rumus
+  di luar lingkupnya. `V_u` dan `b_o` pons **sudah** dihitung — yang kurang hanya
+  kapasitasnya.
+- **Vonis deep pile cap** (#5), Wood-Armer, VC-1/VC-6/VC-7, self-weight (#6), dan redaksi
+  disclaimer (#18). Ketujuhnya dicatat sebagai GitHub Issue, bukan ditebak.
+
+---
+
 ## [0.3.1] — 2026-08-04 — Perbaikan instalasi `uvx`
 
 Ditemukan saat menguji instalasi sungguhan dari GitHub pada v0.3.0. Tag v0.3.0

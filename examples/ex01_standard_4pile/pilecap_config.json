@@ -64,9 +64,12 @@
   },
 
   "design": {
-    "code": "[PERLU DIKONFIRMASI - PRD Bagian 17 item 2]",
+    "code": "SNI 2847:2019 (lewat shell-kit)",
     "phi_flexure": null,
     "phi_shear": null,
+    "fy": 420,
+    "fy_source": "[CONTOH - ganti dengan mutu & sumber yang Anda tetapkan] placeholder BjTS 420",
+    "rebar_spacing": 150,
     "cover": 75,
     "strips_x": 5,
     "strips_y": 5,

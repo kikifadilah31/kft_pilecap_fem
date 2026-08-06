@@ -112,15 +112,18 @@ output/pilecap_20260804_093148/
 │   ├── calc_sheet.md            # 10 bagian auditable, termasuk rantai telusur 1 elemen
 │   ├── element_resultants.csv   # m11/m22/m12 lokal + m_x/m_y/m_xy/q_x/q_y global
 │   ├── strip_moments_x.csv      # momen per lajur di muka pier
-│   ├── shear_checks.csv         # demand geser satu arah & pons (kapasitas NOT_EVALUATED)
+│   ├── rebar_design.csv         # As perlu per elemen, 4 kombinasi arah x muka (shell-kit)
+│   ├── shear_checks.csv         # demand geser satu arah & pons (pons: NOT_EVALUATED)
 │   ├── reactions.csv            # reaksi tiap node jepit + baris TOTAL
 │   ├── node_displacements.csv   # sumber contour_deflection.png
 │   ├── equilibrium_check.json   # VC-0 + jejak beban tiap pile
 │   ├── traceability_sample.json # nilai per titik Gauss untuk calc sheet bagian 5
 │   ├── contour_mx.png … contour_deflection.png
+│   ├── contour_As_x_bawah.png … contour_As_y_atas.png
 │   └── deformed_opsvis.png
 └── Envelope/              # nilai ekstrem lintas kombinasi + governing_combo
     ├── envelope_values.csv
+    ├── rebar_design_envelope.csv   # As pakai governing + governing_combo per elemen
     ├── envelope_summary.md
     └── envelope_*_max.png / _min.png
 ```
@@ -207,9 +210,73 @@ Test yang menjalankan meshing sungguhan ditandai `slow`; lewati dengan `pytest -
 **Release gate:** `n_tri == 0` untuk ketiga contoh. Bila test itu gagal, rilis diblokir —
 `ShellMITC4` tidak menerima elemen 3-node.
 
+### Golden file
+
+Regresi numerik lintas versi dibandingkan terhadap `tests/golden/*.json`.
+
+```bash
+uv run pytest tests/test_golden.py -q
+```
+
+Yang dibandingkan bukan koordinat node — **mesh gmsh tidak reproducible bit demi bit**
+(lihat "Yang perlu diketahui" di bawah). Yang dibandingkan adalah luas per physical group
+(`rtol` 1e-6), jumlah node/elemen (toleransi 2%), nilai medan hasil rata-rata lokal
+berbobot luas, dan `As` per lajur.
+
+Regenerasi hanya lewat `--regen-golden`, dan **wajib** disertai catatan alasan di
+`CHANGELOG.md`:
+
+```bash
+uv run pytest tests/test_golden.py --regen-golden
+```
+
+## Nilai yang WAJIB Anda tetapkan sendiri
+
+Tool ini menolak berjalan bila salah satu di bawah kosong. Tidak ada nilai default:
+angka-angka ini menentukan seluruh hasil, dan angka tanpa sumber dilarang
+(PRD Bagian 1.3 poin 2).
+
+| Field | Satuan | Keterangan |
+|-------|--------|-----------|
+| `material.E` + `material.E_source` | MPa | Tool **tidak pernah** menghitung `E` dari `f'c` |
+| `design.fy` + `design.fy_source` | MPa | `shell_kit.rebar.DEFAULT_FY = 420` **tidak** dipakai diam-diam |
+| `design.rebar_spacing` | mm | Menentukan diameter terpilih, karenanya tinggi efektif `d` |
+| `design.cover` | mm | — |
+
+`design.phi_flexure` dan `design.phi_shear` boleh `null`; artinya memakai konstanta SNI
+bawaan `shell-kit` (0,90 / 0,75), dan **asalnya dicetak** di calc sheet.
+
 ## Yang BELUM dilakukan tool ini
 
-Perhitungan kapasitas (lentur & geser) berstatus `NOT_EVALUATED` sampai pasal standar
-dikonfirmasi. Lihat `config.OPEN_BLOCKERS` dan PRD Bagian 17 — item **2, 3, 5, 6, 7, 8, 10, 18**
-masih terbuka. `material.E` **wajib** diisi user beserta `material.E_source`; tool tidak
-pernah menghitungnya dari `f'c`.
+Sejak v0.4.0 kapasitas **lentur** dan **geser satu arah** dihitung `shell-kit` v3.3.0
+menurut SNI 2847:2019, lengkap dengan sitasi pasal di `calc_sheet.md` bagian 7 & 7a.
+
+Yang tetap **`NOT_EVALUATED`**:
+
+- **Kapasitas geser pons.** `shell-kit` hanya menyediakan geser satu arah
+  (`calc_Vc` = `b_w × d_v`). `V_u` dan `b_o` pons sudah dihitung dari keseimbangan gaya —
+  yang belum ada hanya kapasitasnya.
+- **Vonis deep pile cap.** `a/d` dilaporkan tanpa vonis; ambang & pasalnya belum
+  dikonfirmasi. Bila pilecap berperilaku *deep member*, `As` dari model lentur pelat ini
+  **tidak sah**.
+- **Koreksi Wood-Armer.** `m_xy` dihitung dan dikontur, tetapi tidak dipakai mengoreksi
+  momen desain.
+
+Lihat `config.OPEN_BLOCKERS` dan PRD Bagian 17 — item **3b, 5, 6, 7, 8, 10, 18** masih
+terbuka.
+
+## Yang perlu diketahui: mesh tidak reproducible bit demi bit
+
+DIUKUR pada gmsh 4.15.2, dua run dengan input dan versi yang sama: jumlah node & elemen
+selalu identik, tetapi posisi node dapat berbeda hingga **33 mm** pada model 12 pile.
+`General.NumThreads = 1` **tidak** menghilangkannya — penyebabnya ada pada algoritma
+Quasi-structured Quad itu sendiri.
+
+Dampaknya pada angka desain terukur kecil: momen lajur dan `As` bergeser paling banyak
+**0,02%** antar run. Konsekuensi praktisnya:
+
+- `As`, momen lajur, dan lendutan **dapat** dibandingkan antar run.
+- Nilai **per elemen di satu titik tidak** — dua run dapat memberi angka berbeda di lokasi
+  yang sama karena elemennya memang bukan elemen yang sama.
+- Untuk mereproduksi angka secara persis, simpan `00_Model/nodes.csv` dan `elements.csv`;
+  keduanya memuat mesh yang benar-benar dipakai, dan `pilecap-report` membacanya kembali.

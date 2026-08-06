@@ -385,6 +385,75 @@ def validate_material(cfg: dict) -> None:
         raise InputError(f"`material.density` tidak boleh negatif, diterima {density}.")
 
 
+def validate_design(cfg: dict) -> None:
+    """Masukan yang dibutuhkan cek kapasitas `shell-kit` (PRD Bagian 7.2(6)-(7)).
+
+    TIDAK dipanggil oleh `pilecap-mesh` maupun `pilecap-analyze`: keduanya hanya
+    menghasilkan demand. WAJIB dipanggil oleh `pilecap-report` dan `pilecap-run`, karena
+    di sanalah `As perlu` dicetak.
+
+    `fy` diperlakukan persis seperti `material.E`: kosong berarti RAISE. `shell-kit`
+    menyediakan ``DEFAULT_FY = 420`` dan memakainya diam-diam akan membuat SELURUH luas
+    tulangan yang dilaporkan bersandar pada angka yang tidak pernah ditetapkan siapa pun
+    (PRD Bagian 1.3 poin 2).
+    """
+    design = cfg.get("design")
+    if design is None:
+        raise InputError("Blok `design` tidak ada di file config.")
+
+    if design.get("fy") is None:
+        raise InputError(
+            "`design.fy` (mutu leleh baja tulangan) bernilai null, sehingga cek kapasitas "
+            "tidak dapat dijalankan.\n"
+            "  Tool ini TIDAK memakai nilai default: mutu baja menentukan seluruh luas "
+            "tulangan yang dilaporkan (PRD Bagian 1.3 poin 2).\n"
+            "  Isi `design.fy` [MPa] beserta `design.fy_source` "
+            '(mis. "SNI 2847:2019 Tabel 20.2.2.4(a) BjTS 420B" atau "sertifikat pabrik ...").'
+        )
+    _require_positive(float(design["fy"]), "design.fy")
+
+    fy_source = design.get("fy_source")
+    if not isinstance(fy_source, str) or not fy_source.strip():
+        raise InputError(
+            "`design.fy_source` wajib diisi bila `design.fy` diisi.\n"
+            "  Nilainya dicetak apa adanya di calc_sheet.md dan run_manifest.json agar "
+            "checker dapat menelusuri asal angka fy (PRD Bagian 9.4 bagian 1)."
+        )
+
+    if design.get("rebar_spacing") is None:
+        raise InputError(
+            "`design.rebar_spacing` (spasi tulangan rencana) bernilai null.\n"
+            "  Nilai ini menentukan diameter batang yang dipilih dan karenanya tinggi "
+            "efektif d, jadi ia mengubah `As perlu` -- tidak boleh ditebak.\n"
+            "  Isi `design.rebar_spacing` [mm], mis. 150."
+        )
+    _require_positive(float(design["rebar_spacing"]), "design.rebar_spacing")
+
+    if design.get("cover") is None:
+        raise InputError("`design.cover` bernilai null; tinggi efektif d tidak dapat dihitung.")
+    _require_positive(float(design["cover"]), "design.cover")
+
+    thickness = (cfg.get("pilecap") or {}).get("thickness")
+    if thickness is not None and float(design["cover"]) >= 0.5 * float(thickness):
+        raise InputError(
+            f"`design.cover` = {design['cover']} m tidak masuk akal terhadap "
+            f"`pilecap.thickness` = {thickness} m: selimut satu muka mencapai setengah "
+            "tebal pelat, sehingga tidak tersisa tinggi efektif."
+        )
+
+    # phi boleh null -- artinya "pakai konstanta shell-kit", dan asalnya dicetak di calc
+    # sheet. Yang tidak boleh adalah angka di luar rentang yang bermakna.
+    for key in ("phi_flexure", "phi_shear"):
+        value = design.get(key)
+        if value is None:
+            continue
+        if not (0.0 < float(value) <= 1.0):
+            raise InputError(
+                f"`design.{key}` = {value} di luar rentang 0 < phi <= 1. "
+                "Kosongkan (null) bila ingin memakai nilai SNI bawaan shell-kit."
+            )
+
+
 # ---------------------------------------------------------------------------
 # Validasi konsistensi geometri (rule 8-14)
 # ---------------------------------------------------------------------------

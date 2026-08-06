@@ -51,3 +51,26 @@ def patch_config(path: Path, **blocks: dict) -> Path:
 def patch():
     """Fixture yang mengembalikan `patch_config`."""
     return patch_config
+
+
+# ---------------------------------------------------------------------------
+# Golden file (PRD Bagian 8.2)
+# ---------------------------------------------------------------------------
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--regen-golden",
+        action="store_true",
+        default=False,
+        help=(
+            "Tulis ulang seluruh berkas di tests/golden/ dari hasil run saat ini. "
+            "WAJIB disertai catatan alasan di CHANGELOG.md -- golden yang diregenerasi "
+            "tanpa alasan menghapus satu-satunya bukti bahwa angka tool tidak berubah."
+        ),
+    )
+
+
+@pytest.fixture(scope="session")
+def regen_golden(request: pytest.FixtureRequest) -> bool:
+    return bool(request.config.getoption("--regen-golden"))

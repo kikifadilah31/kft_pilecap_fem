@@ -184,21 +184,53 @@ def test_penjaga_menolak_interpreter_tak_didukung(versi: tuple[int, int], monkey
 
 
 def test_seluruh_dependency_runtime_dipin_eksak():
-    """`uvx` install dari git MENGABAIKAN uv.lock -- pin di sinilah yang berlaku."""
-    longgar = [d for d in _dependencies() if "==" not in d]
+    """`uvx` install dari git MENGABAIKAN uv.lock -- pin di sinilah yang berlaku.
+
+    Dua bentuk pin diterima, dan hanya dua: `paket==versi` untuk paket PyPI, serta
+    `paket @ git+URL@tag` untuk direct reference. Keduanya menyematkan satu titik yang
+    tetap. Yang dilarang adalah rentang longgar (`>=`, `~=`, atau tanpa penanda), karena
+    dua pengguna yang menginstal di hari berbeda dapat menjalankan numerik yang berbeda.
+    """
+    longgar = [d for d in _dependencies() if not _pin_eksak(d)]
     assert not longgar, (
         f"dependency berikut tidak di-pin eksak: {longgar}. "
         "Pengguna uvx bisa mendapat numerik yang berbeda dari yang lolos validation case."
     )
 
 
+def test_shell_kit_dipin_ke_tag_bukan_branch():
+    """Branch bergerak; tag tidak.
+
+    `shell-kit` menentukan SETIAP angka kapasitas yang dilaporkan. Menyematkannya ke
+    branch berarti isi laporan desain dapat berubah tanpa satu pun commit di repo ini.
+    """
+    spec = next(d for d in _dependencies() if d.startswith("shell-kit"))
+    assert "git+" in spec, "shell-kit harus direct reference ke repo-nya"
+    reference = spec.rsplit("@", 1)[1]
+    assert re.fullmatch(r"v\d+\.\d+\.\d+", reference), (
+        f"shell-kit disematkan ke {reference!r}; harus tag versi (mis. v3.3.0), "
+        "bukan branch atau HEAD"
+    )
+
+
 def test_versi_terpasang_cocok_dengan_yang_dipin():
     """Yang berjalan di sini harus benar-benar versi yang dijanjikan pyproject."""
     for spec in _dependencies():
-        name, pinned = spec.split("==")
+        if "==" in spec:
+            name, pinned = spec.split("==")
+        else:
+            # Direct reference: tag `vX.Y.Z` menjadi versi X.Y.Z pada paket terpasang.
+            name = spec.split("@", 1)[0].strip()
+            pinned = spec.rsplit("@", 1)[1].lstrip("v")
         assert metadata.version(name) == pinned, (
             f"{name} terpasang {metadata.version(name)} tetapi di-pin {pinned}"
         )
+
+
+def _pin_eksak(spec: str) -> bool:
+    if "==" in spec:
+        return True
+    return "git+" in spec and re.search(r"@v\d+\.\d+\.\d+$", spec) is not None
 
 
 def test_batas_python_menutup_313():
@@ -223,6 +255,13 @@ def test_examples_dir_memuat_ketiga_contoh():
     for name in config.EXAMPLE_NAMES:
         assert (source / name / "pilecap_config.json").is_file(), f"{name} tidak lengkap"
         assert (source / name / "pile_reactions.csv").is_file()
+        # PRD Bagian 5.4: setiap contoh wajib memuat `expected/` (golden file). Ikut
+        # dikemas supaya pengguna `uvx` dapat memverifikasi instalasinya mereproduksi
+        # angka acuan, bukan hanya berjalan tanpa error.
+        assert (source / name / "expected" / "golden.json").is_file(), (
+            f"{name}/expected/golden.json tidak ada; jalankan "
+            "`pytest tests/test_golden.py --regen-golden`"
+        )
 
 
 def test_ex03_memuat_ketiga_csv_geometri():
@@ -240,8 +279,11 @@ def test_init_example_menyalin_berkas_identik(tmp_path: Path):
 
     source = config.examples_dir()
     for name in config.EXAMPLE_NAMES:
-        for original in (source / name).iterdir():
-            salinan = tmp_path / name / original.name
+        # Rekursif: sejak v0.4.0 contoh memuat sub-folder `expected/` berisi golden file.
+        for original in (source / name).rglob("*"):
+            if not original.is_file():
+                continue
+            salinan = tmp_path / name / original.relative_to(source / name)
             assert salinan.is_file(), f"{name}/{original.name} tidak tersalin"
             assert salinan.read_bytes() == original.read_bytes(), (
                 f"{name}/{original.name} berbeda dari contoh yang dipakai test regresi"
@@ -315,6 +357,7 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
         names = set(archive.namelist())
 
     for module in (
+        "capacity_engine",
         "cli_pilecap_mesh",
         "cli_pilecap_analyze",
         "cli_pilecap_report",
@@ -328,7 +371,8 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
         assert f"pilecap_fem/{module}.py" in names, f"modul {module} tidak ikut terkemas"
 
     for name in config.EXAMPLE_NAMES:
-        path = f"pilecap_fem/examples/{name}/pilecap_config.json"
-        assert path in names, f"contoh {name} tidak ikut terkemas ({path})"
+        for relative in ("pilecap_config.json", "expected/golden.json"):
+            path = f"pilecap_fem/examples/{name}/{relative}"
+            assert path in names, f"contoh {name} tidak lengkap terkemas ({path})"
 
     assert any(n.endswith("LICENSE") for n in names), "LICENSE tidak ikut terkemas"

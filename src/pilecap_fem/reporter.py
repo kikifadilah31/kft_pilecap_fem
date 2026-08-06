@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from pilecap_fem import __version__, config, io_utils
+from pilecap_fem import __version__, capacity_engine, config, io_utils
+from pilecap_fem.capacity_engine import CapacityInputs, FlexureDesign, OneWayShearCapacity
 from pilecap_fem.geometry_builder import GeometryModel, GeometryResolution
 from pilecap_fem.mesh_model import MeshModel
 from pilecap_fem.postproc_engine import ElementResults, Envelope, ShearCheck
@@ -464,8 +465,9 @@ justru alasan `A_disk` untuk tekanan pile diambil dari **luas mesh**, bukan pi*r
 | Mesh 100% quad | {"LULUS" if raw.n_tri == 0 else "GAGAL"} |
 | Setiap physical group pile/pier punya elemen | LULUS |
 | D_pile / h >= {config.MIN_ELEM_PER_PILE_DIAMETER:g} | LULUS |
-| Cek keseimbangan VC-0 | BELUM DIJALANKAN (butuh `pilecap-analyze`, Fase 2) |
-| Kapasitas lentur & geser | NOT_EVALUATED |
+| Cek keseimbangan VC-0 | BELUM DIJALANKAN (butuh `pilecap-analyze`) |
+| Desain lentur & geser satu arah | BELUM DIJALANKAN (butuh `pilecap-report`) |
+| Kapasitas geser pons | NOT_EVALUATED (pasal belum dikonfirmasi) |
 
 {open_blockers_block()}
 
@@ -582,6 +584,158 @@ def write_shear_checks_csv(path: Path, checks: list[ShearCheck]) -> Path:
     return path
 
 
+def write_rebar_design_csv(
+    path: Path,
+    designs: dict[tuple[str, str], FlexureDesign],
+    mesh: MeshModel,
+) -> Path:
+    """`rebar_design.csv` -- `As perlu` per elemen untuk keempat kombinasi arah x muka.
+
+    Terpisah dari `element_resultants.csv` dengan sengaja: demand mentah harus tetap dapat
+    dibaca tanpa tercampur hasil desain, sehingga checker dapat memverifikasi keduanya
+    secara terpisah (PRD Bagian 9.1).
+
+    Bentuknya LEBAR (satu baris per elemen) mengikuti `element_resultants.csv`, bukan
+    panjang, supaya elemen yang sama pada keempat kombinasi dapat dibandingkan sebaris.
+    """
+    unit_len = io_utils.display_unit("length")
+    unit_m = io_utils.display_unit("moment_per_width")
+    unit_as = io_utils.display_unit("steel_area")
+
+    keys = list(config.REBAR_FACES)
+    header = [
+        "elem_tag",
+        f"centroid_x [{unit_len}]",
+        f"centroid_y [{unit_len}]",
+        "group",
+    ]
+    for direction, face in keys:
+        tag = f"{direction}_{face}"
+        header += [
+            f"Mu_{tag} [{unit_m}]",
+            f"d_{tag} [{unit_len}]",
+            f"D_bar_{tag} [{unit_len}]",
+            f"As_perlu_{tag} [{unit_as}]",
+            f"As_pakai_{tag} [{unit_as}]",
+            f"status_{tag}",
+        ]
+    # As minimum sama untuk semua elemen (fungsi fy & tebal saja), jadi satu kolom cukup.
+    header.append(f"As_min [{unit_as}]")
+
+    to_disp = io_utils.to_display
+    as_design = {key: capacity_engine.as_design_array(designs[key]) for key in keys}
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(header)
+        for i in range(mesh.n_elements):
+            row: list[Any] = [
+                int(mesh.elem_tags[i]),
+                f"{to_disp(mesh.elem_centroid[i, 0], 'length'):.3f}",
+                f"{to_disp(mesh.elem_centroid[i, 1], 'length'):.3f}",
+                mesh.group_names[int(mesh.elem_group[i])],
+            ]
+            for key in keys:
+                design = designs[key]
+                row += [
+                    f"{to_disp(design.mu[i], 'moment_per_width'):.6f}",
+                    f"{to_disp(design.d_effective[i], 'length'):.2f}",
+                    f"{to_disp(design.bar_diameter[i], 'length'):.1f}",
+                    f"{to_disp(design.as_required[i], 'steel_area'):.2f}",
+                    f"{to_disp(as_design[key][i], 'steel_area'):.2f}",
+                    str(design.status[i]),
+                ]
+            row.append(f"{to_disp(designs[keys[0]].as_min, 'steel_area'):.2f}")
+            writer.writerow(row)
+    _log.debug("rebar_design.csv ditulis: %s", path)
+    return path
+
+
+def write_rebar_envelope_csv(
+    path: Path,
+    designs_by_combo: dict[str, dict[tuple[str, str], FlexureDesign]],
+    mesh: MeshModel,
+) -> Path:
+    """`rebar_design_envelope.csv` -- `As pakai` governing lintas seluruh kombinasi.
+
+    Envelope diambil sebagai **maksimum**, bukan min/maks seperti envelope momen: luas
+    tulangan tidak punya tanda, dan yang menentukan desain adalah kebutuhan terbesar pada
+    muka itu (PRD Bagian 12). `governing_combo` dicatat agar setiap angka tetap dapat
+    ditelusuri kembali ke kombinasi asalnya.
+
+    Elemen ber-status `PENAMPANG_TIDAK_MEMADAI` pada kombinasi mana pun **menular** ke
+    hasil envelope: satu kombinasi yang gagal sudah cukup membuat penampang itu tidak
+    memadai, sekalipun kombinasi lain aman.
+    """
+    if not designs_by_combo:
+        raise ValueError("designs_by_combo kosong; envelope tulangan tidak dapat dibuat.")
+
+    unit_len = io_utils.display_unit("length")
+    unit_as = io_utils.display_unit("steel_area")
+    keys = list(config.REBAR_FACES)
+    combos = list(designs_by_combo)
+
+    header = [
+        "elem_tag",
+        f"centroid_x [{unit_len}]",
+        f"centroid_y [{unit_len}]",
+        "group",
+    ]
+    for direction, face in keys:
+        tag = f"{direction}_{face}"
+        header += [
+            f"As_pakai_maks_{tag} [{unit_as}]",
+            f"governing_combo_{tag}",
+            f"status_{tag}",
+        ]
+
+    stacked: dict[tuple[str, str], np.ndarray] = {}
+    inadequate: dict[tuple[str, str], np.ndarray] = {}
+    for key in keys:
+        stacked[key] = np.vstack(
+            [capacity_engine.as_design_array(designs_by_combo[c][key]) for c in combos]
+        )
+        inadequate[key] = np.vstack(
+            [
+                designs_by_combo[c][key].status == capacity_engine.STATUS_SECTION_INADEQUATE
+                for c in combos
+            ]
+        )
+
+    to_disp = io_utils.to_display
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(header)
+        for i in range(mesh.n_elements):
+            row: list[Any] = [
+                int(mesh.elem_tags[i]),
+                f"{to_disp(mesh.elem_centroid[i, 0], 'length'):.3f}",
+                f"{to_disp(mesh.elem_centroid[i, 1], 'length'):.3f}",
+                mesh.group_names[int(mesh.elem_group[i])],
+            ]
+            for key in keys:
+                column = stacked[key][:, i]
+                if np.all(~np.isfinite(column)):
+                    row += ["nan", "-", capacity_engine.STATUS_UNDEFINED]
+                    continue
+                which = int(np.nanargmax(column))
+                status = (
+                    capacity_engine.STATUS_SECTION_INADEQUATE
+                    if inadequate[key][:, i].any()
+                    else capacity_engine.STATUS_OK
+                )
+                row += [
+                    f"{to_disp(column[which], 'steel_area'):.2f}",
+                    combos[which],
+                    status,
+                ]
+            writer.writerow(row)
+    _log.debug("rebar_design_envelope.csv ditulis: %s", path)
+    return path
+
+
 def write_envelope_csv(path: Path, envelope: Envelope, mesh: MeshModel) -> Path:
     """`envelope_values.csv` -- nilai ekstrem + `governing_combo` per lokasi.
 
@@ -684,6 +838,215 @@ q_x = {glob["q_x"]:,.4f} | q_y = {glob["q_y"]:,.4f} N/m
 """
 
 
+def deep_pilecap_warning(deep_ratio: dict[str, Any]) -> str:
+    """Peringatan yang WAJIB mendahului setiap tabel `As` (PRD Bagian 8.3 keterbatasan #1).
+
+    Diletakkan di ATAS tabel, bukan sebagai catatan kaki. Alasannya konkret: begitu angka
+    `As perlu` tercetak, pembaca cenderung langsung memakainya. Bila pilecap ternyata
+    berperilaku *deep member*, seluruh angka itu tidak sah -- dan peringatan yang baru
+    terbaca setelah tabel sudah terlambat.
+    """
+    return f"""\
+> [!WARNING]
+> **`As` DI BAWAH INI BERASAL DARI MODEL LENTUR PELAT.** `shell-kit` adalah alat desain
+> pelat per lajur 1 m. Bila pilecap berperilaku *deep member* (mekanisme strut-and-tie),
+> angka-angka ini **TIDAK SAH sebagai dasar desain** (PRD Bagian 8.3 keterbatasan #1).
+>
+> `a/d` minimum terhitung = **{deep_ratio["min_a_over_d"]:.3f}** (pada {deep_ratio["min_at"]}).
+> **Ambang batas deep pile cap belum dikonfirmasi** (PRD Bagian 17 item 5), sehingga tool
+> ini TIDAK memberi vonis. Penilaian apakah pilecap ini deep atau tidak **ada pada
+> engineer**, dan harus dilakukan SEBELUM angka `As` dipakai."""
+
+
+def _capacity_provenance_table(provenance: dict[str, Any]) -> str:
+    rows = [
+        ["Engine kapasitas", f"{provenance['engine']} v{provenance['engine_version']}"],
+        ["Standar", provenance["standard"]],
+        ["`phi` lentur", f"{provenance['phi_flexure']:.3f}"],
+        ["`phi` geser", f"{provenance['phi_shear']:.3f}"],
+        ["**Asal `phi`**", provenance["phi_source"]],
+        ["`fy`", f"{provenance['fy_MPa']:,.1f} MPa"],
+        ["**Asal `fy`**", provenance["fy_source"]],
+        ["Lebar lajur desain", f"{provenance['strip_width_mm']:,.0f} mm"],
+    ]
+    table = _markdown_table(["Item", "Nilai"], rows)
+    functions = "\n".join(f"* `{name}`" for name in provenance["functions"])
+    clauses = "\n".join(f"* **{key}** -- {text}" for key, text in provenance["clauses"].items())
+    return f"{table}\n\nFungsi yang dipanggil:\n\n{functions}\n\nPasal yang dirujuk:\n\n{clauses}"
+
+
+def _flexure_section(
+    *,
+    strip_design: list[dict[str, Any]],
+    designs: dict[tuple[str, str], FlexureDesign],
+    inputs: CapacityInputs,
+    deep_ratio: dict[str, Any],
+) -> str:
+    """Bagian 7a calc sheet -- desain lentur."""
+    unit_len = io_utils.display_unit("length")
+    unit_as = io_utils.display_unit("steel_area")
+    unit_m = io_utils.display_unit("moment_per_width")
+    to_disp = io_utils.to_display
+
+    strip_md = [
+        [
+            r["lokasi"],
+            r["pier_id"],
+            r["sisi"],
+            r["direction"],
+            r["strip"],
+            r["face"],
+            f"{to_disp(r['Mu_per_m_Nm'], 'moment_per_width'):,.2f}",
+            f"{to_disp(r['d_eff_m'], 'length'):,.0f}",
+            f"{to_disp(r['As_required_m2_per_m'], 'steel_area'):,.0f}",
+            f"{to_disp(r['As_design_m2_per_m'], 'steel_area'):,.0f}",
+            r["status"],
+            "**SINGULAR**" if r.get("singular") else "-",
+        ]
+        for r in strip_design
+    ]
+
+    per_element = [
+        [
+            f"{direction} / {face}",
+            f"{to_disp(designs[(direction, face)].as_governing, 'steel_area'):,.0f}",
+            designs[(direction, face)].n_inadequate,
+        ]
+        for direction, face in config.REBAR_FACES
+    ]
+
+    as_min_disp = to_disp(next(iter(designs.values())).as_min, "steel_area")
+
+    return f"""\
+## 7a. DESAIN LENTUR - `As` perlu
+
+{deep_pilecap_warning(deep_ratio)}
+
+Rumus dan pasal TIDAK ditulis ulang di `pilecap-fem`. Seluruh kapasitas dihitung
+`shell-kit`, sehingga rumus SNI hidup di satu repo saja dan tidak ada dua salinan yang
+dapat menyimpang diam-diam.
+
+{_capacity_provenance_table(capacity_engine.provenance_block(inputs))}
+
+### Angka desain -- dari momen LAJUR di muka pier
+
+Inilah `As` yang dipakai. Momen lajur sudah terintegrasi sepanjang potongan, sehingga
+singularitas di tepi zona jepit pier terata-rata; puncak per elemen **tidak** dipakai
+sebagai angka desain (PRD Bagian 7.2(5)).
+
+`As pakai` = maks(`As perlu`, `As min`), dengan `As min` = {as_min_disp:,.0f} {unit_as}
+(minimum susut & suhu, dihitung `shell_kit.rebar.calc_as_min_per_face`).
+
+{
+        _markdown_table(
+            [
+                "lokasi",
+                "pier",
+                "sisi",
+                "arah",
+                "lajur",
+                "muka",
+                f"Mu [{unit_m}]",
+                f"d [{unit_len}]",
+                f"As perlu [{unit_as}]",
+                f"As pakai [{unit_as}]",
+                "status",
+                "catatan",
+            ],
+            strip_md,
+        )
+        if strip_md
+        else "_(tidak ada lajur yang dihitung)_"
+    }
+
+### Peta per elemen -- ORIENTASI, bukan angka desain
+
+Nilai berikut berasal dari `rebar_design.csv` dan kontur `contour_As_*.png`. Gunakan untuk
+melihat SEBARAN kebutuhan tulangan. Nilai maksimumnya jatuh di tepi zona jepit pier dan
+merupakan **singularitas numerik**, bukan kebutuhan nyata.
+
+{
+        _markdown_table(
+            [
+                "arah / muka",
+                f"As perlu maks [{unit_as}]",
+                "elemen PENAMPANG_TIDAK_MEMADAI",
+            ],
+            per_element,
+        )
+    }
+"""
+
+
+def _one_way_section_outboard_note(deep_ratio: dict[str, Any]) -> str:
+    """Peringatan bila penampang geser satu arah jatuh DI LUAR pile.
+
+    Ini fakta geometri, bukan pasal: `a` adalah jarak muka pier ke pusat pile dan
+    penampang kritis diambil pada jarak `d` dari muka pier, sehingga `a/d < 1` berarti
+    penampang itu berada di luar pusat pile. Di sana hampir tidak ada gaya yang menyeberang
+    potongan, sehingga `v_u` menjadi sangat kecil dan rasio `v_u / phi V_c` **tidak
+    bermakna** -- bukan bukti bahwa gesernya aman.
+
+    Tanpa catatan ini, rasio seperti 0,004 terbaca sebagai "sangat aman" padahal yang
+    terjadi adalah penampangnya salah tempat untuk geometri tersebut.
+    """
+    ratio = float(deep_ratio.get("min_a_over_d", float("nan")))
+    if not np.isfinite(ratio) or ratio >= 1.0:
+        return ""
+    return f"""\
+> [!CAUTION]
+> **RASIO GESER SATU ARAH DI ATAS TIDAK BERMAKNA UNTUK GEOMETRI INI.** `a/d` =
+> **{ratio:.3f}** < 1, artinya penampang pada jarak `d` dari muka pier jatuh **di luar
+> pusat pile**. Nyaris tidak ada gaya yang menyeberang potongan itu, sehingga `v_u`
+> kecil bukan karena gesernya aman melainkan karena penampangnya tidak relevan.
+> Geometri dengan `a/d` sekecil ini justru mengarah ke perilaku *deep member*, yang
+> penanganannya berada di luar lingkup model lentur pelat ini
+> (PRD Bagian 8.3 keterbatasan #1, ambang PRD Bagian 17 item 5).
+
+"""
+
+
+def _shear_capacity_rows(
+    checks: list[ShearCheck],
+    capacities: dict[str, OneWayShearCapacity],
+) -> list[list[Any]]:
+    rows: list[list[Any]] = []
+    for check in checks:
+        key = f"{check.pier_id}|{check.kind}"
+        capacity = capacities.get(key)
+        if capacity is None:
+            rows.append(
+                [
+                    check.pier_id,
+                    check.kind,
+                    "-",
+                    "-",
+                    "-",
+                    f"**{check.capacity_status}**",
+                    "geser dua arah (pons) -- di luar lingkup shell-kit",
+                ]
+            )
+            continue
+        ratio = capacity.demand_capacity_ratio
+        rows.append(
+            [
+                check.pier_id,
+                check.kind,
+                f"{io_utils.to_display(capacity.v_u, 'shear_per_width'):,.2f}",
+                f"{io_utils.to_display(capacity.v_c, 'shear_per_width'):,.2f}",
+                f"{io_utils.to_display(capacity.phi_v_c, 'shear_per_width'):,.2f}",
+                (f"**{ratio:.3f}**" if np.isfinite(ratio) else f"**{capacity.status}**"),
+                (
+                    "perlu tulangan geser: Av/s = "
+                    f"{io_utils.to_display(capacity.av_per_s, 'shear_steel_ratio'):.4f} mm^2/mm"
+                    if capacity.needs_shear_steel
+                    else "beton memadai tanpa tulangan geser"
+                ),
+            ]
+        )
+    return rows
+
+
 def write_calc_sheet(
     path: Path,
     *,
@@ -695,6 +1058,10 @@ def write_calc_sheet(
     material: dict[str, Any],
     strip_rows: list[dict[str, Any]],
     shear_checks: list[ShearCheck],
+    capacity_inputs: CapacityInputs,
+    strip_design: list[dict[str, Any]],
+    designs: dict[tuple[str, str], FlexureDesign],
+    shear_capacities: dict[str, OneWayShearCapacity],
     trace: dict[str, Any],
     deep_ratio: dict[str, Any],
     project_name: str,
@@ -760,6 +1127,7 @@ def write_calc_sheet(
         ]
         for c in shear_checks
     ]
+    capacity_rows_md = _shear_capacity_rows(shear_checks, shear_capacities)
 
     idx_mx, val_mx = results.extreme("m_xx")
     idx_my, val_my = results.extreme("m_yy")
@@ -910,9 +1278,36 @@ dimensi (PRD Bagian 8.3 keterbatasan #7).
         else "_(tidak ada cek geser)_"
     }
 
-> **KAPASITAS TIDAK DIHITUNG.** Pasal `V_c`, definisi `b_o` dan `d`, serta faktor `phi`
-> belum dikonfirmasi (PRD Bagian 17 item 3). Seluruh angka di tabel ini adalah
-> **demand**. Tool tidak menebak rumus kapasitas beton.
+### Kapasitas geser SATU ARAH (SNI 2847:2019 Ps. 22.5.5.1, lewat shell-kit)
+
+`V_c = 0,17 lambda sqrt(f'c) b_w d` per lajur 1 m, dengan
+`phi = {capacity_inputs.phi_shear:.2f}`. Rasio = `v_u / (phi V_c)`; **> 1 berarti beton
+saja tidak cukup** dan diperlukan tulangan geser sebesar `Av/s`.
+
+{
+        _markdown_table(
+            [
+                "pier",
+                "jenis",
+                f"v_u [{io_utils.display_unit('shear_per_width')}]",
+                f"V_c [{io_utils.display_unit('shear_per_width')}]",
+                f"phi V_c [{io_utils.display_unit('shear_per_width')}]",
+                "v_u / phi V_c",
+                "catatan",
+            ],
+            capacity_rows_md,
+        )
+        if capacity_rows_md
+        else "_(tidak ada cek geser)_"
+    }
+
+{_one_way_section_outboard_note(deep_ratio)}
+> [!IMPORTANT]
+> **GESER PONS TETAP TIDAK DICEK.** `shell-kit` hanya menyediakan geser **satu arah**
+> (`calc_Vc` memakai `b_w x d_v`). Memakainya untuk pons berarti menerapkan rumus di luar
+> lingkupnya. `V_u` dan `b_o` pons **sudah** dihitung di tabel demand di atas; yang belum
+> ada hanyalah kapasitasnya, dan pasalnya belum dikonfirmasi
+> (PRD Bagian 17 item 3, bagian pons).
 
 ### Rasio bentang geser terhadap tinggi efektif
 
@@ -920,6 +1315,15 @@ dimensi (PRD Bagian 8.3 keterbatasan #7).
 dengan `d` = {io_utils.to_display(deep_ratio["d_m"], "length"):,.0f} {unit_len}.
 
 > **{deep_ratio["verdict"]}.** {deep_ratio["note"]}
+
+{
+        _flexure_section(
+            strip_design=strip_design,
+            designs=designs,
+            inputs=capacity_inputs,
+            deep_ratio=deep_ratio,
+        )
+    }
 
 ## 8. ASUMSI & KETERBATASAN
 
@@ -1029,6 +1433,8 @@ def write_summary(
     deep_ratio: dict[str, Any],
     warnings: list[str],
     envelope: Envelope | None,
+    rebar_governing: list[dict[str, Any]],
+    capacity_inputs: CapacityInputs,
 ) -> Path:
     """`SUMMARY.md` -- ringkasan lintas kombinasi (PRD Bagian 9.4).
 
@@ -1085,6 +1491,38 @@ def write_summary(
     )
     warning_block = "\n".join(f"- {w}" for w in warnings) if warnings else "_(tidak ada)_"
 
+    unit_as = io_utils.display_unit("steel_area")
+    unit_len = io_utils.display_unit("length")
+    rebar_table = (
+        _markdown_table(
+            [
+                "arah",
+                "muka",
+                f"As pakai [{unit_as}]",
+                f"Mu [{io_utils.display_unit('moment_per_width')}]",
+                f"d [{unit_len}]",
+                "status",
+                "kombinasi",
+                "lajur",
+            ],
+            [
+                [
+                    r["direction"],
+                    r["face"],
+                    f"{io_utils.to_display(r['As_design_m2_per_m'], 'steel_area'):,.0f}",
+                    f"{io_utils.to_display(r['Mu_per_m_Nm'], 'moment_per_width'):,.1f}",
+                    f"{io_utils.to_display(r['d_eff_m'], 'length'):,.0f}",
+                    r["status"],
+                    r["combo"],
+                    f"{r['pier_id']} {r['sisi']} lajur {r['strip']}",
+                ]
+                for r in rebar_governing
+            ],
+        )
+        if rebar_governing
+        else "_(tidak ada lajur yang menghasilkan `As`)_"
+    )
+
     content = f"""\
 # SUMMARY - Pilecap {project_name or "(tanpa nama)"}
 
@@ -1115,6 +1553,23 @@ Sistem satuan internal: {config.SI_UNIT_SYSTEM}
 {governing}
 
 > Envelope bukan kondisi keseimbangan tunggal; jangan dipakai untuk cek statika.
+
+## 3a. DESAIN TULANGAN LENTUR (governing lintas kombinasi)
+
+{deep_pilecap_warning(deep_ratio)}
+
+Angka di bawah berasal dari momen **lajur di muka pier**, bukan puncak per elemen.
+Kapasitas dihitung `shell-kit` v{capacity_engine.provenance_block(capacity_inputs)["engine_version"]}
+menurut SNI 2847:2019, dengan `fy` = {capacity_inputs.fy_mpa:,.0f} MPa
+(asal: {capacity_inputs.fy_source}) dan `phi` lentur = {capacity_inputs.phi_flexure:.2f}
+(asal: {capacity_inputs.phi_source}). Rinciannya di `calc_sheet.md` bagian 7a tiap kombinasi.
+
+{rebar_table}
+
+> [!IMPORTANT]
+> **GESER PONS TIDAK DICEK.** `shell-kit` hanya menyediakan geser satu arah. `V_u` dan
+> `b_o` pons sudah dihitung, kapasitasnya belum -- pasalnya belum dikonfirmasi
+> (PRD Bagian 17 item 3, bagian pons).
 
 ## 4. STATUS PENGECEKAN
 

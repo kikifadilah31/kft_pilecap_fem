@@ -34,6 +34,12 @@ classifiers = ["Private :: Do Not Upload"]
 #
 # Menaikkan salah satu versi = menjalankan ulang seluruh validation case lalu mencatat
 # hasilnya di CHANGELOG.md.
+#
+# shell-kit menyediakan seluruh cek kapasitas SNI 2847:2019 beserta sitasi pasalnya.
+# Diimpor sebagai dependency, BUKAN disalin, supaya rumus SNI hidup di satu repo saja --
+# dua salinan rumus yang bisa menyimpang diam-diam adalah hal terakhir yang boleh terjadi
+# pada tool yang angkanya dipakai untuk desain (PRD Bagian 1.3).
+# Direct reference sah karena paket ini tidak pernah diunggah ke PyPI.
 dependencies = [
     "gmsh==4.15.2",
     "numpy==2.5.1",
@@ -43,6 +49,7 @@ dependencies = [
     "tqdm==4.70.0",
     "openseespy==3.8.0.0",
     "opsvis==1.3.7",
+    "shell-kit @ git+https://github.com/kikifadilah31/plot_kontur_plate_fea_midas_civil@v3.3.0",
 ]
 
 [project.scripts]
@@ -70,12 +77,22 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 path = "src/pilecap_fem/__init__.py"
 
+# Diperlukan untuk dependency `shell-kit @ git+...`. Hatchling memblokirnya secara default
+# karena paket ber-direct-reference tidak dapat diunggah ke PyPI -- dan itu memang yang
+# kita inginkan di sini (classifier `Private :: Do Not Upload`).
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/pilecap_fem"]
 
-# Contoh ikut dikemas (total 18 KB) agar pengguna `uvx` -- yang tidak meng-clone repo --
-# tetap dapat mencoba tool ini lewat `--init-example`. File yang dikemas adalah file
-# yang SAMA dengan yang dipakai test regresi, sehingga tidak bisa basi diam-diam.
+# Contoh ikut dikemas agar pengguna `uvx` -- yang tidak meng-clone repo -- tetap dapat
+# mencoba tool ini lewat `--init-example`. File yang dikemas adalah file yang SAMA dengan
+# yang dipakai test regresi, sehingga tidak bisa basi diam-diam.
+#
+# Termasuk `expected/golden.json` per contoh (~140 KB total, PRD Bagian 5.4). Ukurannya
+# sepadan: tanpa itu pengguna `uvx` hanya dapat memastikan tool BERJALAN, tidak dapat
+# memastikan angkanya sama dengan angka acuan.
 [tool.hatch.build.targets.wheel.force-include]
 "examples" = "pilecap_fem/examples"
 
@@ -104,7 +121,7 @@ disallow_untyped_defs = true
 warn_return_any = true
 
 [[tool.mypy.overrides]]
-module = ["gmsh", "opsvis", "openseespy.*"]
+module = ["gmsh", "opsvis", "openseespy.*", "shell_kit.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

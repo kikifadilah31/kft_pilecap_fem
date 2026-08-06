@@ -15,6 +15,7 @@ statis tertentu sehingga momen & gesernya mengikuti kesetimbangan saja.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from pathlib import Path
 
@@ -425,17 +426,55 @@ def test_vc0_beban_terpasang_persis_sama_dengan_pz_tiap_pile(ex01_model):
         assert trace.a_disk_mesh == pytest.approx(trace.a_disk_nominal, rel=0.03)
 
 
-def test_vc0_gagal_bila_toleransi_dibuat_mustahil(ex01_model):
-    """Cek keseimbangan harus benar-benar MEMBLOKIR, bukan sekadar mencatat."""
+def test_vc0_mendeteksi_ketidakseimbangan_sungguhan(ex01_model):
+    """`_check_equilibrium` menyatakan GAGAL saat reaksi memang tidak mengimbangi beban.
+
+    Diuji langsung pada fungsinya dengan masukan yang sengaja tidak seimbang, BUKAN dengan
+    menyetel toleransi ke angka mustahil. Alasannya konkret: residu gaya pada model yang
+    benar kadang tepat `0.0`, dan `0.0 <= rtol` lulus untuk **setiap** rtol -- test yang
+    mengandalkan trik toleransi karena itu bergantung pada keberuntungan floating point,
+    dan pernah lulus/gagal berganti-ganti tanpa ada yang berubah di kode.
+    """
+    _, _, mesh, _ = ex01_model
+
+    applied = np.zeros(mesh.n_nodes)
+    applied[: mesh.n_nodes // 2] = 1000.0
+    total = float(applied.sum())
+
+    reaction_nodes = np.array([0, 1], dtype=np.int64)
+    # Reaksi hanya mengimbangi 90% beban -> residu gaya relatif 0,1.
+    reactions = np.zeros((2, 6))
+    reactions[:, 2] = -0.45 * total
+
+    check = fem_engine._check_equilibrium(mesh, applied, reaction_nodes, reactions, force_rtol=1e-3)
+    assert check.force_residual_rel == pytest.approx(0.1, rel=1e-9)
+    assert not check.force_passed
+    assert not check.passed
+
+
+def test_vc0_gagal_memblokir_analisis_bukan_sekadar_mencatat(ex01_model, monkeypatch):
+    """Hasil VC-0 yang GAGAL harus melempar `AnalysisError`, bukan sekadar tercatat.
+
+    Kegagalan VC-0 dipaksa lewat monkeypatch supaya yang diuji adalah **penyambungannya**:
+    apakah hasil cek benar-benar menghentikan analisis. Deteksi ketidakseimbangannya
+    sendiri diuji terpisah di atas.
+    """
     loaded, geom, mesh, reactions = ex01_model
     combo = reactions.combos[0]
+    asli = fem_engine._check_equilibrium
+
+    def gagal(*args, **kwargs):
+        check = asli(*args, **kwargs)
+        return dataclasses.replace(check, force_residual_rel=0.5)
+
+    monkeypatch.setattr(fem_engine, "_check_equilibrium", gagal)
 
     with pytest.raises(validators.AnalysisError, match="VC-0 GAGAL"):
         fem_engine.analyze_combo(
             mesh,
             geom,
             fem_engine.MaterialProperties.from_config(loaded.si),
-            fem_engine.AnalysisOptions(equilibrium_rtol=1e-30),
+            fem_engine.AnalysisOptions(equilibrium_rtol=1e-3),
             combo=combo,
             pz_by_pile=reactions.values[combo],
         )

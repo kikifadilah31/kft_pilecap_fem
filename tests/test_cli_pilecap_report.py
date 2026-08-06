@@ -174,10 +174,36 @@ def test_calc_sheet_rantai_telusur_dapat_dihitung_ulang(reported: Path):
     assert "GP1" in text and "GP4" in text
 
 
-def test_calc_sheet_menandai_kapasitas_tidak_dihitung(reported: Path):
+def test_calc_sheet_memisahkan_kapasitas_yang_dihitung_dari_yang_tidak(reported: Path):
+    """Lentur & geser SATU ARAH dihitung; pons tetap tidak -- dan keduanya dinyatakan.
+
+    Sejak integrasi shell-kit, kalimat "KAPASITAS TIDAK DIHITUNG" yang berlaku menyeluruh
+    tidak lagi benar. Yang harus dijaga adalah pembedaannya: pembaca tidak boleh mengira
+    pons ikut tercakup hanya karena angka kapasitas lain sudah muncul.
+    """
     text = (reported / "Combo_1_2D_1_6L" / config.FILE_CALC_SHEET).read_text(encoding="utf-8")
-    assert "KAPASITAS TIDAK DIHITUNG" in text
-    assert "demand" in text.lower()
+
+    assert "GESER PONS TETAP TIDAK DICEK" in text
+    assert "NOT_EVALUATED" in text
+    assert "Kapasitas geser SATU ARAH" in text
+    assert "SNI 2847:2019 Ps. 22.5.5.1" in text
+    assert "7a. DESAIN LENTUR" in text
+    assert "shell-kit" in text
+
+
+def test_peringatan_deep_pilecap_mendahului_tabel_As(reported: Path):
+    """Peringatan deep pilecap WAJIB di ATAS tabel `As`, bukan catatan kaki.
+
+    Diuji lewat posisi karakter: angka `As` yang terbaca lebih dulu daripada
+    peringatannya adalah persis kegagalan yang ingin dicegah (PRD Bagian 8.3 #1).
+    """
+    for name in (config.FILE_CALC_SHEET, "../" + config.FILE_SUMMARY):
+        text = (reported / "Combo_1_2D_1_6L" / name).read_text(encoding="utf-8")
+        warning_at = text.find("TIDAK SAH sebagai dasar desain")
+        table_at = text.find("As pakai [mm^2/m]")
+        assert warning_at != -1, f"peringatan deep pilecap tidak ada di {name}"
+        assert table_at != -1, f"tabel As tidak ada di {name}"
+        assert warning_at < table_at, f"peringatan muncul SETELAH tabel As di {name}"
 
 
 def test_shear_checks_seluruhnya_not_evaluated(reported: Path):
