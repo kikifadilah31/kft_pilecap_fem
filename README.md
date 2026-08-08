@@ -66,6 +66,35 @@ git clone https://github.com/kikifadilah31/kft_pilecap_fem && cd kft_pilecap_fem
 
 Lalu jalankan lewat `uv run <command>`.
 
+## Antarmuka grafis (opsional) — untuk yang tidak terbiasa CLI
+
+```bash
+uv sync --extra ui
+```
+```bash
+uv run pilecap-ui
+```
+
+Formulir terbuka di `http://localhost:8501` — **offline, hanya mesin ini**. Isi seluruh
+masukan, tekan **Jalankan analisis**, selesai. Tidak perlu menulis `pilecap_config.json`
+maupun menghafal satu pun flag.
+
+Tiga hal yang perlu diketahui:
+
+* **UI menjalankan `pilecap-run` yang sama persis** lewat subprocess — bukan salinan
+  enginenya. Setiap validasi, setiap opsi, dan setiap pesan error otomatis ikut, dan
+  hasilnya identik dengan menjalankannya dari terminal.
+* **Perintah yang dijalankan ditampilkan** sebelum dan sesudah run, siap disalin ke
+  terminal. Cara paling mudah mempelajari CLI-nya adalah memakai formulir ini beberapa kali.
+* **Berkas input ditunjuk lewat path folder**, bukan diunggah. Dengan begitu `inputs` di
+  `run_manifest.json` menunjuk berkas asli Anda, bukan salinan sementara.
+
+Config yang dihasilkan formulir ditulis ke `<folder kerja>/ui_configs/` dengan nama
+bertimestamp — bukan ke folder input, agar auto-detect config tidak menjadi ambigu bagi
+siapa pun yang kemudian menjalankan CLI tanpa `--config`.
+
+`streamlit` sengaja **opsional**: pengguna CLI tidak ikut memasangnya.
+
 ## Pemakaian
 
 Contoh di bawah memakai `uv run` (jalur pengembangan). Bila memasang lewat

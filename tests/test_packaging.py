@@ -37,7 +37,12 @@ EXPECTED_SCRIPTS = {
     "pilecap-analyze": "pilecap_fem.cli_pilecap_analyze:entry_point",
     "pilecap-report": "pilecap_fem.cli_pilecap_report:entry_point",
     "pilecap-run": "pilecap_fem.cli_pilecap_run:entry_point",
+    "pilecap-ui": "pilecap_fem.ui.launcher:entry_point",
 }
+
+#: `pilecap-ui` sengaja TIDAK menerima argumen baris perintah -- seluruh masukan diisi
+#: lewat formulir -- sehingga ia tidak punya `--version` untuk diuji.
+VERSIONED_SCRIPTS = {k: v for k, v in EXPECTED_SCRIPTS.items() if k != "pilecap-ui"}
 
 
 def _pyproject_text() -> str:
@@ -113,14 +118,14 @@ def test_keempat_entry_point_terdaftar_dan_dapat_dipanggil():
         assert callable(ep.load()), f"entry point {name} tidak dapat dipanggil"
 
 
-@pytest.mark.parametrize("name", sorted(EXPECTED_SCRIPTS))
+@pytest.mark.parametrize("name", sorted(VERSIONED_SCRIPTS))
 def test_setiap_command_menampilkan_versi_yang_benar(name: str):
     result = subprocess.run(
         [
             sys.executable,
             "-c",
             f"import sys; sys.argv=['{name}','--version']; "
-            f"from {EXPECTED_SCRIPTS[name].split(':')[0]} import entry_point; entry_point()",
+            f"from {VERSIONED_SCRIPTS[name].split(':')[0]} import entry_point; entry_point()",
         ],
         capture_output=True,
         text=True,
@@ -356,6 +361,11 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
     with zipfile.ZipFile(wheels[0]) as archive:
         names = set(archive.namelist())
 
+    # Halaman Streamlit adalah data yang dijalankan `streamlit run`, bukan modul yang
+    # diimpor -- bila ia tidak ikut terkemas, `pilecap-ui` gagal hanya pada instalasi
+    # sungguhan dan tidak pernah pada jalur pengembangan.
+    assert "pilecap_fem/ui/app.py" in names, "halaman Streamlit tidak ikut terkemas"
+
     for module in (
         "capacity_engine",
         "cli_pilecap_mesh",
@@ -376,3 +386,33 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
             assert path in names, f"contoh {name} tidak lengkap terkemas ({path})"
 
     assert any(n.endswith("LICENSE") for n in names), "LICENSE tidak ikut terkemas"
+
+
+def test_streamlit_adalah_extra_opsional_bukan_dependency_inti():
+    """Pengguna CLI tidak boleh ikut memasang Streamlit beserta dependensinya.
+
+    Sekaligus menjaga alasan mengapa ini SATU-SATUNYA pin longgar: Streamlit tidak ikut
+    satu pun validation case dan tidak menyentuh angka rekayasa mana pun.
+    """
+    import tomllib
+
+    with open(PYPROJECT, "rb") as handle:
+        project = tomllib.load(handle)["project"]
+
+    assert not any("streamlit" in d for d in project["dependencies"]), (
+        "streamlit tidak boleh menjadi dependency inti"
+    )
+    ui_extra = project["optional-dependencies"]["ui"]
+    assert any(d.startswith("streamlit>=") for d in ui_extra), ui_extra
+
+
+def test_modul_ui_yang_dapat_salah_diam_diam_tidak_mengimpor_streamlit():
+    """`schema` dan `argv` harus dapat diuji tanpa extra `[ui]` terpasang.
+
+    Keduanya berisi satu-satunya bagian UI yang dapat menghasilkan config tidak sah atau
+    flag tidak dikenal; menautkannya ke streamlit berarti bagian itu tidak teruji pada
+    lingkungan yang hanya memasang paket inti.
+    """
+    for name in ("schema.py", "argv.py"):
+        source = (REPO / "src" / "pilecap_fem" / "ui" / name).read_text(encoding="utf-8")
+        assert "import streamlit" not in source, f"{name} mengimpor streamlit"

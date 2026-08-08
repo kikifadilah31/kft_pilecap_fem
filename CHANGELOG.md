@@ -2,6 +2,78 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.6.0] — 2026-08-08 — `pilecap-ui`: formulir offline di localhost
+
+Sampai v0.5.0 tool hanya dapat dijalankan lewat empat perintah CLI dengan puluhan flag,
+ditambah `pilecap_config.json` yang harus ditulis tangan. Bagi engineer yang tidak terbiasa
+CLI, hambatannya bukan pada rekayasanya melainkan pada cara menjalankannya.
+
+### Added
+- **`pilecap-ui`** — formulir Streamlit yang berjalan **offline di localhost**, mengisi
+  seluruh masukan lalu menjalankan `pilecap-run`. Extra opsional: `uv sync --extra ui`.
+- Sub-paket `src/pilecap_fem/ui/` berisi `launcher.py`, `schema.py`, `argv.py`, `app.py`.
+- `tests/test_ui.py` (24 test) yang seluruhnya berjalan **tanpa streamlit terpasang**.
+
+### Tidak ada engine baru — dan itu dijaga secara struktural
+
+UI **tidak pernah** menjalankan engine di dalam prosesnya sendiri: ia menyusun daftar
+argumen lalu memanggil CLI sebagai subprocess. Tiga alasan, masing-masing sudah terbukti:
+
+1. **`shell-kit` sudah membayarnya.** Docstring `shell_kit/ui/__init__.py` mencatat bahwa
+   UI Streamlit di sana pernah mengimpor potongan engine lalu menulis ulang orkestrasinya,
+   sehingga ada dua implementasi yang harus dijaga sinkron — dan UI itu akhirnya dihapus.
+2. **OpenSeesPy dan gmsh menyimpan state global proses.** Server Streamlit berumur panjang
+   dan dapat menjalankan beberapa rerun; di dalam satu proses, dua analisis akan saling
+   merusak state C library yang sama.
+3. **`run_manifest.json` merekam string perintah.** Dengan subprocess, yang tercatat adalah
+   perintah `pilecap-run` yang benar-benar dapat dijalankan ulang orang lain — bukan
+   sekadar "dijalankan dari UI".
+
+Dua test menutup kelas bug ini secara permanen: config hasil formulir dijalankan melalui
+`io_utils.load_config` + seluruh validator, dan setiap argv yang dipancarkan diberikan ke
+`cli_pilecap_run.build_parser()` yang asli. Formulir karena itu tidak dapat menghasilkan
+masukan yang ditolak engine, dan tidak dapat memancarkan flag yang tidak dikenal CLI.
+
+### Temuan: kunci bernilai `null` TIDAK setara dengan kunci yang tidak ada
+
+Versi pertama `build_config` menulis `null` untuk setiap field yang tidak berlaku pada
+cabang aktif, dengan alasan agar pembaca config melihat kuncinya. Verifikasi end-to-end
+langsung menggagalkannya:
+
+```
+TypeError: int() argument must be ... not 'NoneType'
+  fem_engine.py:94  n_layers=int(analysis.get("n_layers", 10))
+```
+
+`dict.get` mengembalikan `None` yang **ada** alih-alih bawaannya. Contoh bawaan pun ternyata
+sudah memakai konvensi yang benar — `ex02` (pier lingkaran) tidak memuat `pier.width_x`
+sama sekali, bukan menulisnya `null`. Aturan yang dipakai sekarang mengikuti contoh:
+field yang **tidak berlaku dihilangkan**, field opsional yang **tampil tetapi dikosongkan
+ditulis `null`** (seperti `mesh.size_local_pile` dan `design.phi_flexure`).
+
+### Dua hal yang sengaja tidak dapat diakses dari UI
+
+- **`--preview`** memanggil `plt.show()`; di server tanpa display ia menggantung. Justru
+  ketika flag ini tidak diberikan, `renderer.PlotStyle.from_args` memaksa backend Agg.
+- **`--wood-armer`** memanggil `math_engine.wood_armer` yang selalu `NotImplementedError`
+  (exit 4) — menampilkannya berarti menawarkan tombol yang dijamin gagal.
+
+### Catatan lain
+
+- Config bertimestamp ditulis ke `<folder kerja>/ui_configs/`, **bukan** ke folder input:
+  `io_utils.autodetect` memakai glob `*config*.json` dan RAISE bila menemukan lebih dari
+  satu, sehingga menumpuknya di folder input akan merusak `pilecap-run` tanpa `--config`
+  bagi siapa pun yang menjalankannya kemudian dari CLI.
+- Server mengikat **hanya ke `localhost`**. Tanpa itu Streamlit menyajikan formulir beserta
+  seluruh data proyek di dalamnya ke jaringan lokal.
+- Log dialirkan dari **stderr** dan folder hasil dibaca dari **stdout** (`OK -> <path>`) —
+  kebalikan dari pola `shell-kit`, karena `config.setup_logging` menulis ke stderr.
+- `streamlit>=1.57` adalah **satu-satunya dependency yang tidak di-pin eksak**. Alasan pin
+  eksak di proyek ini bersifat numerik (versi yang lolos VC-0..VC-5); Streamlit tidak ikut
+  satu pun validation case dan tidak menyentuh angka rekayasa mana pun.
+
+---
+
 ## [0.5.0] — 2026-08-06 — Plot tulangan lengkap + tema terang/gelap gaya `shell-kit`
 
 v0.4.0 sudah menghitung kapasitas, tetapi keluaran visualnya baru separuh: plot tulangan

@@ -1,6 +1,11 @@
 # Output run (timestamped, tidak pernah di-commit)
 output/
 
+# Config bertimestamp yang ditulis formulir `pilecap-ui`. Isinya milik satu run tertentu
+# dan sudah terekam di run_manifest.json beserta sha256-nya, jadi tidak perlu ikut
+# ter-version-control.
+ui_configs/
+
 # Python
 __pycache__/
 *.py[cod]

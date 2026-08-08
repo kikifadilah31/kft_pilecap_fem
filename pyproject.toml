@@ -52,11 +52,25 @@ dependencies = [
     "shell-kit @ git+https://github.com/kikifadilah31/plot_kontur_plate_fea_midas_civil@v3.3.0",
 ]
 
+# SATU-SATUNYA dependency yang TIDAK di-pin eksak, dan itu disengaja.
+#
+# Alasan pin eksak di atas adalah numerik: angka-angka itu versi yang benar-benar lolos
+# VC-0..VC-5. Streamlit tidak ikut satu pun validation case dan tidak menyentuh satu pun
+# angka rekayasa -- antarmuka hanya menyusun daftar argumen lalu memanggil CLI. Menyematkan
+# versinya secara eksak berarti meniru aturan tanpa membawa alasannya.
+#
+# Batas bawah 1.57 dibutuhkan `st.segmented_control`, `st.status`, container ber-border,
+# dan ikon `:material/`. Opsional supaya pengguna CLI tidak ikut memasang ~40 MB Streamlit
+# beserta dependensinya hanya untuk menjalankan analisis.
+[project.optional-dependencies]
+ui = ["streamlit>=1.57"]
+
 [project.scripts]
 pilecap-mesh = "pilecap_fem.cli_pilecap_mesh:entry_point"
 pilecap-analyze = "pilecap_fem.cli_pilecap_analyze:entry_point"
 pilecap-report = "pilecap_fem.cli_pilecap_report:entry_point"
 pilecap-run = "pilecap_fem.cli_pilecap_run:entry_point"
+pilecap-ui = "pilecap_fem.ui.launcher:entry_point"
 
 [dependency-groups]
 dev = [
