@@ -79,6 +79,20 @@ Formulir terbuka di `http://localhost:8501` — **offline, hanya mesin ini**. Is
 masukan, tekan **Jalankan analisis**, selesai. Tidak perlu menulis `pilecap_config.json`
 maupun menghafal satu pun flag.
 
+Yang tersedia di formulir:
+
+* **Penjelasan pada setiap field.** Seluruh 58 field dan 11 bagian punya tooltip yang
+  ditulis untuk pembaca yang tidak akrab dengan FEM: apa yang diisi, satuannya, dan akibat
+  memilih salah. Cakupannya dijaga test — field baru tanpa penjelasan akan menggagalkan
+  suite.
+* **Muat `pilecap_config.json` yang sudah ada.** Isi path-nya di kotak paling atas lalu
+  tekan **Muat**; seluruh formulir terisi dan tetap dapat disunting. Kunci yang tidak
+  dikenal formulir dilaporkan, tidak dibuang diam-diam.
+* **Pratinjau geometri.** Tombol **Perbarui pratinjau** menggambar denah pilecap, pile,
+  dan pier sebelum apa pun dijalankan. Tidak menyentuh gmsh maupun OpenSees, jadi selesai
+  seketika, dan override CSV ikut diperhitungkan sehingga yang tergambar memang yang akan
+  dianalisis.
+
 Tiga hal yang perlu diketahui:
 
 * **UI menjalankan `pilecap-run` yang sama persis** lewat subprocess — bukan salinan
@@ -135,6 +149,7 @@ output/pilecap_20260804_093148/
 │   ├── mesh_plan.png      # denah mesh + label pile & pier
 │   ├── nodes.csv          # tag, x, y, z  [SI]
 │   ├── elements.csv       # tag, n1..n4, luas, centroid, theta, group
+│   ├── model.mct          # model siap impor Midas Civil, lengkap dengan pembebanan
 │   └── model.msh          # opsional (--export-msh), untuk dibuka di GUI gmsh
 ├── SUMMARY.md             # ringkasan lintas kombinasi + governing + Known Limitations
 ├── Combo_<nama>/          # satu folder per kombinasi
@@ -196,6 +211,34 @@ paling menyesatkan justru di daerah singularitas tepi zona jepit.
 Plot opsvis **dilewati otomatis** di atas 3.000 elemen (dengan WARNING yang menyebut
 alasannya), karena `opsv.plot_defo` tumbuh lebih cepat dari linier — terukur 5,1 detik
 untuk 1.200 elemen. Paksa dengan `--opsvis`.
+
+### Ekspor ke Midas Civil (`model.mct`)
+
+Setiap run menulis `00_Model/model.mct`, model teks siap impor Midas Civil: node, elemen
+PLATE, grup (`CAP`, `PILE_*`, `PIER_*` — grup yang sama dengan `elements.csv`), material,
+tebal, tumpuan jepit di pier, dan **pembebanan lengkap** — satu load case per kombinasi
+plus satu `*LOADCOMB` envelope. `pilecap-mesh` juga menulisnya, tetapi tanpa pembebanan:
+perintah itu memang tidak pernah membaca `pile_reactions.csv`.
+
+Tekanan pile pada `*PRESSURE` diambil dari fungsi yang **sama** dengan yang dipakai model
+OpenSees (`fem_engine.pile_pressures`), bukan dihitung ulang — sehingga model yang Anda
+impor memikul beban yang persis sama dengan yang dianalisis. Test membuktikan
+`Σ(p × A_elemen) = Σ Pz` pada berkas hasil, bukan pada model internal.
+
+Setiap berkas diawali blok komentar `;` berisi versi tool, perintah, waktu, jumlah entitas,
+dan pemetaan nama kombinasi → nama load case MCT. Tiga penyimpangan sengaja terhadap berkas
+rujukan, masing-masing dijelaskan di dalam berkas itu sendiri: `*UNIT` ditulis eksplisit,
+arah tekanan `GZ` (bukan `LZ`, yang bergantung pada urutan simpul), dan `*GROUP` selalu
+bentuk elemen-saja.
+
+> **Perlu satu kali diperiksa saat impor pertama.** Bagian `*CONSTRAINT` dan varian
+> user-defined `*MATERIAL` **tidak ada** di berkas rujukan yang tersedia, sehingga
+> sintaksnya ditulis menurut konvensi MCT dan belum tervalidasi terhadap contoh nyata.
+> Statusnya dinyatakan di header setiap berkas. Pastikan tumpuan dan material terbaca benar
+> sebelum memakai hasilnya.
+
+Format berbasis teks lain (mis. SAP2000 `.s2k`) dapat menyusul sebagai modul sejajar di
+`src/pilecap_fem/exporters/`; hanya MCT yang tersedia sekarang.
 
 ### Argumen penting
 

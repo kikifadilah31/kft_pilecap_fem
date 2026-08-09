@@ -2,6 +2,65 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.7.0] — 2026-08-09 — Ekspor Midas MCT, plot sengkang kategorikal, tiga peningkatan UI
+
+Lima temuan dari pemakaian v0.6.0. Dua menyangkut seluruh tool, tiga menyangkut antarmuka.
+
+### Added
+
+- **Ekspor Midas Civil `00_Model/model.mct`** — model teks siap impor, **lengkap dengan
+  pembebanan**: node, elemen PLATE (`iSUB=1`, thick plate/Mindlin, setara `ShellMITC4`),
+  grup yang sama dengan `elements.csv`, material, tebal, tumpuan jepit pier, satu
+  `*STLDCASE` per kombinasi, dan `*LOADCOMB` envelope. `pilecap-mesh` menulis versi tanpa
+  beban; `pilecap-analyze`/`pilecap-run` menulis ulang versi lengkapnya.
+- Sub-paket `src/pilecap_fem/exporters/` sebagai jalan masuk format teks berikutnya
+  (mis. SAP2000). Aturannya tertulis di `__init__.py`: exporter **hanya menerjemahkan**,
+  tidak pernah menghitung ulang besaran rekayasa.
+- `fem_engine.pile_pressures()` — sumber **tunggal** tekanan pile `p = Pz / A_disk`,
+  dipakai bersama oleh strategi beban OpenSees dan penulis `*PRESSURE`.
+- **UI: pratinjau geometri.** Tombol **Perbarui pratinjau** menggambar denah pilecap/pile/
+  pier sebelum run, lewat `renderer.render_geometry_plan()` yang mengembalikan `Figure`.
+  Tidak menyentuh gmsh maupun OpenSees, dan menghormati override CSV.
+- **UI: memuat `pilecap_config.json` yang sudah ada** (`schema.values_from_config`). Kunci
+  yang tidak dikenal formulir **dilaporkan**, tidak dibuang diam-diam.
+- **UI: penjelasan pada setiap field.** 58 field skema, 11 bagian, dan 9 widget opsi run
+  yang ditulis langsung di `app.py` — seluruhnya. Dijaga empat test agar cakupannya tidak
+  surut saat field baru ditambahkan.
+- `docs/CATATAN_SHELL_KIT.md` — vonis beserta buktinya bahwa cacat plot sengkang **bukan**
+  dari `shell-kit`, plus satu wart: `config.REBAR_CMAP` di sana adalah kode mati.
+- `tests/test_exporters.py` (16 test) dan `tests/test_ui_app.py` (4 test lewat
+  `streamlit.testing.v1.AppTest`, di-skip bila extra `ui` tidak terpasang). `test_ui.py`
+  tetap sepenuhnya bebas streamlit.
+
+### Fixed
+
+- **Kontur diameter sengkang digambar sebagai gradasi mulus**, tidak bertingkat seperti
+  kontur diameter lentur. Nilainya memang diskret di sumbernya — `shell-kit` mengembalikan
+  `0`, anggota persis `SHEAR_DIAMETERS`, atau `NaN` — tetapi `ShearRebarMap` adalah
+  satu-satunya objek hasil tulangan tanpa `labels`/`is_categorical`, sehingga pemilih plot
+  tidak punya apa pun untuk dicabangkan dan nilainya jatuh ke `render_contour` dengan
+  colormap kontinu. Colorbarnya pun berlabel angka interpolasi alih-alih `D10`…`D25`.
+  Sekarang `ShearRebarMap` membawa `available_diameters` dan plotnya kategorikal.
+- Docstring `renderer._triangulation` mengklaim urutan simpul quad "sudah dijamin CCW oleh
+  `mesh_model`". **Klaim itu tidak benar** — `_quad_areas_and_centroids` justru sengaja
+  memakai `np.abs(signed)` agar tidak bergantung pada orientasi gmsh. Test yang lulus hanya
+  membuktikan gmsh kebetulan menghasilkan CCW pada contoh yang diuji. Docstring diperbaiki,
+  dan konsekuensinya dipakai: ekspor MCT memilih arah `GZ`, bukan `LZ`.
+- `help` pada field `pair` hanya menempel di kotak `x`, tidak di `y`.
+
+### Changed
+
+- `PreparedModel` kini membawa `material` dan `fc`. Pada `pilecap-mesh` keduanya boleh
+  `None` — perintah itu memang tidak mewajibkan `material.E` — dan MCT yang dihasilkan
+  **menyatakan** ketiadaan blok `*MATERIAL` alih-alih mengarang nilai `E`.
+
+### Yang belum dapat diverifikasi
+
+Bagian `*CONSTRAINT` dan varian user-defined `*MATERIAL` **tidak ada** di berkas rujukan
+`ref/PILECAP_P32N.mct`, sehingga sintaksnya ditulis menurut konvensi MCT. Statusnya
+dinyatakan di header setiap berkas yang dihasilkan agar diperiksa pada impor pertama —
+satu-satunya cara memastikannya adalah mengimpornya sungguhan ke Midas Civil.
+
 ## [0.6.0] — 2026-08-08 — `pilecap-ui`: formulir offline di localhost
 
 Sampai v0.5.0 tool hanya dapat dijalankan lewat empat perintah CLI dengan puluhan flag,

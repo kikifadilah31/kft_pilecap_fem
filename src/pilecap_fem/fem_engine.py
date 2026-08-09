@@ -288,6 +288,60 @@ def _lumped_quad_load_factors(areas: np.ndarray) -> np.ndarray:
     return np.repeat((areas / 4.0)[:, None], 4, axis=1)
 
 
+@dataclass(frozen=True)
+class PilePressure:
+    """Tekanan merata satu pile beserta elemen yang memikulnya. Seluruh nilai SI."""
+
+    pile_id: str
+    group_name: str
+    #: Indeks elemen mesh dalam physical group pile ini.
+    element_index: np.ndarray
+    pz: float  # N, positif = pile mendorong pilecap ke ATAS
+    a_disk: float  # m^2 -- jumlah luas elemen mesh, BUKAN pi r^2 analitis
+    pressure: float  # Pa, positif = ke atas
+
+    @property
+    def n_elements(self) -> int:
+        return int(self.element_index.size)
+
+
+def pile_pressures(
+    mesh: MeshModel, geom: GeometryModel, pz_by_pile: dict[str, float]
+) -> tuple[PilePressure, ...]:
+    """`p = Pz / A_disk` per pile, dengan `A_disk` dari LUAS ELEMEN MESH (PRD Bagian 7.3).
+
+    Satu-satunya tempat tekanan pile dihitung. Dipakai dua konsumen yang sangat berbeda:
+    strategi beban OpenSees di modul ini, dan penulis `*PRESSURE` pada ekspor Midas MCT
+    (`exporters.mct`). Menghitungnya dua kali berarti membuka peluang model FEM dan model
+    yang diekspor membawa beban yang berbeda tanpa ada yang menyadarinya.
+
+    `A_disk` sengaja diambil dari jumlah luas elemen, bukan `pi r^2`: itulah yang menjamin
+    `Sigma(p x A_e)` persis sama dengan `Pz`.
+    """
+    result: list[PilePressure] = []
+    for pile in geom.piles:
+        mask = mesh.group_mask(pile.group_name)
+        index = np.flatnonzero(mask)
+        if index.size == 0:
+            raise AnalysisError(
+                f"Physical group {pile.group_name} tidak punya elemen -- beban pile "
+                "akan HILANG dari model. Perkecil ukuran mesh."
+            )
+        a_disk = float(mesh.elem_area[mask].sum())
+        pz = float(pz_by_pile[pile.pile_id])
+        result.append(
+            PilePressure(
+                pile_id=pile.pile_id,
+                group_name=pile.group_name,
+                element_index=index,
+                pz=pz,
+                a_disk=a_disk,
+                pressure=pz / a_disk,
+            )
+        )
+    return tuple(result)
+
+
 class PileLoadStrategy(Protocol):
     def apply(
         self, mesh: MeshModel, geom: GeometryModel | None, pz_by_pile: dict[str, float]
@@ -312,34 +366,24 @@ class _PileAreaLoadBase:
             )
         nodal = np.zeros(mesh.n_nodes, dtype=np.float64)
         traces: list[PileLoadTrace] = []
+        nominal_area = {p.pile_id: p.nominal_area for p in geom.piles}
 
-        for pile in geom.piles:
-            mask = mesh.group_mask(pile.group_name)
-            n_elem = int(mask.sum())
-            if n_elem == 0:
-                raise AnalysisError(
-                    f"Physical group {pile.group_name} tidak punya elemen -- beban pile "
-                    "akan HILANG dari model. Perkecil ukuran mesh."
-                )
-            a_disk = float(mesh.elem_area[mask].sum())
-            pz = float(pz_by_pile[pile.pile_id])
-            pressure = pz / a_disk
-
-            coords = mesh.node_xy[mesh.elem_conn[mask]]
-            factors = self._node_factors(coords, mesh.elem_area[mask])
+        for load in pile_pressures(mesh, geom, pz_by_pile):
+            conn = mesh.elem_conn[load.element_index]
+            coords = mesh.node_xy[conn]
+            factors = self._node_factors(coords, mesh.elem_area[load.element_index])
             # Tekanan positif -> gaya ke ATAS pada pilecap (+Z), sesuai PRD Bagian 7.1.
-            np.add.at(nodal, mesh.elem_conn[mask].ravel(), (pressure * factors).ravel())
+            np.add.at(nodal, conn.ravel(), (load.pressure * factors).ravel())
 
-            applied = float((pressure * factors).sum())
             traces.append(
                 PileLoadTrace(
-                    pile_id=pile.pile_id,
-                    pz=pz,
-                    a_disk_mesh=a_disk,
-                    a_disk_nominal=pile.nominal_area,
-                    pressure=pressure,
-                    n_elements=n_elem,
-                    applied_total=applied,
+                    pile_id=load.pile_id,
+                    pz=load.pz,
+                    a_disk_mesh=load.a_disk,
+                    a_disk_nominal=nominal_area[load.pile_id],
+                    pressure=load.pressure,
+                    n_elements=load.n_elements,
+                    applied_total=float((load.pressure * factors).sum()),
                 )
             )
 

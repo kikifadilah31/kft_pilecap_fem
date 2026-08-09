@@ -36,6 +36,7 @@ from pilecap_fem import (
     reporter,
     validators,
 )
+from pilecap_fem.exporters import write_mct
 from pilecap_fem.validators import AnalysisError, InputError, PilecapError
 
 _log = config.get_logger("cli_pilecap_analyze")
@@ -132,7 +133,7 @@ def run(args: argparse.Namespace, command: str) -> Path:
     manifest.write()
 
     try:
-        return _run_inner(args, run_dir, model_dir, manifest)
+        return _run_inner(args, command, run_dir, model_dir, manifest)
     except Exception as exc:
         manifest.set_status("FAILED")
         manifest.update_checks({"error": f"{type(exc).__name__}: {exc}"})
@@ -142,13 +143,14 @@ def run(args: argparse.Namespace, command: str) -> Path:
 
 def _run_inner(
     args: argparse.Namespace,
+    command: str,
     run_dir: Path,
     model_dir: Path,
     manifest: provenance.Manifest,
 ) -> Path:
     prepared = cli_pilecap_mesh.prepare_model(args, model_dir, manifest, require_material=True)
     cli_pilecap_mesh.write_model_artifacts(
-        prepared, run_dir, model_dir, style=renderer.PlotStyle.from_args(args)
+        prepared, run_dir, model_dir, style=renderer.PlotStyle.from_args(args), command=command
     )
     cli_pilecap_mesh.record_model_stats(prepared, manifest)
 
@@ -170,7 +172,23 @@ def _run_inner(
     reaction_warnings = validators.validate_reactions(reactions, prepared.geom)
     manifest.add_warnings(reaction_warnings)
 
-    material = fem_engine.MaterialProperties.from_config(prepared.loaded.si)
+    # Reaksi baru terbaca DI SINI, sesudah `write_model_artifacts`. Karena itu MCT ditulis
+    # ulang -- kali ini lengkap dengan `*STLDCASE`/`*PRESSURE` -- alih-alih menumpang di
+    # sana. Tekanannya diambil dari `fem_engine.pile_pressures`, fungsi yang sama yang
+    # dipakai model OpenSees di bawah, sehingga kedua model tak mungkin berbeda bebannya.
+    material = prepared.material
+    assert material is not None, "require_material=True menjamin material terbaca"
+    write_mct(
+        model_dir / config.FILE_MODEL_MCT,
+        prepared.geom,
+        prepared.mesh,
+        material,
+        project_name=prepared.project_name,
+        command=command,
+        fc_pa=prepared.fc,
+        loads=reactions.values,
+    )
+
     options = fem_engine.AnalysisOptions.from_config(prepared.loaded.si)
     if args.element is not None:
         options = replace(options, shell_element=args.element)

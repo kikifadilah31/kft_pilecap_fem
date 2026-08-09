@@ -307,6 +307,137 @@ def test_streamlit_absen_memberi_petunjuk_bukan_traceback(monkeypatch, capsys):
     assert "OPSIONAL" in keluaran
 
 
+# ---------------------------------------------------------------------------
+# Memuat config yang sudah ada
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("mode", validators.REBAR_MODES)
+def test_pulang_pergi_config_mengembalikan_nilai_formulir(mode: str):
+    """`values_from_config(build_config(v))` harus mengembalikan `v` apa adanya.
+
+    Bila tidak, memuat lalu menyimpan ulang sebuah config akan MENGUBAH masukan tanpa
+    disengaja -- kelas kesalahan yang tidak terlihat sampai hasilnya berbeda.
+    """
+    values = _filled(**{"design.rebar_mode": mode})
+    pulang, unknown = schema.values_from_config(schema.build_config(values))
+
+    visible = {f.key for f in schema.visible_fields(values)}
+    assert unknown == ()
+    for key in visible:
+        assert pulang[key] == values[key], key
+
+
+def test_kunci_yang_hilang_mempertahankan_bawaan_skema():
+    """Kunci HILANG berarti "pakai bawaan", berbeda dari kunci bernilai `null`."""
+    values, unknown = schema.values_from_config({"pilecap": {"thickness": 900.0}})
+    assert unknown == ()
+    assert values["pilecap.thickness"] == 900.0
+    assert values["pilecap.length_x"] == schema.default_values()["pilecap.length_x"]
+
+
+def test_null_yang_tertulis_dipertahankan_apa_adanya():
+    """`null` adalah keputusan sadar user ("pakai bawaan shell-kit"), bukan ketiadaan."""
+    values, _ = schema.values_from_config({"design": {"phi_flexure": None}})
+    assert values["design.phi_flexure"] is None
+
+
+def test_kunci_tak_dikenal_dilaporkan_bukan_dibuang_diam_diam():
+    """Config tulisan tangan boleh memuat field yang belum diwakili formulir.
+
+    Menyimpan ulang lewat formulir akan menghilangkannya; user berhak tahu sebelum itu
+    terjadi.
+    """
+    _, unknown = schema.values_from_config(
+        {"pilecap": {"thickness": 900.0, "_catatan": "x"}, "entah": {"apa": 1}}
+    )
+    assert unknown == ("entah.apa", "pilecap._catatan")
+
+
+def test_contoh_bawaan_dapat_dimuat_formulir(examples_dir: Path):
+    """Setiap contoh di `examples/` harus dapat dibuka user lewat formulir.
+
+    Ini juga menangkap kunci config yang ditambahkan ke contoh tetapi lupa ditambahkan ke
+    skema formulir -- hanya `_catatan` (komentar) yang diizinkan tidak dikenal.
+    """
+    contoh = sorted(examples_dir.glob("*/pilecap_config.json"))
+    assert contoh, "tidak ada contoh yang ditemukan"
+    for path in contoh:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        values, unknown = schema.values_from_config(raw)
+        assert all(k.split(".")[-1].startswith("_") for k in unknown), (path.name, unknown)
+        assert values["pilecap.thickness"] == raw["pilecap"]["thickness"]
+
+
+# ---------------------------------------------------------------------------
+# Penjelasan pada formulir
+# ---------------------------------------------------------------------------
+
+
+def test_setiap_field_punya_penjelasan():
+    """Formulir ini ditujukan bagi yang tidak terbiasa dengan CLI.
+
+    Field tanpa penjelasan memaksa pembacanya menebak, dan tebakan pada masukan desain
+    berakhir di lapangan. Test ini menjaga cakupan itu tidak surut saat field baru
+    ditambahkan.
+    """
+    kosong = [f.key for f in schema.ALL_FIELDS if not f.help.strip()]
+    assert kosong == []
+
+
+def test_setiap_section_punya_penjelasan():
+    kosong = [s.title for s in schema.SECTIONS if not s.help.strip()]
+    assert kosong == []
+
+
+def test_penjelasan_cukup_panjang_untuk_menjelaskan():
+    """Menjaga `help` tidak diisi sekadar mengulang labelnya agar test di atas lolos."""
+    pendek = [f.key for f in schema.ALL_FIELDS if len(f.help.strip()) < 40]
+    assert pendek == []
+
+
+# ---------------------------------------------------------------------------
+# Pratinjau geometri
+# ---------------------------------------------------------------------------
+
+
+def test_pratinjau_membangun_geometri_dari_nilai_formulir():
+    """Pratinjau harus memakai jalur yang sama dengan run, termasuk konversi satuan."""
+    from pilecap_fem.ui import preview
+
+    values = _filled()
+    geom = preview.build_preview_geometry(schema.build_config(values), None)
+
+    assert geom.n_piles == values["pile.n_col"] * values["pile.n_row"]
+    assert geom.n_piers == 1
+    assert geom.thickness == pytest.approx(values["pilecap.thickness"] / 1000.0)
+
+
+def test_pratinjau_menghormati_override_csv(ex03: Path):
+    """Pratinjau yang mengabaikan CSV akan menggambar geometri yang BUKAN yang dianalisis."""
+    from pilecap_fem.ui import preview
+
+    raw = json.loads((ex03 / "pilecap_config.json").read_text(encoding="utf-8"))
+    values, _ = schema.values_from_config(raw)
+
+    tanpa_csv = preview.build_preview_geometry(schema.build_config(values), None)
+    dengan_csv = preview.build_preview_geometry(schema.build_config(values), ex03)
+
+    assert tanpa_csv.n_piles == raw["pile"]["n_col"] * raw["pile"]["n_row"]
+    assert dengan_csv.n_piles == 12
+    assert dengan_csv.n_piers == 2
+    assert dengan_csv.pilecap_area == pytest.approx(42.0)
+
+
+def test_pratinjau_menolak_geometri_tak_sah_dengan_pesan_engineer():
+    """Kesalahan harus datang sebagai `PilecapError`, bukan traceback numpy/shapely."""
+    from pilecap_fem.ui import preview
+
+    values = _filled(**{"pile.spacing_x": 40_000.0})  # pile keluar dari pilecap
+    with pytest.raises(validators.PilecapError):
+        preview.build_preview_geometry(schema.build_config(values), None)
+
+
 def test_launcher_mengikat_hanya_ke_localhost(monkeypatch):
     """Formulir memuat data proyek; ia tidak boleh tersaji ke jaringan lokal."""
     direkam: dict[str, list[str]] = {}

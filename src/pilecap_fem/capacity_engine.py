@@ -688,6 +688,24 @@ class ShearRebarMap:
     av_per_s_no_min: np.ndarray
     stirrup_diameter: np.ndarray  # m
     status: np.ndarray
+    #: Diameter sengkang yang BOLEH dipilih [m], terurut menaik.
+    #:
+    #: Ada di sini karena `stirrup_diameter` adalah besaran **diskret**: setiap nilainya
+    #: pasti 0, anggota persis daftar ini, atau NaN. Tanpa daftarnya ikut dibawa, hilir
+    #: tidak punya apa pun untuk membedakan besaran diskret dari besaran kontinu -- dan
+    #: itulah yang dulu membuat plot diameter sengkang digambar sebagai gradasi mulus
+    #: sementara plot diameter lentur sudah bertingkat.
+    available_diameters: tuple[float, ...] = ()
+
+    @property
+    def labels(self) -> tuple[str, ...]:
+        """Label kategori untuk colorbar diskret, mis. `("D10", "D13", ...)`."""
+        factor = config.DISPLAY_UNITS["length"][1]
+        return tuple(f"D{d * factor:.0f}" for d in self.available_diameters)
+
+    @property
+    def is_categorical(self) -> bool:
+        return bool(self.available_diameters)
 
     @property
     def n_needs_stirrup(self) -> int:
@@ -746,6 +764,12 @@ def shear_rebar_map(
         ),
         dtype=np.float64,
     )
+    # Daftar diameter yang benar-benar dipakai shell-kit; ikut dibawa ke hasil supaya
+    # hilir tahu besaran ini diskret (lihat `ShearRebarMap.available_diameters`).
+    allowed_mm = inputs.stirrup_diameters_mm
+    if allowed_mm is None:
+        allowed_mm = [float(d) for d in sk_rebar.SHEAR_DIAMETERS]
+
     diameter_mm = np.asarray(
         sk_rebar.calc_shear_diameter(
             av_mm,
@@ -775,6 +799,7 @@ def shear_rebar_map(
         av_per_s_no_min=av_no_min_mm * to_si_area,
         stirrup_diameter=diameter_mm * to_si_len,
         status=status,
+        available_diameters=tuple(sorted(d * to_si_len for d in allowed_mm)),
     )
     if result.n_web_crushed:
         _log.warning(

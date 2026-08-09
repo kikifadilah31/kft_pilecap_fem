@@ -23,6 +23,7 @@ from typing import Any
 from pilecap_fem import (
     __version__,
     config,
+    fem_engine,
     geometry_builder,
     io_utils,
     mesh_engine,
@@ -32,6 +33,7 @@ from pilecap_fem import (
     validators,
 )
 from pilecap_fem import mesh_model as mesh_model_mod
+from pilecap_fem.exporters import write_mct
 from pilecap_fem.geometry_builder import GeometryModel, ResolvedGeometrySources
 from pilecap_fem.mesh_model import MeshModel
 from pilecap_fem.validators import InputError, PilecapError
@@ -201,6 +203,12 @@ class PreparedModel:
     raw: mesh_engine.RawMesh
     mesh: MeshModel
     cli_overrides: dict[str, Any]
+    #: `None` bila `material.E` tidak diisi. Sah hanya untuk `pilecap-mesh`, yang memang
+    #: tidak mewajibkannya; akibatnya ekspor MCT kehilangan blok `*MATERIAL`, dan berkas
+    #: itu menyatakan sendiri kehilangan tersebut.
+    material: fem_engine.MaterialProperties | None = None
+    #: `f'c` [Pa], hanya untuk MENAMAI material di MCT -- tidak pernah dipakai menurunkan `E`.
+    fc: float | None = None
 
     @property
     def project_name(self) -> str:
@@ -282,6 +290,8 @@ def prepare_model(
     )
     mesh = mesh_model_mod.build_mesh_model(raw)
 
+    material, fc = _material_if_available(loaded.si, required=require_material)
+
     return PreparedModel(
         loaded=loaded,
         sources=sources,
@@ -290,7 +300,29 @@ def prepare_model(
         raw=raw,
         mesh=mesh,
         cli_overrides=cli_overrides,
+        material=material,
+        fc=fc,
     )
+
+
+def _material_if_available(
+    cfg_si: dict[str, Any], *, required: bool
+) -> tuple[fem_engine.MaterialProperties | None, float | None]:
+    """Baca material bila ada; jangan wajibkan saat `pilecap-mesh` yang memanggil.
+
+    Hanya ekspor MCT yang memakainya di jalur mesh. Mewajibkannya di sini akan menghalangi
+    cek visual mesh -- persis yang sengaja dihindari modul ini. Saat `required`, kesalahan
+    dibiarkan naik: `validators.validate_material` sudah berjalan lebih dulu dan pesannya
+    jauh lebih baik daripada apa pun yang bisa ditulis di sini.
+    """
+    try:
+        material = fem_engine.MaterialProperties.from_config(cfg_si)
+    except (KeyError, TypeError, ValueError):
+        if required:
+            raise
+        return None, None
+    fc_raw = (cfg_si.get("material") or {}).get("fc")
+    return material, float(fc_raw) if fc_raw else None
 
 
 def write_model_artifacts(
@@ -299,10 +331,24 @@ def write_model_artifacts(
     model_dir: Path,
     *,
     style: renderer.PlotStyle,
+    command: str = "",
 ) -> None:
-    """Tulis isi `00_Model/`: nodes, elements, mesh_summary, mesh_plan."""
+    """Tulis isi `00_Model/`: nodes, elements, model.mct, mesh_summary, mesh_plan.
+
+    `model.mct` di sini SELALU tanpa pembebanan -- fungsi ini berjalan sebelum
+    `pile_reactions.csv` dibaca. `pilecap-analyze` menulisnya ulang dengan beban.
+    """
     prepared.mesh.write_nodes_csv(model_dir / "nodes.csv")
     prepared.mesh.write_elements_csv(model_dir / "elements.csv")
+    write_mct(
+        model_dir / config.FILE_MODEL_MCT,
+        prepared.geom,
+        prepared.mesh,
+        prepared.material,
+        project_name=prepared.project_name,
+        command=command,
+        fc_pa=prepared.fc,
+    )
     reporter.write_mesh_summary(
         model_dir / "mesh_summary.md",
         geom=prepared.geom,
@@ -390,7 +436,9 @@ def _run_inner(
     manifest: provenance.Manifest,
 ) -> Path:
     prepared = prepare_model(args, model_dir, manifest, require_material=False)
-    write_model_artifacts(prepared, run_dir, model_dir, style=renderer.PlotStyle.from_args(args))
+    write_model_artifacts(
+        prepared, run_dir, model_dir, style=renderer.PlotStyle.from_args(args), command=command
+    )
 
     record_model_stats(prepared, manifest)
     manifest.update_model_stats({"element_type": "quad4 (calon ShellMITC4)"})

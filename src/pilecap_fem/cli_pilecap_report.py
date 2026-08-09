@@ -439,14 +439,18 @@ def _render_rebar_plots(
             info=f"{info}\n{catatan}",
             n_inadequate=smap.n_web_crushed,
         )
-        renderer.render_contour(
+        # Diameter sengkang adalah pilihan DISKRET dari daftar yang diizinkan -- sama
+        # sifatnya dengan diameter tulangan lentur, jadi digambar kategorikal. Sebelumnya
+        # ia lewat `render_contour` sehingga enam nilai diskret mendarat di enam titik
+        # sembarang pada gradasi `YlOrRd` yang kontinu, dengan colorbar berlabel angka
+        # interpolasi alih-alih D10..D25.
+        renderer.render_categorical(
             combo_dir / dia_file,
             geom,
             mesh,
-            smap.stirrup_diameter,
-            quantity="length",
+            _diameter_index(smap.stirrup_diameter, smap.labels),
+            labels=smap.labels,
             title=f"Diameter sengkang {label}",
-            diverging=False,
             combo=combo,
             pz_by_pile=pz_by_pile,
             style=style,
@@ -454,24 +458,34 @@ def _render_rebar_plots(
             # terpenuhi pada grid yang lebar; Av/s yang membawa informasinya.
             info=f"{info}\n{catatan} | baca bersama plot Av/s",
             n_inadequate=smap.n_web_crushed,
+            zero_label="tanpa sengkang",
         )
 
 
-def _category_index(selection: capacity_engine.RebarSelection) -> np.ndarray:
-    """Ubah nilai seleksi menjadi indeks kategori 0..len(labels) untuk plot kategorikal.
+def _diameter_index(values_si: np.ndarray, labels: tuple[str, ...]) -> np.ndarray:
+    """Petakan diameter [m] ke indeks kategori 1..len(labels); 0 = tidak perlu, NaN tetap.
 
-    Mode konfigurasi sudah memberi indeks 1-basis. Mode diameter memberi diameter dalam
-    meter, sehingga perlu dipetakan ke posisinya di `AVAILABLE_DIAMETERS`.
+    Dibandingkan dalam mm yang dibulatkan, bukan dalam meter: nilai yang datang dari
+    `shell-kit` adalah anggota persis daftar diameter, dan pembandingan float setelah
+    pulang-pergi konversi satuan hanya aman pada skala mm.
     """
-    if selection.kind == capacity_engine.SELECTION_CONFIG:
-        return np.asarray(selection.values, dtype=np.float64)
-
-    diameters_mm = np.round(np.asarray(selection.values, dtype=np.float64) * 1e3, 3)
+    diameters_mm = np.round(np.asarray(values_si, dtype=np.float64) * 1e3, 3)
     index = np.zeros(diameters_mm.shape, dtype=np.float64)
-    for position, label in enumerate(selection.labels, start=1):
+    for position, label in enumerate(labels, start=1):
         index[diameters_mm == float(label.lstrip("D"))] = position
     index[~np.isfinite(diameters_mm)] = np.nan
     return index
+
+
+def _category_index(selection: capacity_engine.RebarSelection) -> np.ndarray:
+    """Indeks kategori untuk hasil seleksi tulangan lentur.
+
+    Mode konfigurasi sudah memberi indeks 1-basis; mode diameter memberi diameter dalam
+    meter sehingga dipetakan lewat `_diameter_index`.
+    """
+    if selection.kind == capacity_engine.SELECTION_CONFIG:
+        return np.asarray(selection.values, dtype=np.float64)
+    return _diameter_index(selection.values, selection.labels)
 
 
 def _report_one_combo(

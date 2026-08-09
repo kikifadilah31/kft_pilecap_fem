@@ -113,6 +113,10 @@ packages = ["src/pilecap_fem"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# `docs/` memuat KUTIPAN kode dari proyek lain (mis. potongan `shell_kit/rebar.py` di
+# CATATAN_SHELL_KIT.md sebagai bukti sebuah vonis). Memformat ulang kutipan berarti
+# mengubahnya, dan kutipan yang sudah diubah tidak lagi membuktikan apa pun.
+extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]

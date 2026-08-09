@@ -427,6 +427,10 @@ OPSVIS_MAX_ELEMENTS: Final[int] = 3_000
 #: Nama berkas keluaran (PRD Bagian 9.1). Dikumpulkan di sini agar tidak tersebar
 #: sebagai string literal di renderer, reporter, dan CLI.
 FILE_MESH_PLAN: Final[str] = "mesh_plan.png"
+#: Model siap impor Midas Civil. Ditulis `pilecap-mesh` (tanpa beban) lalu DITULIS ULANG
+#: `pilecap-analyze` lengkap dengan pembebanan -- reaksi pile baru dibaca setelah
+#: `write_model_artifacts` selesai, sehingga versi lengkapnya tidak dapat menumpang di sana.
+FILE_MODEL_MCT: Final[str] = "model.mct"
 FILE_MODEL_OPSVIS: Final[str] = "model_opsvis.png"
 FILE_BOUNDARY_CHECK: Final[str] = "boundary_load_check.png"
 FILE_GEOMETRY_JSON: Final[str] = "geometry.json"

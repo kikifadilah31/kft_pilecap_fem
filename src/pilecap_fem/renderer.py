@@ -21,6 +21,7 @@ dilewati diam-diam, tetapi juga tidak membatalkan hasil analisis yang sudah lulu
 
 from __future__ import annotations
 
+import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -221,9 +222,15 @@ def _triangulation(mesh: MeshModel) -> tuple[np.ndarray, np.ndarray, np.ndarray]
     """Node + segitiga untuk metode `average-nodal`.
 
     Setiap quad dipecah menjadi dua segitiga mengikuti urutan simpul mesh (0-1-2 dan
-    0-2-3). Urutan itu sudah dijamin CCW oleh `mesh_model`, sehingga tidak ada segitiga
-    yang terlipat -- diperiksa test dengan membandingkan rentang nilai terhadap
-    `element-center` pada kasus yang sama.
+    0-2-3).
+
+    Urutan itu **tidak dijamin CCW** -- `mesh_model._quad_areas_and_centroids` sengaja
+    memakai `np.abs(signed)` agar tidak bergantung pada orientasi penomoran gmsh. Yang
+    dibutuhkan di sini lebih longgar daripada CCW: cukup quad-nya cembung dan simpulnya
+    berurutan keliling, dan itu memang berlaku untuk quad mesh. Pembagian ini tidak
+    terpengaruh arah keliling, karena warna segitiga tidak melihat tanda luas. Test
+    memeriksanya dengan membandingkan rentang nilai terhadap `element-center` pada kasus
+    yang sama.
     """
     conn = mesh.elem_conn
     tris = np.vstack([conn[:, [0, 1, 2]], conn[:, [0, 2, 3]]])
@@ -316,6 +323,53 @@ def render_mesh_plan(
     _save(fig, path, st.dpi, st.preview, st.theme)
     _log.info("%s ditulis: %s", path.name, path)
     return path
+
+
+def render_geometry_plan(
+    geom: GeometryModel,
+    *,
+    project_name: str = "",
+    style: PlotStyle | None = None,
+) -> Any:
+    """Denah geometri TANPA mesh, dikembalikan sebagai `Figure` (bukan ditulis ke berkas).
+
+    Dipakai pratinjau `pilecap-ui`: pengguna ingin melihat susunan pile/pilecap/pier
+    sebelum menjalankan rantai penuh, dan pada titik itu mesh belum -- dan tidak perlu --
+    dibangun. Menghindari gmsh membuat pratinjau berjalan dalam hitungan milidetik.
+
+    Anotasinya `_annotate_plan` yang sama dengan seluruh plot denah lain, sehingga apa yang
+    dilihat pengguna di formulir persis apa yang muncul di laporan.
+    """
+    st = style or PlotStyle()
+    _use_agg(st.preview)
+
+    unit = io_utils.display_unit("length")
+    fig, ax = _figure_for(geom, width=7.0, theme=st.theme)
+    _annotate_plan(ax, geom, theme=st.theme)
+
+    title = "Denah Geometri Pilecap"
+    if project_name:
+        title += f" - {project_name}"
+    subtitle = " | ".join(
+        [
+            f"luas {geom.pilecap_area:,.2f} m2",
+            f"t = {_to_mm(geom.thickness):.0f} {unit}",
+            f"{geom.n_piles} pile",
+            f"{geom.n_piers} pier",
+        ]
+    )
+    # Dibungkus: figur pratinjau sengaja sempit (7 inci, agar muat di panel formulir), dan
+    # baris override memuat tiga nama berkas sekaligus sehingga pasti terpotong di kedua
+    # sisi bila dibiarkan satu baris -- justru baris yang paling perlu terbaca utuh.
+    override = _override_subtitle(geom)
+    color = st.theme.pier_line if override is not None else st.theme.text
+    wrapped = textwrap.fill(override, width=62) if override else ""
+    ax.set_title(
+        f"{title}\n{subtitle}" + (f"\n{wrapped}" if wrapped else ""), fontsize=10, color=color
+    )
+    _watermark(ax, st.theme)
+    fig.tight_layout()
+    return fig
 
 
 # ---------------------------------------------------------------------------

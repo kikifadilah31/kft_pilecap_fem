@@ -151,16 +151,45 @@ SECTIONS: tuple[Section, ...] = (
     Section(
         title="Proyek",
         icon=":material/description:",
+        help="Identitas run. Tidak memengaruhi satu pun angka hasil, tetapi ikut tercetak di "
+        "judul setiap gambar, di `calc_sheet.md`, dan di `run_manifest.json` -- itulah yang "
+        "membuat berkas hasil dapat ditelusuri kembali ke pekerjaan dan orangnya.",
         fields=(
-            Field("project.name", "Nama proyek", "text", ""),
-            Field("project.engineer", "Engineer", "text", ""),
-            Field("project.date", "Tanggal", "text", datetime.now().strftime("%Y-%m-%d")),
+            Field(
+                "project.name",
+                "Nama proyek",
+                "text",
+                "",
+                help="Muncul sebagai judul di setiap plot dan di kepala laporan. "
+                'Contoh: "Jembatan A - Pilecap P3".',
+            ),
+            Field(
+                "project.engineer",
+                "Engineer",
+                "text",
+                "",
+                help="Nama Anda atau tim perencana. Dicetak di laporan sebagai penanggung "
+                "jawab perhitungan.",
+            ),
+            Field(
+                "project.date",
+                "Tanggal",
+                "text",
+                datetime.now().strftime("%Y-%m-%d"),
+                help="Tanggal desain, bukan tanggal run (waktu run dicatat terpisah dan "
+                "otomatis). Format bebas; YYYY-MM-DD memudahkan pengurutan folder.",
+            ),
         ),
     ),
     Section(
         title="Satuan masukan",
         icon=":material/straighten:",
-        help="Seluruh angka di formulir ini ditulis dalam satuan yang dipilih di sini.",
+        help="Seluruh angka di formulir ini ditulis dalam satuan yang dipilih di sini, dan "
+        "label tiap field langsung ikut berubah. Di dalam mesin hitung semuanya diubah ke SI "
+        "(N, m, Pa); Anda tidak perlu mengonversi apa pun sendiri. Yang WAJIB Anda pastikan: "
+        "pilihan di sini harus cocok dengan angka yang benar-benar Anda ketik -- salah pilih "
+        "adalah satu-satunya kesalahan di formulir ini yang tidak dapat dideteksi tool, "
+        "karena 1200 mm dan 1200 m sama-sama angka yang sah.",
         fields=(
             Field(
                 "units.length",
@@ -168,14 +197,26 @@ SECTIONS: tuple[Section, ...] = (
                 "select",
                 "mm",
                 choices=tuple(config.LENGTH_TO_SI),
+                help="Satuan untuk semua ukuran: tebal, panjang, diameter, spasi, selimut. "
+                "Berlaku juga untuk CSV geometri di folder input.",
             ),
-            Field("units.force", "Gaya", "select", "kN", choices=tuple(config.FORCE_TO_SI)),
+            Field(
+                "units.force",
+                "Gaya",
+                "select",
+                "kN",
+                choices=tuple(config.FORCE_TO_SI),
+                help="Satuan untuk reaksi pile `Pz` di `pile_reactions.csv` dan untuk berat "
+                "jenis beton (kN/m3).",
+            ),
             Field(
                 "units.stress",
                 "Tegangan",
                 "select",
                 "MPa",
                 choices=tuple(config.STRESS_TO_SI),
+                help="Satuan untuk f'c, E, dan fy. 1 MPa = 1 N/mm2 -- itulah satuan yang "
+                "dipakai SNI 2847:2019.",
             ),
         ),
     ),
@@ -183,17 +224,62 @@ SECTIONS: tuple[Section, ...] = (
         title="Pilecap",
         icon=":material/crop_square:",
         override_entity="pilecap",
+        help="Pelat beton yang menyatukan kepala tiang. Dimodelkan sebagai pelat datar di "
+        "bidang XY dengan tebal seragam. Bila Anda menaruh CSV poligon di folder input, "
+        "bentuknya diambil dari sana dan panjang X/Y di bawah diabaikan.",
         fields=(
-            Field("pilecap.thickness", "Tebal", "number", 1200.0, unit="length", min_value=0.0),
-            Field("pilecap.length_x", "Panjang arah X", "number", 4800.0, unit="length"),
-            Field("pilecap.length_y", "Panjang arah Y", "number", 4800.0, unit="length"),
-            Field("pilecap.origin", "Titik asal [x, y]", "pair", [0.0, 0.0], unit="length"),
+            Field(
+                "pilecap.thickness",
+                "Tebal",
+                "number",
+                1200.0,
+                unit="length",
+                min_value=0.0,
+                help="Tebal pelat, dipakai untuk kekakuan lentur, tinggi efektif tulangan, "
+                "dan kapasitas geser. Ini besaran paling berpengaruh di seluruh model: "
+                "kekakuan lentur pelat sebanding dengan tebal PANGKAT TIGA, sehingga tebal "
+                "yang meleset 10% menggeser lendutan sekitar 30%.",
+            ),
+            Field(
+                "pilecap.length_x",
+                "Panjang arah X",
+                "number",
+                4800.0,
+                unit="length",
+                help="Ukuran pilecap arah memanjang (sumbu X). Dipakai hanya bila bentuknya "
+                "persegi -- yaitu bila tidak ada CSV poligon pilecap di folder input.",
+            ),
+            Field(
+                "pilecap.length_y",
+                "Panjang arah Y",
+                "number",
+                4800.0,
+                unit="length",
+                help="Ukuran pilecap arah melintang (sumbu Y). Sama seperti panjang X: "
+                "diabaikan bila bentuknya diambil dari CSV poligon.",
+            ),
+            Field(
+                "pilecap.origin",
+                "Titik asal [x, y]",
+                "pair",
+                [0.0, 0.0],
+                unit="length",
+                help="Koordinat TITIK PUSAT pilecap persegi, bukan sudutnya. Titik ini "
+                "menentukan letak pilecap terhadap grid pile dan pier, jadi ketiganya harus "
+                "memakai sistem koordinat yang sama. Biarkan [0, 0] bila Anda menempatkan "
+                "semuanya relatif terhadap pusat pilecap.",
+            ),
         ),
     ),
     Section(
         title="Pile",
         icon=":material/circle:",
         override_entity="pile",
+        help="Tiang pancang/bor yang memikul pilecap. Di model ini pile BUKAN tumpuan: "
+        "reaksinya (`Pz` dari `pile_reactions.csv`) diterapkan sebagai BEBAN KE ATAS pada "
+        "daerah lingkaran kepala tiang, sementara pier-lah yang dijepit. Karena reaksi pile "
+        "sudah Anda ketahui dari analisis struktur atas, cara ini membuat keseimbangan gaya "
+        "dapat diperiksa persis -- itulah cek VC-0 yang dijalankan setiap run.",
         fields=(
             Field(
                 "pile.diameter",
@@ -201,20 +287,69 @@ SECTIONS: tuple[Section, ...] = (
                 "number",
                 800.0,
                 unit="length",
-                help="Selalu dibutuhkan -- juga sebagai bawaan bila CSV koordinat pile "
+                help="Diameter kepala tiang. Menentukan luas lingkaran tempat reaksi pile "
+                "disebar; diameter yang lebih kecil memusatkan beban dan menaikkan momen "
+                "lokal. Selalu dibutuhkan -- juga sebagai bawaan bila CSV koordinat pile "
                 "tidak punya kolom diameter.",
             ),
-            Field("pile.n_col", "Jumlah kolom", "int", 2, min_value=1),
-            Field("pile.n_row", "Jumlah baris", "int", 2, min_value=1),
-            Field("pile.spacing_x", "Spasi arah X", "number", 2400.0, unit="length"),
-            Field("pile.spacing_y", "Spasi arah Y", "number", 2400.0, unit="length"),
-            Field("pile.grid_origin", "Pusat grid [x, y]", "pair", [0.0, 0.0], unit="length"),
+            Field(
+                "pile.n_col",
+                "Jumlah kolom",
+                "int",
+                2,
+                min_value=1,
+                help="Banyaknya pile pada arah X untuk susunan grid teratur. Total pile = "
+                "kolom x baris. Untuk susunan tidak teratur, pakai CSV koordinat pile di "
+                "folder input dan abaikan field grid ini.",
+            ),
+            Field(
+                "pile.n_row",
+                "Jumlah baris",
+                "int",
+                2,
+                min_value=1,
+                help="Banyaknya pile pada arah Y untuk susunan grid teratur.",
+            ),
+            Field(
+                "pile.spacing_x",
+                "Spasi arah X",
+                "number",
+                2400.0,
+                unit="length",
+                help="Jarak antar sumbu pile pada arah X. Praktik umum menuntut jarak >= 3x "
+                "diameter pile; tool memperingatkan bila pile saling tumpang tindih, tetapi "
+                "kecukupan jarak terhadap standar tetap keputusan Anda.",
+            ),
+            Field(
+                "pile.spacing_y",
+                "Spasi arah Y",
+                "number",
+                2400.0,
+                unit="length",
+                help="Jarak antar sumbu pile pada arah Y. Boleh berbeda dari spasi X; "
+                "susunan yang tidak seragam sama sekali dibuat lewat CSV koordinat pile.",
+            ),
+            Field(
+                "pile.grid_origin",
+                "Pusat grid [x, y]",
+                "pair",
+                [0.0, 0.0],
+                unit="length",
+                help="Titik pusat susunan pile. Grid dibangun simetris terhadap titik ini, "
+                "sehingga [0, 0] menempatkannya tepat di tengah bila pilecap juga berpusat "
+                "di [0, 0].",
+            ),
             Field(
                 "pile.modeling",
                 "Pemodelan beban",
                 "select",
                 "pressure",
                 choices=("pressure", "nodal"),
+                help="Cara reaksi pile masuk ke model. `pressure` (disarankan) menyebarkan "
+                "Pz merata pada seluruh lingkaran kepala tiang -- mendekati kenyataan dan "
+                "menghasilkan momen yang halus. `nodal` menempatkannya sebagai gaya titik "
+                "di node-node yang sama; totalnya identik, tetapi momen tepat di kepala "
+                "tiang menjadi lebih runcing. Keduanya lulus cek keseimbangan.",
             ),
         ),
     ),
@@ -222,6 +357,10 @@ SECTIONS: tuple[Section, ...] = (
         title="Pier",
         icon=":material/view_column:",
         override_entity="pier",
+        help="Kolom/pilar yang berdiri di atas pilecap. Di model ini pier menjadi TUMPUAN: "
+        "seluruh node di dalam daerah pier dijepit penuh (6 derajat kebebasan), menahan "
+        "beban yang didorong pile dari bawah. Momen desain dibaca di MUKA pier, sesuai "
+        "praktik SNI, karena momen tepat di sumbu tumpuan bersifat singular pada model pelat.",
         fields=(
             Field(
                 "pier.shape",
@@ -229,6 +368,9 @@ SECTIONS: tuple[Section, ...] = (
                 "select",
                 "rectangular",
                 choices=("rectangular", "circular"),
+                help="Penampang pier di bidang pilecap. `rectangular` meminta lebar X dan Y; "
+                "`circular` meminta satu diameter. Pilihan ini mengubah field yang tampil di "
+                "bawah dan menentukan letak muka pier tempat momen desain dibaca.",
             ),
             Field(
                 "pier.width_x",
@@ -237,6 +379,9 @@ SECTIONS: tuple[Section, ...] = (
                 1200.0,
                 unit="length",
                 visible_when=_is_rectangular,
+                help="Ukuran pier searah sumbu X. Semakin lebar, semakin luas daerah jepit "
+                "dan semakin kecil momen di mukanya -- jadi angka ini harus ukuran pier yang "
+                "sebenarnya, bukan perkiraan yang dibulatkan ke atas.",
             ),
             Field(
                 "pier.width_y",
@@ -245,6 +390,8 @@ SECTIONS: tuple[Section, ...] = (
                 1200.0,
                 unit="length",
                 visible_when=_is_rectangular,
+                help="Ukuran pier searah sumbu Y. Bersama lebar X menentukan daerah yang "
+                "dijepit dan letak muka pier tempat momen desain arah Y dibaca.",
             ),
             Field(
                 "pier.diameter",
@@ -253,23 +400,51 @@ SECTIONS: tuple[Section, ...] = (
                 1800.0,
                 unit="length",
                 visible_when=_is_circular,
+                help="Diameter pier bulat. Daerah jepitnya berupa lingkaran dengan diameter ini.",
             ),
-            Field("pier.centerline", "Titik pusat [x, y]", "pair", [0.0, 0.0], unit="length"),
+            Field(
+                "pier.centerline",
+                "Titik pusat [x, y]",
+                "pair",
+                [0.0, 0.0],
+                unit="length",
+                help="Koordinat sumbu pier, dalam sistem koordinat yang sama dengan pilecap "
+                "dan pile. Untuk lebih dari satu pier, pakai CSV poligon pier di folder "
+                "input -- formulir ini hanya menampung satu pier.",
+            ),
             Field(
                 "pier.support",
                 "Tumpuan",
                 "select",
                 "fixed",
                 choices=("fixed",),
-                help="Hanya jepit 6 DOF yang tersedia di v1.0.",
+                help="Jenis tumpuan di daerah pier. Hanya jepit penuh 6 DOF yang tersedia di "
+                "v1.0; tumpuan pegas (pile sebagai pegas, pier sebagai beban) belum "
+                "diimplementasikan dan sengaja tidak ditawarkan agar tidak ada pilihan yang "
+                "tampak ada tetapi tidak berfungsi.",
             ),
         ),
     ),
     Section(
         title="Material",
         icon=":material/layers:",
+        help="Properti beton pilecap. Pelat dimodelkan elastis linier: satu nilai E dan satu "
+        "Poisson untuk seluruh pelat. Retak, rangkak, dan susut TIDAK dimodelkan -- bila Anda "
+        "ingin memperhitungkan penurunan kekakuan akibat retak, turunkan sendiri nilai E yang "
+        "Anda isi dan tuliskan alasannya di kolom asal nilai E.",
         fields=(
-            Field("material.fc", "f'c", "number", 30.0, unit="stress", min_value=0.0),
+            Field(
+                "material.fc",
+                "f'c",
+                "number",
+                30.0,
+                unit="stress",
+                min_value=0.0,
+                help="Kuat tekan beton yang disyaratkan pada umur 28 hari (silinder). "
+                "Dipakai untuk kapasitas lentur dan geser menurut SNI 2847:2019, dan untuk "
+                "menamai material pada berkas ekspor Midas. TIDAK dipakai menghitung E -- "
+                "E Anda isi sendiri di bawah.",
+            ),
             Field(
                 "material.E",
                 "Modulus elastisitas E",
@@ -277,17 +452,23 @@ SECTIONS: tuple[Section, ...] = (
                 25000.0,
                 unit="stress",
                 min_value=0.0,
-                help="Tool TIDAK menghitung E dari f'c: rumusnya belum dikonfirmasi "
-                "pasalnya, dan angka tanpa sumber dilarang.",
+                help="Modulus elastisitas beton -- ukuran kekakuannya. Menentukan besar "
+                "lendutan, tetapi hampir tidak memengaruhi momen desain pada model ini "
+                "karena tumpuannya statis tertentu terhadap beban yang sudah diketahui. "
+                "Tool TIDAK menghitung E dari f'c: rumusnya belum dikonfirmasi pasalnya, "
+                "dan angka tanpa sumber dilarang. Nilai lazim beton normal fc30: sekitar "
+                "25.000-27.000 MPa.",
             ),
             Field(
                 "material.E_source",
                 "Asal nilai E",
                 "text",
                 "",
-                help="WAJIB. Dicetak apa adanya di calc_sheet.md dan run_manifest.json "
-                'agar checker dapat menelusurinya. Mis. "SNI 2847:2019 Ps. X.Y" atau '
-                '"hasil uji lab 2026-01-15".',
+                help="WAJIB DIISI -- run akan ditolak bila kosong. Tuliskan dari mana angka E "
+                "di atas berasal, karena inilah satu-satunya jejak yang membuat nilai itu "
+                "dapat diperiksa orang lain. Dicetak apa adanya di calc_sheet.md dan "
+                'run_manifest.json. Mis. "SNI 2847:2019 Ps. 19.2.2.1 untuk wc=2400" atau '
+                '"hasil uji lab 2026-01-15" atau "0,5 Ec untuk memperhitungkan retak".',
             ),
             Field(
                 "material.poisson",
@@ -296,6 +477,10 @@ SECTIONS: tuple[Section, ...] = (
                 0.2,
                 min_value=config.POISSON_MIN,
                 max_value=config.POISSON_MAX - 1e-9,
+                help="Perbandingan regangan melintang terhadap regangan searah beban. Untuk "
+                "beton lazimnya 0,15-0,20. Pada pelat, angka ini ikut menentukan seberapa "
+                "besar momen di satu arah membangkitkan momen di arah tegak lurusnya; "
+                "pengaruhnya nyata tetapi jauh lebih kecil daripada tebal pelat.",
             ),
             Field(
                 "material.density",
@@ -305,12 +490,22 @@ SECTIONS: tuple[Section, ...] = (
                 unit="kN/m^3",
                 optional=True,
                 min_value=0.0,
+                help="Berat beton per satuan volume, lazimnya 24 kN/m3. HANYA dipakai bila "
+                'Anda mencentang "Sertakan berat sendiri pilecap" di bagian Analisis; bila '
+                "tidak, angka ini tidak memengaruhi hasil sama sekali. Boleh dikosongkan.",
             ),
         ),
     ),
     Section(
         title="Mesh",
         icon=":material/grid_on:",
+        help="Pelat dipotong menjadi ribuan elemen kecil segi empat; di setiap elemen momen "
+        "dan geser dihitung. Semakin kecil elemennya semakin teliti hasilnya, tetapi semakin "
+        "lama analisisnya -- dan hubungannya tidak linier: memperkecil ukuran jadi setengah "
+        "membuat jumlah elemen menjadi empat kali. Bawaan di sini sudah menghasilkan mesh "
+        "yang halus untuk pilecap berukuran lazim. Kontrak numerik tool ini menuntut seluruh "
+        "elemen berupa SEGI EMPAT; bila gmsh terpaksa menyisipkan segitiga, run dihentikan "
+        "alih-alih diam-diam memakai elemen bermutu lebih rendah.",
         fields=(
             Field(
                 "mesh.size_mode",
@@ -318,8 +513,22 @@ SECTIONS: tuple[Section, ...] = (
                 "select",
                 "uniform",
                 choices=("uniform", "graded"),
+                help="`uniform` memakai satu ukuran elemen di seluruh pelat -- paling mudah "
+                "diprediksi dan paling sering tepat. `graded` memperhalus mesh hanya di "
+                "sekitar pile dan/atau pier, tempat tegangan berubah paling cepat, sehingga "
+                "hasil sama telitinya dengan jumlah elemen lebih sedikit.",
             ),
-            Field("mesh.size_global", "Ukuran global", "number", 130.0, unit="length"),
+            Field(
+                "mesh.size_global",
+                "Ukuran global",
+                "number",
+                130.0,
+                unit="length",
+                help="Panjang sisi elemen di seluruh pelat. Patokan praktis: ambil sekitar "
+                "1/6 diameter pile atau lebih kecil, supaya lingkaran kepala tiang terwakili "
+                "oleh cukup banyak elemen. Terlalu besar membuat beban pile tampak kotak dan "
+                "momen puncaknya meleset; terlalu kecil hanya memperpanjang waktu hitung.",
+            ),
             Field(
                 "mesh.size_local_pile",
                 "Ukuran lokal di pile",
@@ -328,8 +537,9 @@ SECTIONS: tuple[Section, ...] = (
                 unit="length",
                 optional=True,
                 visible_when=_is_graded,
-                help="Wajib salah satu (pile atau pier) pada mode graded, dan harus "
-                "<= ukuran global.",
+                help="Ukuran elemen di daerah kepala tiang pada mode graded. Wajib diisi "
+                "salah satu (pile atau pier), dan harus <= ukuran global -- mengisinya lebih "
+                "besar berarti memperkasar mesh justru di tempat yang paling butuh halus.",
             ),
             Field(
                 "mesh.size_local_pier",
@@ -339,6 +549,9 @@ SECTIONS: tuple[Section, ...] = (
                 unit="length",
                 optional=True,
                 visible_when=_is_graded,
+                help="Ukuran elemen di daerah pier pada mode graded. Di sinilah momen desain "
+                "dibaca, sehingga memperhalusnya langsung memperbaiki ketelitian angka yang "
+                "Anda pakai.",
             ),
             Field(
                 "mesh.algorithm",
@@ -346,7 +559,10 @@ SECTIONS: tuple[Section, ...] = (
                 "select",
                 config.GMSH_ALGORITHM_DEFAULT,
                 choices=tuple(sorted(config.GMSH_VALID_ALGORITHMS)),
-                help="11 = Quasi-structured Quad, bagian dari kontrak numerik tool ini.",
+                help="Algoritma pembentuk mesh di gmsh. 11 = Quasi-structured Quad, yang "
+                "menghasilkan segi empat rapi dan menjadi bagian kontrak numerik tool ini. "
+                "Ubah hanya bila mesh gagal terbentuk dan Anda paham konsekuensinya; nilai "
+                "yang dipakai selalu tercatat di run_manifest.json.",
             ),
             Field(
                 "mesh.recombination_algorithm",
@@ -354,22 +570,46 @@ SECTIONS: tuple[Section, ...] = (
                 "select",
                 config.GMSH_RECOMB_ALGORITHM_DEFAULT,
                 choices=tuple(sorted(config.GMSH_VALID_RECOMB_ALGORITHMS)),
-                help="3 = Blossom full-quad.",
+                help="Cara gmsh menggabungkan segitiga menjadi segi empat. 3 = Blossom "
+                "full-quad, yang memaksa hasil 100% segi empat. Bersama Mesh.Algorithm di "
+                "atas, inilah yang membuat syarat all-quad dapat dipenuhi.",
             ),
-            Field("mesh.recombine", "Recombine jadi quad", "bool", True),
-            Field("mesh.require_all_quad", "Tolak bila ada elemen segitiga", "bool", True),
+            Field(
+                "mesh.recombine",
+                "Recombine jadi quad",
+                "bool",
+                True,
+                help="Menyalakan penggabungan segitiga menjadi segi empat. Harus tetap "
+                "menyala: elemen shell yang dipakai tool ini (ShellMITC4) hanya menerima "
+                "segi empat 4 titik.",
+            ),
+            Field(
+                "mesh.require_all_quad",
+                "Tolak bila ada elemen segitiga",
+                "bool",
+                True,
+                help="Menghentikan run bila gmsh tetap menyisakan segitiga. Biarkan menyala. "
+                "Mematikannya membuat run berlanjut dengan mesh yang tidak sepenuhnya dapat "
+                "dianalisis -- kesalahan yang tidak terlihat di gambar mana pun.",
+            ),
             Field(
                 "mesh.element_order",
                 "Orde elemen",
                 "select",
                 1,
                 choices=tuple(sorted(config.SUPPORTED_ELEMENT_ORDERS)),
+                help="Orde 1 = elemen bersimpul di keempat sudut saja (linier). Hanya orde 1 "
+                "yang didukung, karena ShellMITC4 memang elemen 4 titik.",
             ),
         ),
     ),
     Section(
         title="Analisis",
         icon=":material/functions:",
+        help="Pilihan pemodelan numerik. Bawaannya sudah tepat untuk pilecap pada umumnya; "
+        "ubah hanya bila Anda punya alasan spesifik. Apa pun pilihannya, setiap run "
+        "menjalankan cek keseimbangan VC-0: jumlah beban yang terpasang dibandingkan dengan "
+        "jumlah reaksi tumpuan, dan run digagalkan bila keduanya tidak cocok.",
         fields=(
             Field(
                 "analysis.shell_element",
@@ -377,6 +617,14 @@ SECTIONS: tuple[Section, ...] = (
                 "select",
                 "ShellMITC4",
                 choices_fn=_shell_elements,
+                help="Rumusan matematis tiap elemen pelat. `ShellMITC4` adalah elemen 4 "
+                "titik berformulasi MITC yang memperhitungkan DEFORMASI GESER MELINTANG "
+                "(teori pelat tebal Mindlin-Reissner). Dipilih sebagai bawaan karena pilecap "
+                "umumnya tebal terhadap bentangnya; teori pelat tipis (Kirchhoff) mengabaikan "
+                "geser melintang dan akan MEREMEHKAN lendutan pada pelat setebal ini. "
+                "`ShellDKGQ` adalah elemen pelat tipis tersebut, dan `ShellNLDKGQ` versinya "
+                "dengan nonlinieritas geometri -- keduanya tidak diperlukan pada analisis "
+                "elastis linier di sini.",
             ),
             Field(
                 "analysis.section",
@@ -384,6 +632,11 @@ SECTIONS: tuple[Section, ...] = (
                 "select",
                 "PlateFiber",
                 choices_fn=_sections,
+                help="Cara penampang setebal pelat diwakili. `PlateFiber` memakai satu "
+                "material elastis yang terintegrasi pada tebal penuh -- itu yang sesuai untuk "
+                "analisis elastis linier di sini. `LayeredShell` membagi tebal menjadi "
+                "beberapa lapis dan baru bermanfaat bila tiap lapis diberi material berbeda; "
+                "pada model elastis satu material, hasilnya sama tetapi lebih lambat.",
             ),
             Field(
                 "analysis.n_layers",
@@ -392,31 +645,70 @@ SECTIONS: tuple[Section, ...] = (
                 10,
                 min_value=2,
                 visible_when=_is_layered,
+                help="Banyaknya lapis penampang pada `LayeredShell`. Lebih banyak lapis "
+                "berarti integrasi tegangan pada tebal lebih halus, dengan biaya waktu "
+                "hitung. Minimal 2.",
             ),
             Field(
                 "analysis.include_self_weight",
                 "Sertakan berat sendiri pilecap",
                 "bool",
                 False,
-                help="Pastikan Pz pada CSV reaksi BELUM memuatnya (PRD Bagian 17 item 6 "
-                "masih terbuka).",
+                help="Menambahkan berat pilecap sendiri (tebal x berat jenis) sebagai beban "
+                "merata ke bawah. HATI-HATI dengan hitungan ganda: pada banyak alur kerja, "
+                "reaksi pile yang keluar dari analisis struktur atas SUDAH memuat berat "
+                "pilecap. Centang hanya bila Anda yakin Pz pada CSV reaksi belum memuatnya, "
+                "dan ingat bahwa mencentangnya membuat jumlah beban tidak lagi sama dengan "
+                "jumlah Pz (PRD Bagian 17 item 6 masih terbuka).",
             ),
         ),
     ),
     Section(
         title="Desain - umum",
         icon=":material/architecture:",
+        help="Dari momen dan geser hasil analisis, tool menghitung kebutuhan tulangan "
+        "menurut SNI 2847:2019 lewat pustaka shell-kit. Bagian ini menetapkan mutu bahan dan "
+        "faktor reduksi yang dipakai perhitungan tersebut.",
         fields=(
-            Field("design.code", "Standar", "text", "SNI 2847:2019 (lewat shell-kit)"),
-            Field("design.cover", "Selimut beton", "number", 75.0, unit="length"),
-            Field("design.fy", "fy baja tulangan", "number", 420.0, unit="stress"),
+            Field(
+                "design.code",
+                "Standar",
+                "text",
+                "SNI 2847:2019 (lewat shell-kit)",
+                help="Label standar yang dicetak di laporan. Ini CATATAN, bukan sakelar: "
+                "mengubah teksnya tidak mengubah rumus mana pun -- perhitungannya selalu "
+                "mengikuti SNI 2847:2019 sebagaimana diterapkan shell-kit.",
+            ),
+            Field(
+                "design.cover",
+                "Selimut beton",
+                "number",
+                75.0,
+                unit="length",
+                help="Tebal beton dari permukaan sampai sisi luar tulangan. Menentukan tinggi "
+                "efektif d, yang langsung menentukan kebutuhan tulangan: selimut yang lebih "
+                "tebal berarti d lebih kecil dan tulangan lebih banyak. SNI menuntut 75 mm "
+                "untuk beton yang dicor langsung di atas tanah -- kondisi lazim pilecap.",
+            ),
+            Field(
+                "design.fy",
+                "fy baja tulangan",
+                "number",
+                420.0,
+                unit="stress",
+                help="Tegangan leleh baja tulangan. BjTS 420 (setara ulir mutu 420 MPa) "
+                "adalah yang paling umum. Berbanding terbalik dengan luas tulangan yang "
+                "dibutuhkan, jadi salah mengisinya langsung menggeser seluruh hasil.",
+            ),
             Field(
                 "design.fy_source",
                 "Asal nilai fy",
                 "text",
                 "",
-                help="WAJIB. shell-kit menyediakan DEFAULT_FY = 420 tetapi tool ini tidak "
-                "memakainya diam-diam: mutu baja menentukan seluruh luas tulangan.",
+                help="WAJIB DIISI -- run ditolak bila kosong. shell-kit menyediakan "
+                "DEFAULT_FY = 420 tetapi tool ini tidak memakainya diam-diam: mutu baja "
+                'menentukan seluruh luas tulangan. Mis. "BjTS 420B, SNI 2052:2017" atau '
+                '"sertifikat mill pabrik X".',
             ),
             Field(
                 "design.phi_flexure",
@@ -426,8 +718,11 @@ SECTIONS: tuple[Section, ...] = (
                 optional=True,
                 min_value=0.0,
                 max_value=1.0,
-                help="Kosongkan untuk memakai nilai SNI bawaan shell-kit (0,90); asalnya "
-                "tetap dicetak di calc sheet.",
+                help="Faktor reduksi kekuatan untuk lentur: kapasitas rencana = phi x "
+                "kapasitas nominal, cara standar memberi margin keamanan. Kosongkan untuk "
+                "memakai nilai SNI bawaan shell-kit (0,90 untuk penampang terkendali tarik); "
+                "asalnya tetap dicetak di calc sheet. Isi hanya bila standar Anda menuntut "
+                "angka lain.",
             ),
             Field(
                 "design.phi_shear",
@@ -437,7 +732,9 @@ SECTIONS: tuple[Section, ...] = (
                 optional=True,
                 min_value=0.0,
                 max_value=1.0,
-                help="Kosongkan untuk memakai 0,75 dari shell-kit.",
+                help="Faktor reduksi kekuatan untuk geser. Kosongkan untuk memakai 0,75 dari "
+                "shell-kit sesuai SNI. Lebih kecil daripada phi lentur karena keruntuhan "
+                "geser bersifat getas dan lebih sulit diprediksi.",
             ),
             Field(
                 "design.as_min_surface_zone",
@@ -456,6 +753,10 @@ SECTIONS: tuple[Section, ...] = (
     Section(
         title="Desain - pemilihan tulangan",
         icon=":material/linear_scale:",
+        help="Dari luas tulangan yang dibutuhkan (As), tool memilih batang yang benar-benar "
+        "dapat dipasang. Anda menetapkan SATU dari dua hal -- spasi atau batangnya -- dan "
+        "tool menghitung sisanya. Hasilnya digambar sebagai peta diameter dan peta spasi per "
+        "elemen, bukan hanya angka As.",
         fields=(
             Field(
                 "design.rebar_mode",
@@ -473,6 +774,10 @@ SECTIONS: tuple[Section, ...] = (
                 150.0,
                 unit="length",
                 visible_when=_is_spacing_fixed,
+                help="Jarak antar batang yang Anda tetapkan; tool memilih diameter terkecil "
+                "dari daftar standar yang masih memenuhi As pada spasi ini. Spasi lebih rapat "
+                "berarti diameter lebih kecil dan retak lebih terkendali, tetapi pemasangan "
+                "lebih padat. 150-200 mm lazim untuk pilecap.",
             ),
             Field(
                 "design.rebar_config",
@@ -481,6 +786,11 @@ SECTIONS: tuple[Section, ...] = (
                 "2D25",
                 choices_fn=_config_codes,
                 visible_when=_is_diameter_fixed,
+                help="Susunan batang yang Anda tetapkan; tool menghitung spasi yang "
+                "dibutuhkan untuk memenuhi As. Kode dibaca sebagai <jumlah>D<diameter>: "
+                '"2D25" berarti dua batang D25 per titik pemasangan (mis. dipasang '
+                "berpasangan), "
+                '"1D22" berarti satu batang D22. Daftarnya datang langsung dari shell-kit.',
             ),
             Field(
                 "design.rebar_select_codes",
@@ -489,25 +799,58 @@ SECTIONS: tuple[Section, ...] = (
                 None,
                 choices_fn=_config_codes,
                 optional=True,
-                help="Kosongkan untuk memakai seluruh diameter standar. Bila diisi, plot "
-                "tulangan menjadi kategorikal berlabel kode.",
+                help="Membatasi pilihan tool pada kode-kode tertentu saja, mis. bila di "
+                "lapangan hanya tersedia D22 dan D25. Kosongkan untuk memakai seluruh "
+                "diameter standar. Bila diisi, plot tulangan menjadi kategorikal berlabel "
+                "kode -- setiap warna satu kode, bukan gradasi.",
             ),
-            Field("design.strips_x", "Jumlah lajur arah X", "int", 5, min_value=1),
-            Field("design.strips_y", "Jumlah lajur arah Y", "int", 5, min_value=1),
+            Field(
+                "design.strips_x",
+                "Jumlah lajur arah X",
+                "int",
+                5,
+                min_value=1,
+                help="Pilecap dibagi menjadi beberapa lajur (strip) sejajar sumbu X; di tiap "
+                "lajur momen dirata-ratakan menjadi satu momen desain, sesuai cara "
+                "penulangan pelat dikerjakan di lapangan. Lebih banyak lajur berarti "
+                "penulangan lebih mengikuti sebaran momen tetapi gambar kerjanya lebih rumit. "
+                "5 lajur lazim.",
+            ),
+            Field(
+                "design.strips_y",
+                "Jumlah lajur arah Y",
+                "int",
+                5,
+                min_value=1,
+                help="Banyaknya lajur sejajar sumbu Y, dengan cara kerja yang sama seperti "
+                "lajur arah X. Tulangan kedua arah dihitung terpisah, jadi jumlah lajurnya "
+                "boleh berbeda.",
+            ),
             Field(
                 "design.moment_at",
                 "Lokasi momen desain",
                 "select",
                 "pier_face",
                 choices=("pier_face", "peak", "both"),
-                help="Nilai `peak` ditandai SINGULAR dan bukan momen desain.",
+                help="Di titik mana momen desain dibaca. `pier_face` = di muka pier, sesuai "
+                "praktik SNI dan pilihan yang benar untuk desain. `peak` = nilai terbesar di "
+                "mana pun, yang pada model pelat muncul tepat di tumpuan dan bersifat "
+                "SINGULAR: angkanya membesar terus setiap kali mesh diperhalus, sehingga "
+                "bukan momen desain -- tool menandainya demikian di laporan. `both` mencetak "
+                "keduanya untuk perbandingan.",
             ),
         ),
     ),
     Section(
         title="Desain - sengkang",
         icon=":material/grid_4x4:",
-        help="Kedua spasi menentukan luas per kaki, sehingga keduanya wajib.",
+        help="Sengkang adalah tulangan VERTIKAL yang menembus tebal pilecap untuk menahan "
+        "geser, dipasang sebagai kisi dengan dua spasi: memanjang dan melintang. Tool "
+        "menghitung kebutuhan Av/s dari geser hasil analisis, lalu menerjemahkannya menjadi "
+        "diameter sengkang pada kisi yang Anda tetapkan. Kedua spasi bersama-sama menentukan "
+        "luas yang harus dipikul satu kaki sengkang, sehingga keduanya wajib diisi. Pada "
+        "banyak pilecap tebal, geser terpenuhi oleh beton saja dan tool akan melaporkan "
+        '"tanpa sengkang" di sebagian besar luasan -- itu hasil yang sah.',
         fields=(
             Field(
                 "design.stirrup_spacing_long",
@@ -515,6 +858,9 @@ SECTIONS: tuple[Section, ...] = (
                 "number",
                 200.0,
                 unit="length",
+                help="Jarak antar sengkang searah sumbu X. Bersama spasi melintang menentukan "
+                "luas tributari satu kaki sengkang; kisi lebih rapat berarti diameter "
+                "sengkang lebih kecil untuk geser yang sama.",
             ),
             Field(
                 "design.stirrup_spacing_trans",
@@ -522,6 +868,9 @@ SECTIONS: tuple[Section, ...] = (
                 "number",
                 200.0,
                 unit="length",
+                help="Jarak antar sengkang searah sumbu Y. Luas tributari satu kaki "
+                "sengkang adalah hasil kali kedua spasi, sehingga keduanya sama-sama "
+                "menentukan diameter yang dibutuhkan.",
             ),
             Field(
                 "design.stirrup_select_diameters",
@@ -530,7 +879,10 @@ SECTIONS: tuple[Section, ...] = (
                 None,
                 choices_fn=_stirrup_diameters,
                 optional=True,
-                help="Kosongkan untuk memakai daftar bawaan shell-kit.",
+                help="Membatasi pilihan pada diameter tertentu saja, mis. bila di lapangan "
+                "hanya tersedia D13 dan D16. Kosongkan untuk memakai daftar bawaan shell-kit "
+                "(D10 sampai D25). Daerah yang butuh lebih besar daripada diameter terbesar "
+                "yang diizinkan ditandai TIDAK MEMADAI di plot, bukan dibulatkan diam-diam.",
             ),
         ),
     ),
@@ -582,6 +934,44 @@ def build_config(values: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def values_from_config(raw: dict[str, Any]) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Kebalikan `build_config`: isi nilai formulir dari `pilecap_config.json` yang ada.
+
+    Mengembalikan `(nilai, kunci_tak_dikenal)`. Kunci yang tidak ada di skema
+    **dilaporkan**, tidak dibuang diam-diam: config tulisan tangan boleh memuat field yang
+    belum diwakili formulir, dan pengguna yang menyimpan hasil formulir menimpa berkas itu
+    akan kehilangan field tersebut tanpa tanda apa pun.
+
+    Dipakai `if f.name in block`, **bukan** `block.get(...)`. Keduanya berbeda arti dan
+    perbedaan itu penting (lihat `build_config`): kunci yang HILANG berarti "pakai bawaan
+    skema", sedangkan kunci bernilai `null` yang tertulis adalah keputusan sadar user dan
+    harus dipertahankan.
+
+    Satuan tidak dikonversi. `raw` dan formulir sama-sama dalam satuan tampilan; blok
+    `units` ikut termuat sehingga label formulir langsung menyesuaikan.
+
+    Satu normalisasi: field teks bernilai `null` dipulangkan sebagai `""`. `build_config`
+    menulis teks kosong sebagai `null`, dan keduanya berarti sama -- belum diisi -- tetapi
+    hanya `""` yang dapat dimuat `st.text_input`.
+    """
+    values = default_values()
+    known: dict[str, set[str]] = {}
+    for f in ALL_FIELDS:
+        known.setdefault(f.block, set()).add(f.name)
+        block = raw.get(f.block)
+        if isinstance(block, dict) and f.name in block:
+            value = block[f.name]
+            values[f.key] = "" if f.kind == "text" and value is None else value
+
+    unknown: list[str] = []
+    for block_name, block in raw.items():
+        if not isinstance(block, dict):
+            unknown.append(block_name)
+            continue
+        unknown.extend(f"{block_name}.{k}" for k in block if k not in known.get(block_name, ()))
+    return values, tuple(sorted(unknown))
+
+
 def write_config(cfg: dict[str, Any], workdir: Path, *, now: datetime | None = None) -> Path:
     """Tulis config ke `<workdir>/ui_configs/pilecap_config_<timestamp>.json`.
 
@@ -613,6 +1003,7 @@ __all__ = [
     "Section",
     "build_config",
     "default_values",
+    "values_from_config",
     "visible_fields",
     "write_config",
 ]

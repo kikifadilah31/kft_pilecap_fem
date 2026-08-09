@@ -222,6 +222,63 @@ def test_mesh_plan_menampilkan_subjudul_override(sample, tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
+# Denah geometri (pratinjau UI)
+# ---------------------------------------------------------------------------
+
+
+def test_denah_geometri_mengembalikan_figure_tanpa_menyentuh_mesh(sample):
+    """Pratinjau `pilecap-ui` harus jadi sebelum gmsh dipanggil sama sekali.
+
+    Karena itu fungsinya menerima geometri saja dan MENGEMBALIKAN Figure -- bukan menulis
+    berkas -- supaya `app.py` dapat menyerahkannya langsung ke `st.pyplot`.
+    """
+    import matplotlib.pyplot as plt
+
+    geom, _ = sample
+    fig = renderer.render_geometry_plan(geom, project_name="UJI", style=renderer.PlotStyle(dpi=60))
+    try:
+        assert fig.axes, "figure tanpa axes"
+        judul = fig.axes[0].get_title()
+        assert "UJI" in judul
+        assert f"{geom.n_piles} pile" in judul
+        # Anotasi pile & pier yang sama dengan seluruh plot denah lain.
+        teks = {t.get_text() for t in fig.axes[0].texts}
+        assert {p.pile_id for p in geom.piles} <= teks
+        assert any("JEPIT" in t for t in teks)
+    finally:
+        plt.close(fig)
+
+
+def test_denah_geometri_membungkus_baris_override(sample):
+    """Figur pratinjau sempit; baris override memuat tiga nama berkas sekaligus.
+
+    Dibiarkan satu baris, ia terpotong di kedua sisi -- justru baris yang paling perlu
+    terbaca utuh, karena ia mengumumkan bahwa nilai di formulir sedang diabaikan.
+    """
+    import matplotlib.pyplot as plt
+
+    geom, _ = sample
+    overridden = GeometryModel(
+        pilecap=geom.pilecap,
+        thickness=geom.thickness,
+        piles=geom.piles,
+        piers=geom.piers,
+        resolution=GeometryResolution(
+            pilecap=EntityResolution(source="csv_autodetect", file=Path("in/pilecap_polygon.csv")),
+            pile=EntityResolution(source="csv_autodetect", file=Path("in/custom_pile_coords.csv")),
+            pier=EntityResolution(source="csv_autodetect", file=Path("in/pier_polygon.csv")),
+        ),
+    )
+    fig = renderer.render_geometry_plan(overridden, style=renderer.PlotStyle(dpi=60))
+    try:
+        judul = fig.axes[0].get_title()
+        assert "GEOMETRI OVERRIDE" in judul
+        assert max(len(baris) for baris in judul.splitlines()) <= 70
+    finally:
+        plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
 # opsvis: ambang & pengumuman
 # ---------------------------------------------------------------------------
 

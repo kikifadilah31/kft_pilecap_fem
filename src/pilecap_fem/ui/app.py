@@ -76,37 +76,104 @@ def detect_inputs(folder: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
+def apply_loaded_config(path_text: str) -> None:
+    """Muat `pilecap_config.json` ke session state, lalu rerun agar widget membacanya.
+
+    HARUS dipanggil di luar `st.form` dan sebelum widget dibangun: Streamlit menolak mutasi
+    `session_state` milik widget yang sudah terlanjur ada pada rerun ini. Karena itu nilai
+    ditulis lebih dulu, lalu `st.rerun()` membangun ulang seluruh formulir dari nilai baru.
+    """
+    import json
+
+    path = Path(path_text).expanduser()
+    if not path.is_absolute():
+        path = WORKDIR / path
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        st.error(f"Berkas tidak ditemukan: `{path}`", icon=":material/error:")
+        return
+    except json.JSONDecodeError as exc:
+        st.error(f"Bukan JSON yang sah: {exc}", icon=":material/error:")
+        return
+    if not isinstance(raw, dict):
+        st.error("Isi config harus berupa objek JSON di level teratas.", icon=":material/error:")
+        return
+
+    loaded_values, unknown = schema.values_from_config(raw)
+    for f in schema.ALL_FIELDS:
+        value = loaded_values[f.key]
+        if f.kind == "pair":
+            pair = list(value or [0.0, 0.0])
+            st.session_state[f"fld:{f.key}:x"] = float(pair[0])
+            st.session_state[f"fld:{f.key}:y"] = float(pair[1])
+            continue
+        if f.kind == "multiselect":
+            st.session_state[f"fld:{f.key}"] = list(value or ())
+            continue
+        if f.optional and f.kind == "number":
+            # Field opsional digambar sebagai text_input agar "kosong" dapat dinyatakan.
+            st.session_state[f"fld:{f.key}"] = "" if value is None else str(value)
+            continue
+        if value is not None:
+            st.session_state[f"fld:{f.key}"] = value
+
+    st.session_state["loaded_from"] = str(path)
+    st.session_state["loaded_unknown"] = list(unknown)
+    st.rerun()
+
+
+def seed(key: str, name: str, value: Any) -> dict[str, Any]:
+    """Argumen nilai awal, DIHILANGKAN bila widget sudah punya nilai di session state.
+
+    Streamlit memperingatkan bila sebuah widget menerima nilai awal (`value`/`index`/
+    `default`) sekaligus nilainya diatur lewat session state -- dan pemuat config memang
+    mengatur lewat session state, karena itu satu-satunya cara mengubah isi widget yang
+    sudah terlanjur dibuat. Menghilangkan argumennya membuat kedua jalur -- bawaan skema
+    dan config yang dimuat -- hidup berdampingan tanpa peringatan.
+    """
+    return {} if key in st.session_state else {name: value}
+
+
 def render_field(f: schema.Field, values: dict[str, Any], unit_labels: dict[str, str]) -> Any:
     """Gambar satu widget menurut deskripsinya di `schema.py`."""
     unit = unit_labels.get(f.unit, f.unit)
     label = f"{f.label} [{unit}]" if unit else f.label
     key = f"fld:{f.key}"
-    current = values.get(f.key, f.default)
+    current = st.session_state.get(key, values.get(f.key, f.default))
 
     if f.kind == "bool":
-        return st.checkbox(label, value=bool(current), key=key, help=f.help or None)
+        return st.checkbox(label, key=key, help=f.help or None, **seed(key, "value", bool(current)))
 
     if f.kind == "select":
         options = list(f.options())
         index = options.index(current) if current in options else 0
-        return st.selectbox(label, options, index=index, key=key, help=f.help or None)
+        return st.selectbox(
+            label, options, key=key, help=f.help or None, **seed(key, "index", index)
+        )
 
     if f.kind == "multiselect":
         return st.multiselect(
-            label, list(f.options()), default=list(current or ()), key=key, help=f.help or None
+            label,
+            list(f.options()),
+            key=key,
+            help=f.help or None,
+            **seed(key, "default", list(current or ())),
         )
 
     if f.kind == "text":
-        return st.text_input(label, value=str(current or ""), key=key, help=f.help or None)
+        return st.text_input(
+            label, key=key, help=f.help or None, **seed(key, "value", str(current or ""))
+        )
 
     if f.kind == "int":
         return st.number_input(
             label,
-            value=int(current) if current is not None else 0,
             step=1,
             min_value=int(f.min_value) if f.min_value is not None else None,
             key=key,
             help=f.help or None,
+            **seed(key, "value", int(current) if current is not None else 0),
         )
 
     if f.kind == "pair":
@@ -118,16 +185,17 @@ def render_field(f: schema.Field, values: dict[str, Any], unit_labels: dict[str,
         with st.container(horizontal=True):
             x = st.number_input(
                 f"{f.label} x",
-                value=float(pair[0]),
                 key=f"{key}:x",
                 label_visibility="collapsed",
                 help=f.help or None,
+                **seed(f"{key}:x", "value", float(pair[0])),
             )
             y = st.number_input(
                 f"{f.label} y",
-                value=float(pair[1]),
                 key=f"{key}:y",
                 label_visibility="collapsed",
+                help=f.help or None,
+                **seed(f"{key}:y", "value", float(pair[1])),
             )
         return [x, y]
 
@@ -136,10 +204,10 @@ def render_field(f: schema.Field, values: dict[str, Any], unit_labels: dict[str,
     if f.optional:
         raw = st.text_input(
             label,
-            value="" if current is None else str(current),
             placeholder="kosongkan bila tidak dipakai",
             key=key,
             help=f.help or None,
+            **seed(key, "value", "" if current is None else str(current)),
         )
         if not raw.strip():
             return None
@@ -151,11 +219,11 @@ def render_field(f: schema.Field, values: dict[str, Any], unit_labels: dict[str,
 
     return st.number_input(
         label,
-        value=float(current if current is not None else 0.0),
         min_value=f.min_value,
         max_value=f.max_value,
         key=key,
         help=f.help or None,
+        **seed(key, "value", float(current if current is not None else 0.0)),
     )
 
 
@@ -209,6 +277,46 @@ with st.container(border=True):
             icon=":material/rule:",
         )
 
+# --- Muat config yang sudah ada -------------------------------------------
+# HARUS di luar `st.form`: tombol di dalam form hanya bereaksi saat form dikirim, dan
+# nilai widget baru dapat ditulis ke session state sebelum widget-nya dibangun.
+with st.container(border=True):
+    st.markdown("**Muat `pilecap_config.json` yang sudah ada** _(opsional)_")
+    st.caption(
+        "Mengisi seluruh formulir di bawah dari berkas config yang pernah dibuat — "
+        "hasil run sebelumnya, contoh bawaan, atau config tulisan tangan. "
+        "Anda tetap dapat menyuntingnya setelah dimuat."
+    )
+    with st.container(horizontal=True):
+        config_to_load = st.text_input(
+            "Path config",
+            value="",
+            placeholder="mis. examples/ex01_standard_4pile/pilecap_config.json",
+            label_visibility="collapsed",
+            help="Path berkas config JSON, boleh relatif terhadap folder kerja. Config "
+            "hasil run sebelumnya ada di `ui_configs/` atau di folder hasil run itu "
+            "sendiri; contoh bawaan ada di `examples/`.",
+        )
+        muat = st.button("Muat", icon=":material/upload_file:")
+    if muat:
+        if config_to_load.strip():
+            apply_loaded_config(config_to_load.strip())
+        else:
+            st.warning("Isi dulu path config-nya.", icon=":material/warning:")
+
+    if st.session_state.get("loaded_from"):
+        st.success(f"Dimuat dari `{st.session_state['loaded_from']}`", icon=":material/check:")
+        unknown = st.session_state.get("loaded_unknown") or []
+        if unknown:
+            # Dilaporkan, tidak dibuang diam-diam: config tulisan tangan boleh memuat field
+            # yang belum diwakili formulir, dan menyimpan ulang lewat formulir ini akan
+            # menghilangkannya.
+            st.warning(
+                "Kunci berikut tidak dikenal formulir dan **tidak akan ikut** ditulis ke "
+                f"config baru: `{'`, `'.join(unknown)}`",
+                icon=":material/warning:",
+            )
+
 values = schema.default_values()
 
 with st.form("masukan", border=False):
@@ -238,35 +346,115 @@ with st.form("masukan", border=False):
 
     with st.container(border=True):
         st.markdown("### Opsi penyajian & jalannya analisis")
+        st.caption(
+            "Tidak satu pun opsi di bagian ini mengubah angka hasil — semuanya soal "
+            "penyajian dan cakupan run. Bawaannya aman; lewati saja bila ragu."
+        )
         run_values: dict[str, Any] = {}
-        run_values["output_dir"] = st.text_input("Folder output", value="output")
+        run_values["output_dir"] = st.text_input(
+            "Folder output",
+            value="output",
+            help="Folder tempat hasil ditulis, relatif terhadap folder kerja di atas. "
+            "Setiap run membuat subfolder baru bertimestamp dan TIDAK PERNAH menimpa run "
+            "sebelumnya, jadi aman dipakai berulang kali.",
+        )
         with st.container(horizontal=True):
-            run_values["theme"] = st.selectbox("Tema plot", list(config.THEMES))
+            run_values["theme"] = st.selectbox(
+                "Tema plot",
+                list(config.THEMES),
+                help="Warna latar seluruh gambar. `light` untuk dicetak atau ditempel di "
+                "laporan; `dark` lebih nyaman dibaca di layar. Angka dan skalanya identik.",
+            )
             run_values["contour_method"] = st.selectbox(
-                "Metode kontur", list(config.CONTOUR_METHODS)
+                "Metode kontur",
+                list(config.CONTOUR_METHODS),
+                help="Cara nilai digambar. `element-center` mewarnai tiap elemen datar — "
+                "itulah yang sebenarnya dihitung, dan jadi bawaan. `average-nodal` "
+                "merata-ratakan ke titik simpul sehingga tampak halus, tetapi kehalusan itu "
+                "tidak pernah dihitung dan paling menyesatkan di sekitar tepi pier.",
             )
         with st.container(horizontal=True):
             run_values["dpi"] = st.number_input(
-                "DPI", value=config.OUTPUT_DPI, min_value=50, max_value=600, step=50
+                "DPI",
+                value=config.OUTPUT_DPI,
+                min_value=50,
+                max_value=600,
+                step=50,
+                help="Kerapatan titik gambar PNG. Naikkan bila gambar akan dicetak besar "
+                "atau diperbesar untuk memeriksa detail; berkasnya ikut membesar.",
             )
             run_values["log_level"] = st.selectbox(
-                "Level log", ["INFO", "DEBUG", "WARNING", "ERROR"]
+                "Level log",
+                ["INFO", "DEBUG", "WARNING", "ERROR"],
+                help="Seberapa rinci log yang tampil di bawah dan ditulis ke `run.log`. "
+                "`INFO` sudah memuat seluruh langkah penting. Pakai `DEBUG` hanya saat "
+                "menelusuri masalah — keluaran gmsh ikut ditampilkan dan sangat panjang.",
             )
         combo_text = st.text_input(
             "Batasi kombinasi (pisahkan spasi)",
             placeholder="kosongkan untuk menganalisis semua",
+            help="Nama kombinasi dari `pile_reactions.csv` yang ingin dijalankan saja, "
+            "mis. `1.2D+1.6L`. Berguna untuk mencoba cepat pada satu kombinasi sebelum "
+            "menjalankan semuanya. Kosongkan untuk menganalisis seluruhnya.",
         )
         run_values["combo"] = combo_text.split() if combo_text.strip() else None
         run_values["opsvis"] = st.checkbox(
             "Paksa plot opsvis walau elemen banyak",
-            help=f"Bawaannya dilewati di atas {config.OPSVIS_MAX_ELEMENTS:,} elemen.",
+            help="Gambar model dan bentuk terdeformasi dari OpenSeesPy. Bawaannya "
+            f"DILEWATI di atas {config.OPSVIS_MAX_ELEMENTS:,} elemen karena waktu "
+            "gambarnya tumbuh lebih cepat daripada linier dan dapat memakan menit-menit. "
+            "Centang bila Anda memang membutuhkan gambar itu dan bersedia menunggu.",
         )
-        run_values["no_rebar_plots"] = st.checkbox("Lewati plot tulangan (lebih cepat)")
-        run_values["no_envelope"] = st.checkbox("Lewati envelope")
+        run_values["no_rebar_plots"] = st.checkbox(
+            "Lewati plot tulangan (lebih cepat)",
+            help="Melewati peta diameter, spasi, dan sengkang. Angka tulangan TETAP "
+            "dihitung dan tetap ada di `rebar_design.csv` serta calc sheet — hanya "
+            "gambarnya yang tidak dibuat. Berguna saat masih mencoba-coba geometri.",
+        )
+        run_values["no_envelope"] = st.checkbox(
+            "Lewati envelope",
+            help="Melewati pembuatan folder `Envelope/`, yang berisi nilai terselubung "
+            "(maksimum/minimum) di seluruh kombinasi beserta keterangan kombinasi mana "
+            "yang menentukan. Kosongkan centang ini bila Anda menganalisis lebih dari "
+            "satu kombinasi — envelope-lah yang biasanya dipakai mendesain.",
+        )
 
-    submitted = st.form_submit_button(
-        "Jalankan analisis", icon=":material/play_arrow:", type="primary"
-    )
+    with st.container(horizontal=True):
+        submitted = st.form_submit_button(
+            "Jalankan analisis", icon=":material/play_arrow:", type="primary"
+        )
+        # Submit KEDUA pada form yang sama. Nilai widget di dalam `st.form` baru
+        # diperbarui saat form dikirim, sehingga tombol biasa akan menggambar pratinjau
+        # dari nilai yang sudah usang -- justru gambar yang paling menyesatkan di sini.
+        preview = st.form_submit_button("Perbarui pratinjau", icon=":material/preview:")
+
+if preview:
+    # Hanya geometri: tidak menyentuh gmsh maupun OpenSees, jadi selesai dalam milidetik.
+    from pilecap_fem import renderer
+    from pilecap_fem.ui import preview as preview_mod
+    from pilecap_fem.validators import PilecapError
+
+    st.divider()
+    st.subheader("Pratinjau geometri")
+    try:
+        geom = preview_mod.build_preview_geometry(
+            schema.build_config(values), Path(input_dir) if input_dir.strip() else None
+        )
+    except PilecapError as exc:
+        # Pesan validator sudah ditulis untuk dibaca engineer; ditampilkan apa adanya.
+        st.error(str(exc), icon=":material/error:")
+    else:
+        st.pyplot(
+            renderer.render_geometry_plan(
+                geom,
+                project_name=str(values.get("project.name") or ""),
+                style=renderer.PlotStyle(theme=config.theme(run_values["theme"])),
+            )
+        )
+        st.caption(
+            "Belum ada mesh maupun analisis — ini hanya susunan geometrinya. "
+            "Tekan **Jalankan analisis** bila sudah sesuai."
+        )
 
 if not submitted:
     if st.session_state["last_run_dir"]:
