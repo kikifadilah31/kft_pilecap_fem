@@ -2,6 +2,41 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.7.1] — 2026-08-10 — Instalasi tanpa git
+
+Ditemukan saat menjawab pertanyaan: dapatkah tool ini dipasang permanen di PC yang tidak
+punya git terpasang? Jawabannya sebelumnya tidak — ada **dua** titik `git+` di rantai
+instalasi, bukan satu. Tag v0.7.0 **tidak dipindahkan**, mengikuti preseden v0.3.1: berkas
+di bawah ini adalah versi baru, bukan revisi diam-diam atas rilis yang sudah dipublikasikan.
+
+### Fixed
+- **`shell-kit @ git+...` diganti wheel-hosted.** `git+` memaksa `git` terpasang di mesin
+  *pemasang*, bukan cuma mesin pengembang — pengguna yang menjalankan `uv sync`/`uv tool
+  install` tanpa git akan gagal instalasi dengan pesan yang seolah tidak berkaitan. Wheel
+  `shell-kit` v3.3.0 kini dibangun dari sumber tag yang sama lalu diunggah sebagai
+  [release asset](https://github.com/kikifadilah31/plot_kontur_plate_fea_midas_civil/releases/tag/v3.3.0)
+  repo yang sama; isinya identik, hanya jalur pengambilannya lewat HTTPS biasa.
+- **`kft_pilecap_fem` sendiri juga dipasang lewat `git+` di README** — titik kedua yang
+  luput pada perbaikan di atas. Repo dijadikan **publik** (sebelumnya privat; diperiksa
+  dulu seluruh histori git untuk memastikan tidak ada berkas sensitif yang pernah
+  ter-commit) dan setiap rilis kini turut mengunggah `pilecap_fem-<versi>-py3-none-any.whl`
+  sebagai release asset, sehingga `uv tool install <URL wheel>` berjalan tanpa git sama
+  sekali. Jalur `uvx --from git+...` tetap didukung bagi yang sudah punya git.
+- Diverifikasi langsung: `uv sync` dan `uv tool install` dari wheel keduanya lulus
+  (`exit 0`, seluruh entry point berfungsi) dengan `git` dihapus dari `PATH`.
+
+### Changed
+- `tests/test_packaging.py`: `test_shell_kit_dipin_ke_tag_bukan_branch` menjadi
+  `test_shell_kit_bukan_git_dan_terkunci_ke_versi_rilis` — kini menolak `git+` dan
+  menuntut tag versi di URL rilis **sama** dengan versi di nama berkas wheel.
+- README: instalasi permanen memimpin dengan jalur wheel (tanpa git); jalur `uvx
+  --from git+...` didokumentasikan sebagai alternatif untuk PC yang sudah punya git.
+
+### Catatan pemeliharaan
+Jalur wheel tersemat ke satu versi lewat URL-nya sendiri (tidak ada "selalu ambil
+terbaru"). Setiap rilis baru **harus** menyertakan wheel `pilecap-fem` yang dibangun ulang
+sebagai release asset agar jalur tanpa-git tetap berfungsi untuk versi itu.
+
 ## [0.7.0] — 2026-08-09 — Ekspor Midas MCT, plot sengkang kategorikal, tiga peningkatan UI
 
 Lima temuan dari pemakaian v0.6.0. Dua menyangkut seluruh tool, tiga menyangkut antarmuka.

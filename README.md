@@ -17,36 +17,41 @@ gmsh Python API. Spesifikasi lengkap ada di [`PRD_pilecap_fem.md`](PRD_pilecap_f
 ## Instalasi
 
 Satu-satunya prasyarat adalah [`uv`](https://docs.astral.sh/uv/). Tidak perlu meng-clone
-repo, dan tidak perlu menyiapkan Python sendiri.
+repo, dan tidak perlu menyiapkan Python sendiri. **Git TIDAK dibutuhkan** — baik `uv`
+maupun kedua dependency direct-reference (`shell-kit`, dan `pilecap-fem` itu sendiri bila
+dipasang dari wheel rilis) diambil lewat HTTPS biasa.
 
-**Jalankan langsung tanpa memasang apa pun:**
+**PC tanpa git — pasang dari wheel rilis, disematkan ke versi tertentu:**
+
+```bash
+uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.7.1/pilecap_fem-0.7.1-py3-none-any.whl
+```
+
+**PC yang sudah punya git — jalankan langsung dari sumber, tanpa memasang apa pun:**
 
 ```bash
 uvx --python 3.12 --from git+https://github.com/kikifadilah31/kft_pilecap_fem pilecap-run --help
 ```
 
-**Pasang sebagai tool permanen, disematkan ke versi tertentu:**
+Setelah dipasang, kelima command (`pilecap-mesh`, `pilecap-analyze`, `pilecap-report`,
+`pilecap-run`, `pilecap-ui`) tersedia langsung di terminal.
 
-```bash
-uv tool install --python 3.12 git+https://github.com/kikifadilah31/kft_pilecap_fem@v0.3.0
-```
+Lima hal yang perlu diketahui:
 
-Setelah itu keempat command (`pilecap-mesh`, `pilecap-analyze`, `pilecap-report`,
-`pilecap-run`) tersedia langsung di terminal.
-
-Empat hal yang perlu diketahui:
-
-- **`--python 3.12` wajib.** Saat memasang dari sumber **git**, `uv` memilih interpreter
-  *sebelum* mengetahui `requires-python` paket — terukur memakai Python 3.14 dan tetap
-  memasangnya. `openseespy` hanya menyediakan binary untuk CPython 3.12: pada versi lain
-  ia terpasang tetapi **gagal diimpor**. Bila flag ini terlupa, tool berhenti dengan pesan
-  yang menyebutkan persoalannya dan perintah yang benar — bukan error DLL yang
-  membingungkan.
+- **`--python 3.12` wajib** di kedua jalur. `uv` memilih interpreter *sebelum* mengetahui
+  `requires-python` paket — terukur memakai Python 3.14 dan tetap memasangnya.
+  `openseespy` hanya menyediakan binary untuk CPython 3.12: pada versi lain ia terpasang
+  tetapi **gagal diimpor**. Bila flag ini terlupa, tool berhenti dengan pesan yang
+  menyebutkan persoalannya dan perintah yang benar — bukan error DLL yang membingungkan.
+- **Jalur wheel selalu tersemat ke satu versi** — nomor versinya ada di URL sendiri, jadi
+  tidak perlu (dan tidak bisa) "selalu ambil terbaru" lewat jalur ini. Untuk versi lain,
+  ganti `v0.7.1` dan nama berkasnya menjadi versi yang dituju di
+  [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases).
 - **`--from` wajib** pada `uvx` karena nama paket (`pilecap-fem`) berbeda dari nama
   command yang dijalankan.
-- **Sematkan tag versi** (`@v0.3.0`) untuk pekerjaan yang hasilnya akan diperiksa
-  kemudian. `run_manifest.json` merekam `tool_version`; dengan tag, versi itu dapat
-  ditarik kembali persis. Tanpa tag, instalasi selalu mengambil `main` terbaru.
+- **Sematkan tag versi** (`@v0.7.1`) pada jalur git untuk pekerjaan yang hasilnya akan
+  diperiksa kemudian. `run_manifest.json` merekam `tool_version`; dengan tag, versi itu
+  dapat ditarik kembali persis. Tanpa tag, instalasi selalu mengambil `main` terbaru.
 - **Unduhan pertama ~60 MB** (gmsh saja 40 MB), lalu di-cache `uv`.
 
 ### Mencoba tanpa menyiapkan data sendiri
@@ -56,7 +61,9 @@ uvx --python 3.12 --from git+https://github.com/kikifadilah31/kft_pilecap_fem pi
 ```
 
 Menyalin ketiga contoh bawaan ke folder saat ini. Berkas yang disalin adalah berkas yang
-**sama persis** dengan yang dipakai test regresi, jadi tidak bisa basi diam-diam.
+**sama persis** dengan yang dipakai test regresi, jadi tidak bisa basi diam-diam. Pada PC
+tanpa git, jalankan perintah yang sama dengan mengganti `--from git+...` menjadi
+`--from <URL wheel rilis>` seperti pada instalasi permanen di atas.
 
 ### Untuk pengembangan
 

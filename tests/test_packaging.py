@@ -192,9 +192,10 @@ def test_seluruh_dependency_runtime_dipin_eksak():
     """`uvx` install dari git MENGABAIKAN uv.lock -- pin di sinilah yang berlaku.
 
     Dua bentuk pin diterima, dan hanya dua: `paket==versi` untuk paket PyPI, serta
-    `paket @ git+URL@tag` untuk direct reference. Keduanya menyematkan satu titik yang
-    tetap. Yang dilarang adalah rentang longgar (`>=`, `~=`, atau tanpa penanda), karena
-    dua pengguna yang menginstal di hari berbeda dapat menjalankan numerik yang berbeda.
+    `paket @ https://.../vX.Y.Z/paket-X.Y.Z-*.whl` untuk direct reference berupa wheel
+    yang path dan nama berkasnya sama-sama menyematkan versi tetap. Yang dilarang adalah
+    rentang longgar (`>=`, `~=`, atau tanpa penanda) DAN `git+` tanpa versi di wheel-nya,
+    karena dua pengguna yang menginstal di hari berbeda dapat menjalankan numerik berbeda.
     """
     longgar = [d for d in _dependencies() if not _pin_eksak(d)]
     assert not longgar, (
@@ -203,18 +204,26 @@ def test_seluruh_dependency_runtime_dipin_eksak():
     )
 
 
-def test_shell_kit_dipin_ke_tag_bukan_branch():
-    """Branch bergerak; tag tidak.
+def test_shell_kit_bukan_git_dan_terkunci_ke_versi_rilis():
+    """`git+` memaksa git terpasang di mesin PEMASANG, bukan hanya mesin pengembang.
 
-    `shell-kit` menentukan SETIAP angka kapasitas yang dilaporkan. Menyematkannya ke
-    branch berarti isi laporan desain dapat berubah tanpa satu pun commit di repo ini.
+    Pengguna lapangan yang menjalankan `uv sync` tanpa git akan gagal instalasi dengan
+    pesan yang seolah tidak berkaitan. Direct reference berupa wheel URL menghindarinya:
+    `uv`/`pip` mengunduhnya lewat HTTPS biasa, tanpa satu pun perintah git. Tag versi tetap
+    dijaga -- kini lewat path release (`.../vX.Y.Z/...`) dan nama wheel itu sendiri,
+    bukan lewat `@tag` di belakang URL git.
     """
     spec = next(d for d in _dependencies() if d.startswith("shell-kit"))
-    assert "git+" in spec, "shell-kit harus direct reference ke repo-nya"
-    reference = spec.rsplit("@", 1)[1]
-    assert re.fullmatch(r"v\d+\.\d+\.\d+", reference), (
-        f"shell-kit disematkan ke {reference!r}; harus tag versi (mis. v3.3.0), "
-        "bukan branch atau HEAD"
+    assert "git+" not in spec, (
+        "shell-kit tidak boleh lagi memakai git+ (butuh git di mesin pemasang)"
+    )
+    assert spec.endswith(".whl"), "shell-kit harus direct reference ke berkas wheel"
+
+    url = spec.split("@", 1)[1].strip()
+    match = re.search(r"/(v\d+\.\d+\.\d+)/shell_kit-(\d+\.\d+\.\d+)-[^/]+\.whl$", url)
+    assert match is not None, f"URL wheel shell-kit tidak menyematkan tag versi: {url!r}"
+    assert match.group(1).lstrip("v") == match.group(2), (
+        f"tag rilis ({match.group(1)}) dan versi di nama wheel ({match.group(2)}) berbeda"
     )
 
 
@@ -223,8 +232,13 @@ def test_versi_terpasang_cocok_dengan_yang_dipin():
     for spec in _dependencies():
         if "==" in spec:
             name, pinned = spec.split("==")
+        elif spec.endswith(".whl"):
+            # Direct reference wheel: nama berkas `paket-X.Y.Z-*.whl` membawa versinya.
+            name = spec.split("@", 1)[0].strip()
+            wheel_name = spec.rsplit("/", 1)[1]
+            pinned = wheel_name.removeprefix(f"{name.replace('-', '_')}-").split("-")[0]
         else:
-            # Direct reference: tag `vX.Y.Z` menjadi versi X.Y.Z pada paket terpasang.
+            # Direct reference git: tag `vX.Y.Z` menjadi versi X.Y.Z pada paket terpasang.
             name = spec.split("@", 1)[0].strip()
             pinned = spec.rsplit("@", 1)[1].lstrip("v")
         assert metadata.version(name) == pinned, (
@@ -235,6 +249,8 @@ def test_versi_terpasang_cocok_dengan_yang_dipin():
 def _pin_eksak(spec: str) -> bool:
     if "==" in spec:
         return True
+    if spec.endswith(".whl"):
+        return re.search(r"/v\d+\.\d+\.\d+/[^/]+\.whl$", spec) is not None
     return "git+" in spec and re.search(r"@v\d+\.\d+\.\d+$", spec) is not None
 
 
