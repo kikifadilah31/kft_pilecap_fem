@@ -4,7 +4,8 @@ Berisi:
   * pembangun mesh terstruktur dengan orientasi yang DIKETAHUI PERSIS,
   * pembangun mesh gmsh all-quad pada persegi panjang polos (orientasi elemen
     tersebar -- inilah yang membuat VC-2 bermakna),
-  * strategi tumpuan & pembebanan khusus validasi.
+  * strategi tumpuan & pembebanan khusus validasi,
+  * pembaca ekspor Midas Civil beserta rekonsiliasi konvensinya (VC-6).
 
 Strategi khusus di bawah adalah bukti bahwa abstraksi `SupportStrategy` /
 `PileLoadStrategy` di `fem_engine` memang dapat diperluas tanpa membongkar modul.
@@ -13,10 +14,12 @@ Strategi khusus di bawah adalah bukti bahwa abstraksi `SupportStrategy` /
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import gmsh
 import numpy as np
 import openseespy.opensees as ops
+import pandas as pd
 
 from pilecap_fem import config, fem_engine, math_engine, mesh_model
 from pilecap_fem.geometry_builder import GeometryModel
@@ -194,3 +197,136 @@ def elastic_material(
     E: float = 25e9, nu: float = 0.0, t: float = 0.1
 ) -> fem_engine.MaterialProperties:
     return fem_engine.MaterialProperties(E=E, nu=nu, thickness=t, E_source="validation case")
+
+
+# ---------------------------------------------------------------------------
+# Pembaca ekspor Midas Civil (VC-6)
+# ---------------------------------------------------------------------------
+#
+# Seluruh keanehan format yang ditangani di bawah terdokumentasi beserta buktinya di
+# `tests/data/vc6/SUMBER.md`. Ringkasnya: berkas ber-BOM UTF-8, memakai U+00B7 pada
+# `kN·m/m`, punya kolom `Angle([deg])` ganda, dan berkas reaksi menyisipkan baris teks
+# beserta blok TOTAL tanpa nomor node.
+
+#: Nama kolom momen & geser pada ekspor resultan. `·` di sini U+00B7, BUKAN titik ASCII --
+#: mengetiknya sebagai titik biasa membuat seluruh pembacaan gagal dengan `KeyError`.
+MIDAS_MOMENT_COLUMNS = ("Mxx(kN\u00b7m/m)", "Myy(kN\u00b7m/m)", "Mxy(kN\u00b7m/m)")
+MIDAS_SHEAR_COLUMNS = ("Vxx(kN/m)", "Vyy(kN/m)")
+
+#: Konvensi geser melintang Midas berlawanan dengan konvensi PRD Bagian 7.1.
+#:
+#: BUKAN faktor penyetel. Diukur pada SELURUH elemen ketiga contoh x dua kombinasi: rasio
+#: `-q_midas / q_kami` tidak menyimpang tandanya pada satu pun dari ~5.500 elemen. Yang
+#: menguatkan: pembalikan ini tetap muncul pada ekspor sumbu GLOBAL, yang tidak melewati
+#: rotasi apa pun -- jadi ia sifat Midas, bukan artefak aritmetika kita. Momen tidak ikut
+#: dibalik. Lihat SUMBER.md Bagian 4.1.
+MIDAS_SHEAR_SIGN = -1.0
+
+_KN = 1e3  # kN -> N, dan kNm/m -> Nm/m
+
+
+def _read_midas_csv(path: Path) -> pd.DataFrame:
+    """Baca CSV ekspor Midas apa adanya, hanya menangani BOM dan spasi nama kolom."""
+    frame = pd.read_csv(path, encoding="utf-8-sig")
+    frame.columns = [str(c).strip() for c in frame.columns]
+    return frame
+
+
+def load_midas_centroid(path: Path, combo_slug: str) -> pd.DataFrame:
+    """Resultan elemen Midas pada CENTROID, terindeks `elem_tag` dan terurut.
+
+    Ekspor memuat 5 baris per elemen per kombinasi: satu `Node=Cent` diikuti 4 baris per
+    simpul sudut. Hanya baris centroid yang sebanding dengan resultan kami, yang memang
+    satu nilai per elemen.
+    """
+    frame = _read_midas_csv(path)
+    rows = frame[
+        (frame["Node"].astype(str).str.strip() == "Cent")
+        & (frame["Load"].astype(str).str.strip() == combo_slug)
+    ].copy()
+    if rows.empty:
+        raise ValueError(
+            f"{path.name} tidak memuat baris centroid untuk kombinasi {combo_slug!r}. "
+            f"Kombinasi yang ada: {sorted(frame['Load'].astype(str).str.strip().unique())}"
+        )
+    rows["Elem"] = rows["Elem"].astype(int)
+    return rows.set_index("Elem").sort_index()
+
+
+def midas_resultants_si(rows: pd.DataFrame) -> dict[str, np.ndarray]:
+    """Momen & geser Midas dalam SI, tanda geser SUDAH direkonsiliasi.
+
+    Dipakai untuk ekspor sumbu GLOBAL, sehingga hasilnya langsung sebanding dengan
+    `m_xx/m_yy/m_xy/q_x/q_y` milik `postproc_engine` tanpa rotasi apa pun.
+    """
+    m_xx, m_yy, m_xy = (rows[c].to_numpy(dtype=np.float64) * _KN for c in MIDAS_MOMENT_COLUMNS)
+    v_xx, v_yy = (rows[c].to_numpy(dtype=np.float64) * _KN for c in MIDAS_SHEAR_COLUMNS)
+    return {
+        "m_xx": m_xx,
+        "m_yy": m_yy,
+        "m_xy": m_xy,
+        "q_x": MIDAS_SHEAR_SIGN * v_xx,
+        "q_y": MIDAS_SHEAR_SIGN * v_yy,
+    }
+
+
+def rotate_moment_tensor(
+    rows: pd.DataFrame, theta: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Putar tensor momen Midas dari sumbu LOKAL ke sumbu global, sudut `theta` [rad].
+
+    Dipakai HANYA untuk cek-silang: hasilnya dibandingkan dengan ekspor global Midas
+    sendiri. Bila keduanya cocok, terbukti `theta` kami adalah sudut sumbu material yang
+    sama dengan yang dipakai Midas DAN rumus rotasi kami sama dengan rumusnya.
+    """
+    m_11, m_22, m_12 = (rows[c].to_numpy(dtype=np.float64) for c in MIDAS_MOMENT_COLUMNS)
+    cos, sin = np.cos(theta), np.sin(theta)
+    m_xx = m_11 * cos**2 + m_22 * sin**2 - 2.0 * m_12 * sin * cos
+    m_yy = m_11 * sin**2 + m_22 * cos**2 + 2.0 * m_12 * sin * cos
+    m_xy = (m_11 - m_22) * sin * cos + m_12 * (cos**2 - sin**2)
+    return m_xx, m_yy, m_xy
+
+
+def midas_nodal(path: Path, combo_slug: str) -> tuple[str, pd.DataFrame]:
+    """Baca ekspor per-node; kembalikan `("displacement"|"reaction", tabel)`.
+
+    Jenisnya ditentukan DARI HEADER, bukan dari nama berkas. Arsip yang disediakan memuat
+    satu berkas bernama `*_output_displacement.csv` yang isinya justru reaksi (lihat
+    SUMBER.md Bagian 5.1); menebak dari nama berarti membandingkan besaran yang sama
+    sekali berbeda tanpa satu pun tanda. Header yang tidak dikenal DITOLAK, tidak ditebak.
+
+    Baris non-numerik (`SUMMATION OF REACTION FORCES PRINTOUT`) dan blok TOTAL yang
+    kolom `Node`-nya kosong ikut disaring.
+    """
+    frame = _read_midas_csv(path)
+    if "DZ(m)" in frame.columns:
+        jenis = "displacement"
+    elif "FZ(kN)" in frame.columns:
+        jenis = "reaction"
+    else:
+        raise ValueError(
+            f"{path.name}: header tidak dikenali sebagai lendutan (`DZ(m)`) maupun reaksi "
+            f"(`FZ(kN)`). Kolom yang ada: {list(frame.columns)}"
+        )
+
+    node = pd.to_numeric(frame["Node"], errors="coerce")
+    rows = frame[node.notna() & (frame["Load"].astype(str).str.strip() == combo_slug)].copy()
+    rows["Node"] = node[rows.index].astype(int)
+    return jenis, rows.set_index("Node").sort_index()
+
+
+def midas_max_translation(path: Path) -> tuple[float, ...]:
+    """`MAXIMUM TRANSLATION` [m] per subcase dari `.log`, URUT sesuai `*STLDCASE`.
+
+    Urutannya dijamin oleh `midas_solver.out`, yang mencetak `SUBCASE : <nama>` dengan
+    urutan yang sama.
+    """
+    nilai: list[float] = []
+    for baris in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if "MAXIMUM TRANSLATION" not in baris:
+            continue
+        potong = baris.split("MAXIMUM TRANSLATION", 1)[1].split(":", 1)[1]
+        nilai.append(abs(float(potong.split("(")[0].strip())))
+    if not nilai:
+        raise ValueError(f"{path.name} tidak memuat satu pun baris MAXIMUM TRANSLATION")
+    return tuple(nilai)

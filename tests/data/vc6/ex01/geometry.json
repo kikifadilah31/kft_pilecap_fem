@@ -1,0 +1,82 @@
+{
+  "unit_system": "SI (N, m, Pa)",
+  "thickness_m": 1.2,
+  "pilecap_polygon_m": [
+    [
+      -2.4,
+      -2.4
+    ],
+    [
+      2.4,
+      -2.4
+    ],
+    [
+      2.4,
+      2.4
+    ],
+    [
+      -2.4,
+      2.4
+    ]
+  ],
+  "piles": [
+    {
+      "pile_id": "P1",
+      "x_m": -1.2,
+      "y_m": -1.2,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P2",
+      "x_m": 1.2,
+      "y_m": -1.2,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P3",
+      "x_m": -1.2,
+      "y_m": 1.2,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P4",
+      "x_m": 1.2,
+      "y_m": 1.2,
+      "diameter_m": 0.8
+    }
+  ],
+  "piers": [
+    {
+      "pier_id": "PIER1",
+      "shape": "rectangular",
+      "centerline_m": [
+        0.0,
+        0.0
+      ],
+      "polygon_m": null,
+      "width_x_m": 1.2,
+      "width_y_m": 1.2,
+      "diameter_m": null
+    }
+  ],
+  "geometry_resolution": {
+    "pilecap": {
+      "source": "json_standard",
+      "file": null,
+      "sha256": null,
+      "overridden_json_keys": []
+    },
+    "pile": {
+      "source": "json_grid",
+      "file": null,
+      "sha256": null,
+      "overridden_json_keys": []
+    },
+    "pier": {
+      "source": "json_standard",
+      "file": null,
+      "sha256": null,
+      "overridden_json_keys": []
+    }
+  }
+}

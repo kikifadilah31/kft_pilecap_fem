@@ -205,11 +205,21 @@ dihitung, dan paling menyesatkan di singularitas tepi zona jepit pier.
 
 | Berkas | Isi |
 |--------|-----|
-| `mesh_plan.png` | Denah mesh, label pile & pier, subjudul override geometri |
+| `mesh_plan.png` | Denah mesh, label pile & pier |
 | `boundary_load_check.png` | Peta node jepit & elemen terbeban — cek visual bahwa tumpuan dan beban menempel di tempat yang benar |
 | `contour_m*.png` | Momen per elemen, colormap diverging berpusat nol (`TwoSlopeNorm`) |
 | `contour_q*.png`, `contour_deflection.png` | Geser transversal dan lendutan |
-| `model_opsvis.png`, `deformed_opsvis.png` | `opsv.plot_model()` / `plot_defo()`, faktor skala tercantum di judul |
+| `model_opsvis.png`, `deformed_opsvis.png` | `opsv.plot_model()` / `plot_defo()` |
+
+Setiap plot berjudul **dua baris** — nama besaran lalu kombinasi — dan membawa **kop gambar
+teknik bertepi di kiri-bawah, di luar area gambar**, berisi identitas proyek, asumsi desain
+(f'c, fy, tebal, selimut, mode tulangan, φ beserta sumbernya), catatan cara baca, dan
+peringatan override geometri. Dengan begitu gambar yang dicetak dan ditempel ke laporan
+tidak pernah beredar tanpa asumsi yang melahirkan angkanya.
+
+Nilai maks/min sengaja **tidak** ada di kop: keduanya sudah ditandai langsung di atas
+elemennya beserta koordinat, dan colorbar membawa rentangnya. Menyalinnya ke kop hanya
+menciptakan tempat kedua yang bisa berbeda dari gambarnya.
 
 Kontur digambar **datar per elemen**, tidak dihaluskan: nilai resultant memang per
 elemen, dan interpolasi nodal akan menyiratkan kehalusan yang tidak pernah dihitung —
@@ -294,8 +304,8 @@ lewat blok `units` di config. Konversi terjadi **hanya** di `io_utils.py`; tabel
 | `examples/ex03_custom_polygon/` | Pilecap poligon L, pile custom non-grid, **dua** pier poligon. Sekaligus acuan format ketiga CSV geometri. |
 
 Jalankan `ex03` untuk melihat mekanisme **override geometri**: setiap entitas yang datang
-dari CSV diteriakkan sebagai WARNING 5 baris, dicatat di `run_manifest.json`, dan diberi
-subjudul di `mesh_plan.png`.
+dari CSV diteriakkan sebagai WARNING 5 baris, dicatat di `run_manifest.json`, dan muncul
+sebagai baris PERINGATAN berwarna di kop setiap gambar.
 
 ## Pengembangan
 
@@ -391,8 +401,37 @@ Yang tetap **`NOT_EVALUATED`**:
 - **Koreksi Wood-Armer.** `m_xy` dihitung dan dikontur, tetapi tidak dipakai mengoreksi
   momen desain.
 
-Lihat `config.OPEN_BLOCKERS` dan PRD Bagian 17 — item **3b, 5, 6, 7, 8, 10, 18** masih
+Lihat `config.OPEN_BLOCKERS` dan PRD Bagian 17 — item **3b, 5, 6, 7, 10, 18** masih
 terbuka.
+
+## Divalidasi silang terhadap Midas Civil (VC-6)
+
+Sejak v0.8.0 `VC-6` berjalan sebagai **release gate**: ketiga contoh bawaan dimodelkan
+ulang di Midas Civil — diimpor dari `model.mct` yang ditulis tool ini sendiri, sehingga
+penomoran node & elemennya identik 1:1 — lalu hasilnya dibandingkan elemen demi elemen.
+
+Kesesuaian yang terukur (RMS terhadap nilai puncak, 3 contoh × 2 kombinasi):
+
+| Besaran | RMS terburuk | Korelasi minimum |
+|---------|-------------:|-----------------:|
+| Momen `m_xx`, `m_yy`, `m_xy` | 0,144% | 0,99991 |
+| Geser `q_x`, `q_y` | 0,265% | 0,99993 |
+| Lendutan per node `uz` | 0,216% | 0,999986 |
+| Reaksi tumpuan `Rz` | 0,539% | 0,999596 |
+| Momen **puncak** (penentu tulangan) | 0,515% | — |
+
+Dua hal yang perlu dibaca jujur:
+
+- **Konvensi tanda geser Midas berlawanan** dengan konvensi tool ini, dan itu
+  direkonsiliasi secara eksplisit — bukan disembunyikan. Buktinya seragam: tidak ada satu
+  pun dari ~5.500 elemen yang menyimpang.
+- **Lendutan ex01 dibatasi resolusi ekspor Midas** (1 µm = 0,44% dari skala), yang lebih
+  besar daripada selisih terukur. Untuk contoh itu yang terbukti hanyalah "tidak berbeda
+  sejauh yang dapat diukur".
+
+Sebagai efek samping, `Σ FZ` reaksi Midas sama dengan `Σ Pz` masukan sampai ~9 angka
+berarti — ini memvalidasi **ekspor `model.mct`** secara end-to-end, satu-satunya cek yang
+menyentuh sisi Midas yang sesungguhnya. Rincian lengkap: `tests/data/vc6/SUMBER.md`.
 
 ## Yang perlu diketahui: mesh tidak reproducible bit demi bit
 

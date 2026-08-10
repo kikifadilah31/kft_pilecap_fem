@@ -1,0 +1,130 @@
+{
+  "unit_system": "SI (N, m, Pa)",
+  "thickness_m": 1.5,
+  "pilecap_polygon_m": [
+    [
+      -5.5,
+      -4.0
+    ],
+    [
+      5.5,
+      -4.0
+    ],
+    [
+      5.5,
+      4.0
+    ],
+    [
+      -5.5,
+      4.0
+    ]
+  ],
+  "piles": [
+    {
+      "pile_id": "P1",
+      "x_m": -4.5,
+      "y_m": -2.6,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P2",
+      "x_m": -1.5,
+      "y_m": -2.6,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P3",
+      "x_m": 1.5,
+      "y_m": -2.6,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P4",
+      "x_m": 4.5,
+      "y_m": -2.6,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P5",
+      "x_m": -4.5,
+      "y_m": 0.0,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P6",
+      "x_m": -1.5,
+      "y_m": 0.0,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P7",
+      "x_m": 1.5,
+      "y_m": 0.0,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P8",
+      "x_m": 4.5,
+      "y_m": 0.0,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P9",
+      "x_m": -4.5,
+      "y_m": 2.6,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P10",
+      "x_m": -1.5,
+      "y_m": 2.6,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P11",
+      "x_m": 1.5,
+      "y_m": 2.6,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "P12",
+      "x_m": 4.5,
+      "y_m": 2.6,
+      "diameter_m": 0.8
+    }
+  ],
+  "piers": [
+    {
+      "pier_id": "PIER1",
+      "shape": "circular",
+      "centerline_m": [
+        0.0,
+        0.0
+      ],
+      "polygon_m": null,
+      "width_x_m": null,
+      "width_y_m": null,
+      "diameter_m": 1.8
+    }
+  ],
+  "geometry_resolution": {
+    "pilecap": {
+      "source": "json_standard",
+      "file": null,
+      "sha256": null,
+      "overridden_json_keys": []
+    },
+    "pile": {
+      "source": "json_grid",
+      "file": null,
+      "sha256": null,
+      "overridden_json_keys": []
+    },
+    "pier": {
+      "source": "json_standard",
+      "file": null,
+      "sha256": null,
+      "overridden_json_keys": []
+    }
+  }
+}

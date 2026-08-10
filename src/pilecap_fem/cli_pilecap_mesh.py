@@ -214,6 +214,20 @@ class PreparedModel:
     def project_name(self) -> str:
         return str((self.loaded.raw.get("project") or {}).get("name", ""))
 
+    @property
+    def title_block(self) -> renderer.TitleBlock:
+        """Identitas proyek untuk kop gambar.
+
+        `engineer` dan `date` sudah lama diminta formulir dan tersimpan di config, tetapi
+        sebelum v0.8.0 tidak pernah sampai ke satu plot pun.
+        """
+        project = self.loaded.raw.get("project") or {}
+        return renderer.TitleBlock(
+            project=str(project.get("name", "") or ""),
+            engineer=str(project.get("engineer", "") or ""),
+            date=str(project.get("date", "") or ""),
+        )
+
 
 def prepare_model(
     args: argparse.Namespace,
@@ -363,10 +377,10 @@ def write_model_artifacts(
         model_dir / "mesh_plan.png",
         prepared.geom,
         prepared.mesh,
-        project_name=prepared.project_name,
         mesh_size_m=prepared.options.size_global,
         n_tri=prepared.raw.n_tri,
         style=style,
+        block=prepared.title_block,
     )
 
 

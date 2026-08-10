@@ -242,6 +242,8 @@ def run(args: argparse.Namespace, command: str) -> Path:
     # hitungan milidetik, bukan setelah seluruh kontur selesai digambar (Core 3).
     capacity_inputs = capacity_engine.CapacityInputs.from_config(cfg)
     style = renderer.PlotStyle.from_args(args)
+    # Dibangun sekali lalu diteruskan: identitas proyek harus sama persis di seluruh plot.
+    base_block = _project_block(manifest).with_assumptions(*_assumption_lines(capacity_inputs))
     # Asumsi kapasitas MENGUBAH angka desain (mode tulangan, grid sengkang, batas
     # `As_min`, asumsi `dv`). Tanpa langkah ini semuanya hanya hidup di calc sheet dan
     # tidak pernah masuk catatan provenance run.
@@ -274,6 +276,7 @@ def run(args: argparse.Namespace, command: str) -> Path:
             row["pile_id"]: float(row["Pz_N"]) for row in first_equilibrium.get("pile_loads", [])
         },
         style=style,
+        block=base_block,
     )
     results_by_combo: dict[str, postproc_engine.ElementResults] = {}
     designs_by_combo: dict[str, dict[tuple[str, str], capacity_engine.FlexureDesign]] = {}
@@ -305,12 +308,19 @@ def run(args: argparse.Namespace, command: str) -> Path:
             capacity_inputs=capacity_inputs,
             designs_by_combo=designs_by_combo,
             strip_design_by_combo=strip_design_by_combo,
+            base_block=base_block,
         )
 
     envelope = None
     if not args.no_envelope and len(results_by_combo) >= 1:
         envelope = _write_envelope(
-            run_dir, geom, mesh, results_by_combo, designs_by_combo, style=style
+            run_dir,
+            geom,
+            mesh,
+            results_by_combo,
+            designs_by_combo,
+            style=style,
+            block=base_block,
         )
 
     reporter.write_summary(
@@ -337,13 +347,37 @@ def run(args: argparse.Namespace, command: str) -> Path:
     return run_dir
 
 
-def _material_info(inputs: capacity_engine.CapacityInputs) -> str:
-    """Baris konteks material yang muncul di bawah judul setiap plot."""
-    return (
-        f"f'c = {inputs.fc_mpa:,.0f} MPa | fy = {inputs.fy_mpa:,.0f} MPa | "
-        f"t = {inputs.thickness_mm:,.0f} mm | selimut = {inputs.cover_mm:,.0f} mm | "
-        f"mode {inputs.rebar_mode}"
+def _project_block(manifest: dict[str, Any]) -> renderer.TitleBlock:
+    """Identitas proyek untuk kop gambar, dibaca dari config yang terekam manifest.
+
+    `engineer` dan `date` sudah lama diminta formulir dan tersimpan di config, tetapi
+    sebelum v0.8.0 tidak pernah sampai ke satu plot pun -- hanya ke calc sheet.
+    """
+    project = ((manifest.get("parameters") or {}).get("config_raw") or {}).get("project") or {}
+    return renderer.TitleBlock(
+        project=str(project.get("name", "") or ""),
+        engineer=str(project.get("engineer", "") or ""),
+        date=str(project.get("date", "") or ""),
     )
+
+
+def _assumption_lines(inputs: capacity_engine.CapacityInputs) -> tuple[str, ...]:
+    """Asumsi desain untuk kop gambar, dipecah jadi baris pendek.
+
+    Menggantikan satu baris 130 karakter yang dulu menempel di bawah judul. `phi` ikut
+    dibawa sekarang: ia mengubah SETIAP angka tulangan pada gambar, tetapi sebelumnya
+    tidak pernah tampil di plot mana pun.
+    """
+    lines = [
+        f"f'c {inputs.fc_mpa:,.0f} MPa · fy {inputs.fy_mpa:,.0f} MPa",
+        f"Tebal {inputs.thickness_mm:,.0f} mm · selimut {inputs.cover_mm:,.0f} mm · "
+        f"mode {inputs.rebar_mode}",
+        f"φ lentur {inputs.phi_flexure:,.2f} · φ geser {inputs.phi_shear:,.2f}"
+        + (f" ({inputs.phi_source})" if inputs.phi_source else ""),
+    ]
+    if inputs.fy_source:
+        lines.append(f"Sumber fy: {inputs.fy_source}")
+    return tuple(lines)
 
 
 def _render_rebar_plots(
@@ -357,7 +391,7 @@ def _render_rebar_plots(
     combo: str,
     pz_by_pile: dict[str, float],
     style: renderer.PlotStyle,
-    info: str,
+    block: renderer.TitleBlock,
 ) -> None:
     """Delapan plot tulangan per kombinasi: 4 As + 4 seleksi + 4 geser.
 
@@ -366,7 +400,10 @@ def _render_rebar_plots(
     (lentur) dan penampang `d` dari muka pier (geser) -- dinyatakan di caption tiap plot
     agar tidak ada gambar yang beredar tanpa peringatan itu.
     """
-    peringatan = "PETA ORIENTASI - angka desain dari lajur muka pier, bukan puncak elemen"
+    peringatan = (
+        "Peta orientasi — nilai desain diambil dari lajur muka pier, bukan dari nilai "
+        "puncak elemen."
+    )
 
     for (direction, face), (filename, title) in config.REBAR_FACES.items():
         design = designs[(direction, face)]
@@ -383,13 +420,13 @@ def _render_rebar_plots(
             combo=combo,
             pz_by_pile=pz_by_pile,
             style=style,
-            info=f"{info}\n{peringatan}",
+            block=block.with_notes(peringatan),
             n_inadequate=design.n_inadequate,
         )
 
         selection = selections[(direction, face)]
         stem = filename.replace("contour_As_", f"contour_{selection.kind}_")
-        judul = f"{selection.kind.capitalize()} tulangan arah {direction.upper()} - muka {face}"
+        judul = f"{selection.kind.capitalize()} tulangan arah {direction.upper()} — muka {face}"
         if selection.is_categorical:
             renderer.render_categorical(
                 combo_dir / stem,
@@ -401,7 +438,7 @@ def _render_rebar_plots(
                 combo=combo,
                 pz_by_pile=pz_by_pile,
                 style=style,
-                info=f"{info}\n{peringatan}",
+                block=block.with_notes(peringatan),
             )
         else:
             renderer.render_contour(
@@ -415,15 +452,15 @@ def _render_rebar_plots(
                 combo=combo,
                 pz_by_pile=pz_by_pile,
                 style=style,
-                info=f"{info}\n{peringatan}",
+                block=block.with_notes(peringatan),
                 n_inadequate=selection.n_inadequate,
             )
 
     for direction, (_, avs_file, dia_file, label) in config.SHEAR_REBAR_FIELDS.items():
         smap = shear_maps[direction]
         catatan = (
-            f"{smap.n_needs_stirrup} elemen V_u > phi.V_c (perlu sengkang NYATA) | "
-            f"{smap.n_av_min_only} elemen hanya kena Av,min"
+            f"{smap.n_needs_stirrup:,} elemen dengan V_u > φV_c (memerlukan sengkang); "
+            f"{smap.n_av_min_only:,} elemen hanya terkena Av,min."
         )
         renderer.render_contour(
             combo_dir / avs_file,
@@ -436,7 +473,7 @@ def _render_rebar_plots(
             combo=combo,
             pz_by_pile=pz_by_pile,
             style=style,
-            info=f"{info}\n{catatan}",
+            block=block.with_notes(catatan),
             n_inadequate=smap.n_web_crushed,
         )
         # Diameter sengkang adalah pilihan DISKRET dari daftar yang diizinkan -- sama
@@ -456,7 +493,7 @@ def _render_rebar_plots(
             style=style,
             # Diameter sengkang sering nyaris seragam karena luas per kaki mudah
             # terpenuhi pada grid yang lebar; Av/s yang membawa informasinya.
-            info=f"{info}\n{catatan} | baca bersama plot Av/s",
+            block=block.with_notes(catatan, "Baca bersama plot Av/s."),
             n_inadequate=smap.n_web_crushed,
             zero_label="tanpa sengkang",
         )
@@ -510,6 +547,7 @@ def _report_one_combo(
     capacity_inputs: capacity_engine.CapacityInputs,
     designs_by_combo: dict[str, dict[tuple[str, str], capacity_engine.FlexureDesign]],
     strip_design_by_combo: dict[str, list[dict[str, Any]]],
+    base_block: renderer.TitleBlock,
 ) -> postproc_engine.ElementResults:
     resultants_csv = combo_dir / "element_resultants.csv"
     if not resultants_csv.is_file():
@@ -520,10 +558,6 @@ def _report_one_combo(
     results = reporter.read_element_resultants_csv(resultants_csv, combo)
     equilibrium = json.loads((combo_dir / "equilibrium_check.json").read_text(encoding="utf-8"))
     pz_by_pile = {row["pile_id"]: float(row["Pz_N"]) for row in equilibrium.get("pile_loads", [])}
-
-    # Konteks material yang menyertai SETIAP plot. Tanpa ini gambar yang dicetak dan
-    # ditempel ke laporan kehilangan seluruh asumsi yang melahirkan angkanya.
-    info = _material_info(capacity_inputs)
 
     # --- kontur -------------------------------------------------------------
     for field, (filename, quantity, title) in config.CONTOUR_FIELDS.items():
@@ -537,7 +571,7 @@ def _report_one_combo(
             combo=combo,
             pz_by_pile=pz_by_pile,
             style=style,
-            info=info,
+            block=base_block,
         )
 
     displacements_csv = combo_dir / config.FILE_NODE_DISPLACEMENTS
@@ -553,7 +587,7 @@ def _report_one_combo(
             combo=combo,
             pz_by_pile=pz_by_pile,
             style=style,
-            info=info,
+            block=base_block,
         )
 
     # --- momen lajur & geser ------------------------------------------------
@@ -609,7 +643,7 @@ def _report_one_combo(
             combo=combo,
             pz_by_pile=pz_by_pile,
             style=style,
-            info=info,
+            block=base_block,
         )
 
     # --- calc sheet ---------------------------------------------------------
@@ -688,6 +722,7 @@ def _write_envelope(
     designs_by_combo: dict[str, dict[tuple[str, str], capacity_engine.FlexureDesign]],
     *,
     style: renderer.PlotStyle,
+    block: renderer.TitleBlock,
 ) -> postproc_engine.Envelope:
     envelope = postproc_engine.build_envelope(results_by_combo)
     envelope_dir = run_dir / config.ENVELOPE_SUBDIR
@@ -707,9 +742,17 @@ def _write_envelope(
                 mesh,
                 values,
                 quantity=quantity,
-                title=f"ENVELOPE {which} - {title}",
-                combo="seluruh kombinasi",
+                title=f"Envelope {which} — {title}",
+                # `combo` sengaja kosong: mengisinya "seluruh kombinasi" membuat baris
+                # kedua berbunyi "Kombinasi seluruh kombinasi". Keterangannya sudah ada
+                # sebagai catatan di kop.
                 style=style,
+                # Sebelum v0.8.0 plot envelope sama sekali tidak membawa konteks, padahal
+                # justru inilah yang paling sering dicetak dan ditempel ke laporan.
+                block=block.with_notes(
+                    "Nilai terselubung seluruh kombinasi; kombinasi penentu per elemen "
+                    "ada di envelope_values.csv."
+                ),
             )
             plots.append(name)
 

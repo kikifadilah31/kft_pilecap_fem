@@ -22,9 +22,10 @@ dilewati diam-diam, tetapi juga tidak membatalkan hasil analisis yang sudah lulu
 from __future__ import annotations
 
 import textwrap
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import matplotlib
 import numpy as np
@@ -34,6 +35,11 @@ from pilecap_fem.geometry_builder import GeometryModel
 from pilecap_fem.mesh_model import MeshModel
 
 _log = config.get_logger("renderer")
+
+#: Label axes kop. Dipakai test untuk menemukannya tanpa aritmetika indeks -- figur kontur
+#: punya tiga axes (gambar, colorbar, kop) dan `fig.axes[-1]` akan salah begitu ada
+#: colorbar kedua.
+PANEL_LABEL: Final[str] = "pilecap_title_block"
 
 
 @dataclass(frozen=True)
@@ -67,9 +73,297 @@ class PlotStyle:
         )
 
 
+@dataclass(frozen=True)
+class TitleBlock:
+    """Kop gambar teknik: identitas proyek, asumsi, catatan. Wadah murni.
+
+    TIDAK memuat statistik hasil (maks/min). Itu disengaja: `_mark_extremes` sudah
+    menuliskan nilai ekstrem DI ATAS elemen yang bersangkutan beserta koordinatnya, dan
+    colorbar sudah membawa rentangnya. Menyalinnya ke kop hanya menciptakan tempat kedua
+    yang bisa berbeda dari gambarnya sendiri.
+
+    `warnings` dipisah sebagai field, bukan konvensi awalan teks. PRD Bagian 9.3 menuntut
+    baris `GEOMETRI OVERRIDE` menonjol; sebelumnya itu dicapai dengan mewarnai SELURUH
+    judul merah -- termasuk nama besaran yang tidak ada hubungannya dengan override. Field
+    bertipe membuat "baris ini peringatan" dapat diperiksa test, bukan ditebak dari string.
+    """
+
+    project: str = ""
+    engineer: str = ""
+    date: str = ""
+    #: Besaran yang MELAHIRKAN angka pada gambar (f'c, fy, tebal, selimut, mode, phi).
+    assumptions: tuple[str, ...] = ()
+    #: Cara membaca gambar (peringatan orientasi, "baca bersama plot Av/s").
+    notes: tuple[str, ...] = ()
+    #: Dicetak dengan warna peringatan tema.
+    warnings: tuple[str, ...] = ()
+
+    def is_empty(self) -> bool:
+        return not (
+            self.project
+            or self.engineer
+            or self.date
+            or self.assumptions
+            or self.notes
+            or self.warnings
+        )
+
+    def with_assumptions(self, *extra: str) -> TitleBlock:
+        return replace(self, assumptions=self.assumptions + tuple(e for e in extra if e))
+
+    def with_notes(self, *extra: str) -> TitleBlock:
+        return replace(self, notes=self.notes + tuple(e for e in extra if e))
+
+    def with_warnings(self, *extra: str) -> TitleBlock:
+        return replace(self, warnings=self.warnings + tuple(e for e in extra if e))
+
+
+# --- Tata letak kop -------------------------------------------------------
+#
+# Seluruh ukuran dalam INCI, bukan fraksi figur: tinggi figur berayun 5,0-10,2 inci
+# mengikuti aspek pilecap, sehingga fraksi yang tetap akan menghasilkan kop yang
+# ukurannya berubah-ubah. Kop pada gambar teknik berukuran tetap.
+
+_PANEL_MARGIN_L_IN: Final[float] = 0.35
+_PANEL_MARGIN_B_IN: Final[float] = 0.22
+_PANEL_GAP_TOP_IN: Final[float] = 0.12
+_PANEL_PAD_IN: Final[float] = 0.10
+#: Ruang di kanan kop untuk watermark.
+_PANEL_RIGHT_RESERVE_IN: Final[float] = 2.40
+_PANEL_MIN_W_IN: Final[float] = 3.50
+_PANEL_MIN_H_IN: Final[float] = 0.55
+#: Pagar atas tinggi kop. Bila terlampaui, catatan dipangkas DENGAN PENGUMUMAN.
+_PANEL_MAX_H_IN: Final[float] = 3.20
+
+_FS_PROJECT: Final[float] = 9.0
+_FS_META: Final[float] = 7.5
+_FS_LABEL: Final[float] = 6.5
+_FS_BODY: Final[float] = 7.5
+_LINE_FACTOR: Final[float] = 1.45
+_SEP_IN: Final[float] = 0.07
+
+#: Lebar rata-rata satu karakter DejaVu Sans (font bawaan matplotlib) dalam em, untuk
+#: teks prosa campuran. Sengaja konservatif: perkiraan yang meleset ke arah LEBIH banyak
+#: baris menghasilkan kop yang sedikit lapang, bukan kop yang terpotong.
+_CHAR_EM: Final[float] = 0.52
+
+_TRUNCATION_NOTE: Final[str] = "(catatan selengkapnya di calc_sheet.md)"
+
+#: Ruang di ATAS axes untuk judul dua baris, dalam inci.
+#:
+#: Dicadangkan eksplisit, tidak diserahkan ke `tight_layout`. DIUKUR: dengan `rect` yang
+#: hanya membatasi sisi bawah, `tight_layout` menempatkan judul `loc="left"` berikut
+#: `pad`-nya sampai `y1 = 1,013` -- yaitu KELUAR tepi atas figur, sehingga hurufnya
+#: terpotong. Angkanya = pad 22 pt + tinggi huruf 13 pt + margin.
+_HEADING_RESERVE_IN: Final[float] = 0.62
+
+
+@dataclass(frozen=True)
+class _PanelLine:
+    """Satu baris kop yang sudah dibungkus dan siap digambar."""
+
+    text: str
+    fontsize: float
+    kind: str  # project | meta | label | body | warning | sep
+
+
 def _use_agg(preview: bool) -> None:
     if not preview:
         matplotlib.use("Agg", force=True)
+
+
+def _line_height_in(fontsize: float) -> float:
+    return fontsize * _LINE_FACTOR / 72.0
+
+
+def _wrap(text: str, width_in: float, fontsize: float) -> list[str]:
+    """Bungkus teks ke lebar kolom kop.
+
+    Anggaran karakter DITURUNKAN dari lebar panel, bukan konstanta. Nilai lama
+    `textwrap.fill(override, width=62)` hanya benar untuk satu lebar figur, dan diam-diam
+    salah pada pratinjau UI yang lebarnya 7 inci.
+
+    `break_long_words=False` melindungi nama berkas seperti `custom_pile_coords.csv` dari
+    terpotong di tengah -- nama berkas yang terpenggal pada baris peringatan override
+    justru menyesatkan.
+    """
+    budget = max(20, int(width_in * 72.0 / (_CHAR_EM * fontsize)))
+    return textwrap.wrap(text, width=budget, break_long_words=False, break_on_hyphens=False) or [""]
+
+
+def _panel_width_in(fig_width_in: float) -> float:
+    """Lebar kop. Pada figur sempit, kop memakai lebar penuh dan watermark pindah."""
+    wide = fig_width_in - _PANEL_MARGIN_L_IN - _PANEL_RIGHT_RESERVE_IN
+    if wide >= _PANEL_MIN_W_IN:
+        return wide
+    return fig_width_in - 2.0 * _PANEL_MARGIN_L_IN
+
+
+def _layout_lines(block: TitleBlock, panel_width_in: float) -> list[_PanelLine]:
+    """Ubah `TitleBlock` menjadi daftar baris siap gambar.
+
+    Dipakai BERSAMA oleh jalur pengukuran tinggi dan jalur penggambaran. Itu bukan
+    kebetulan: pengukuran dan penggambaran yang tidak sinkron adalah bug paling mungkin
+    pada tata letak ini, dan satu fungsi membuatnya mustahil.
+    """
+    text_w = max(1.0, panel_width_in - 2.0 * _PANEL_PAD_IN)
+    lines: list[_PanelLine] = []
+
+    if block.project:
+        for part in _wrap(block.project, text_w, _FS_PROJECT):
+            lines.append(_PanelLine(part, _FS_PROJECT, "project"))
+    meta = " · ".join(p for p in (block.engineer, block.date) if p)
+    if meta:
+        for part in _wrap(meta, text_w, _FS_META):
+            lines.append(_PanelLine(part, _FS_META, "meta"))
+
+    def section(label: str, items: tuple[str, ...], kind: str) -> None:
+        if not items:
+            return
+        if lines:
+            lines.append(_PanelLine("", 0.0, "sep"))
+        lines.append(_PanelLine(label, _FS_LABEL, "label"))
+        for item in items:
+            for part in _wrap(item, text_w, _FS_BODY):
+                lines.append(_PanelLine(part, _FS_BODY, kind))
+
+    section("ASUMSI DESAIN", block.assumptions, "body")
+    section("CATATAN", block.notes, "body")
+    section("PERINGATAN", block.warnings, "warning")
+    return lines
+
+
+def _panel_height_in(lines: Sequence[_PanelLine]) -> float:
+    total = 2.0 * _PANEL_PAD_IN
+    for line in lines:
+        total += _SEP_IN if line.kind == "sep" else _line_height_in(line.fontsize)
+    return total
+
+
+def _fit_lines(block: TitleBlock, panel_width_in: float) -> list[_PanelLine]:
+    """Baris kop yang sudah dipastikan muat pagar `_PANEL_MAX_H_IN`.
+
+    Bila kelebihan, catatan dibuang dari BELAKANG dan digantikan satu baris penunjuk.
+    Dipangkas dengan pengumuman, tidak pernah diam-diam -- sikap yang sama dengan seluruh
+    penanganan data tak lengkap di tool ini.
+    """
+    lines = _layout_lines(block, panel_width_in)
+    if _panel_height_in(lines) <= _PANEL_MAX_H_IN:
+        return lines
+
+    trimmed = block
+    while trimmed.notes and _panel_height_in(lines) > _PANEL_MAX_H_IN:
+        trimmed = replace(trimmed, notes=trimmed.notes[:-1])
+        diumumkan = replace(trimmed, notes=(*trimmed.notes, _TRUNCATION_NOTE))
+        lines = _layout_lines(diumumkan, panel_width_in)
+    return lines
+
+
+def _reserve_bottom_in(block: TitleBlock | None, fig_width_in: float) -> float:
+    """Tinggi pita yang harus DITAMBAHKAN ke figur untuk menampung kop."""
+    if block is None or block.is_empty():
+        return 0.0
+    lines = _fit_lines(block, _panel_width_in(fig_width_in))
+    height = min(max(_panel_height_in(lines), _PANEL_MIN_H_IN), _PANEL_MAX_H_IN)
+    return height + _PANEL_GAP_TOP_IN + _PANEL_MARGIN_B_IN
+
+
+def _draw_title_block(fig: Any, block: TitleBlock | None, theme: config.Theme) -> Any:
+    """Gambar kop sebagai axes tersendiri di kiri-bawah figur.
+
+    HARUS dipanggil SESUDAH `tight_layout`: `add_axes` menghasilkan axes di luar gridspec,
+    dan memanggilnya lebih dulu membuat `tight_layout` mengeluh "Axes that are not
+    compatible with tight_layout" sekaligus memindahkan kop dari tempatnya.
+    """
+    if block is None or block.is_empty():
+        return None
+
+    fig_w, fig_h = fig.get_figwidth(), fig.get_figheight()
+    panel_w = _panel_width_in(fig_w)
+    lines = _fit_lines(block, panel_w)
+    panel_h = min(max(_panel_height_in(lines), _PANEL_MIN_H_IN), _PANEL_MAX_H_IN)
+
+    panel = fig.add_axes(
+        (
+            _PANEL_MARGIN_L_IN / fig_w,
+            _PANEL_MARGIN_B_IN / fig_h,
+            panel_w / fig_w,
+            panel_h / fig_h,
+        ),
+        label=PANEL_LABEL,
+        zorder=20,
+    )
+    panel.set_xticks([])
+    panel.set_yticks([])
+    # Latar diberikan eksplisit: tanpa itu kop tampil transparan-di-atas-putih pada tema
+    # gelap -- kelas bug yang sama dengan yang dijaga `test_tema_*`.
+    panel.set_facecolor(theme.background)
+    for spine in panel.spines.values():
+        spine.set_color(theme.text)
+        spine.set_linewidth(1.0)
+
+    cursor = panel_h - _PANEL_PAD_IN
+    for line in lines:
+        if line.kind == "sep":
+            cursor -= _SEP_IN / 2.0
+            panel.axhline(cursor / panel_h, color=theme.grid, linewidth=0.8, zorder=21)
+            cursor -= _SEP_IN / 2.0
+            continue
+        height = _line_height_in(line.fontsize)
+        cursor -= height
+        panel.text(
+            _PANEL_PAD_IN / panel_w,
+            (cursor + height * 0.22) / panel_h,
+            line.text,
+            transform=panel.transAxes,
+            fontsize=line.fontsize,
+            color=theme.pier_line if line.kind == "warning" else theme.text,
+            fontweight="bold" if line.kind in ("project", "label", "warning") else "normal",
+            alpha=0.75 if line.kind == "label" else 1.0,
+            va="bottom",
+            ha="left",
+            zorder=22,
+        )
+    return panel
+
+
+def _set_heading(ax: Any, theme: config.Theme, *, heading: str, combo: str = "") -> None:
+    """Judul dua baris: nama besaran (besar) lalu kombinasi (kecil, redup).
+
+    Matplotlib hanya punya tiga slot judul (`left`/`center`/`right`) dan ketiganya tidak
+    bertumpuk, sehingga dua ukuran menuntut dua artist. Baris kecil ditempatkan pada
+    offset tetap 6 pt dan baris besar di slot judul dengan `pad`; kebalikannya rapuh
+    karena baris besar dapat berganti panjang.
+    """
+    ax.set_title(heading, fontsize=13, fontweight="bold", color=theme.text, loc="left", pad=22)
+    if combo:
+        ax.annotate(
+            f"Kombinasi {combo}",
+            xy=(0.0, 1.0),
+            xycoords="axes fraction",
+            xytext=(0, 6),
+            textcoords="offset points",
+            ha="left",
+            va="bottom",
+            fontsize=9.5,
+            color=theme.text,
+            alpha=0.65,
+            annotation_clip=False,
+        )
+
+
+def _finalize(fig: Any, block: TitleBlock | None, theme: config.Theme, *, three_d: bool) -> None:
+    """Rapikan tata letak lalu gambar kop & watermark. URUTAN DI SINI MENGIKAT."""
+    reserve = _reserve_bottom_in(block, fig.get_figwidth())
+    frac = reserve / fig.get_figheight() if reserve else 0.0
+    atas = 1.0 - _HEADING_RESERVE_IN / fig.get_figheight()
+    if three_d:
+        # `tight_layout` tidak andal pada Axes3D milik opsvis.
+        fig.subplots_adjust(bottom=max(frac, 0.02), top=atas)
+    else:
+        fig.tight_layout(rect=(0.0, frac, 1.0, atas))
+    _draw_title_block(fig, block, theme)
+    _watermark(fig, theme)
 
 
 def _to_mm(value: Any) -> Any:
@@ -200,15 +494,27 @@ def _annotate_plan(
 
 
 def _figure_for(
-    geom: GeometryModel, width: float = 12.0, theme: config.Theme | None = None
+    geom: GeometryModel,
+    width: float = 12.0,
+    theme: config.Theme | None = None,
+    *,
+    reserve_bottom_in: float = 0.0,
 ) -> tuple[Any, Any]:
+    """Figur berukuran mengikuti aspek pilecap, ditambah pita kosong untuk kop.
+
+    Pita DITAMBAHKAN ke tinggi figur, tidak diambil dari area gambar. Itu pilihan sadar:
+    pada pilecap panjang-ramping (`plot_h` mentok di 5,0 inci), mengambil ~1,3 inci berarti
+    kehilangan seperempat tinggi gambar. Gambar teknik memperbesar kertasnya untuk kop,
+    bukan mengecilkan pandangannya.
+    """
     import matplotlib.pyplot as plt
 
     th = theme or config.theme()
     xmin, ymin, xmax, ymax = geom.pilecap.bounds
     span_x, span_y = xmax - xmin, ymax - ymin
     aspect = (span_y / span_x) if span_x > 0 else 1.0
-    fig, ax = plt.subplots(figsize=(width, max(5.0, width * aspect * 0.85)))
+    plot_h = max(5.0, width * aspect * 0.85)
+    fig, ax = plt.subplots(figsize=(width, plot_h + reserve_bottom_in + _HEADING_RESERVE_IN))
     fig.patch.set_facecolor(th.background)
     ax.set_facecolor(th.background)
     return fig, ax
@@ -254,11 +560,23 @@ def _nodal_from_elements(mesh: MeshModel, values: np.ndarray) -> np.ndarray:
         return np.where(count > 0, total / count, np.nan)
 
 
-def _save(fig: Any, path: Path, dpi: int, preview: bool, theme: config.Theme | None = None) -> Path:
+def _save(
+    fig: Any,
+    path: Path,
+    dpi: int,
+    preview: bool,
+    theme: config.Theme | None = None,
+    *,
+    block: TitleBlock | None = None,
+    three_d: bool = False,
+) -> Path:
     import matplotlib.pyplot as plt
 
     th = theme or config.theme()
-    fig.tight_layout()
+    # `_finalize`, BUKAN `fig.tight_layout()` polos: yang polos memotong kop karena
+    # `savefig` di bawah sengaja tidak memakai `bbox_inches` (agar seluruh PNG dalam satu
+    # laporan berdimensi seragam). Dijaga `test_kop_tidak_terpotong_savefig`.
+    _finalize(fig, block, th, three_d=three_d)
     path.parent.mkdir(parents=True, exist_ok=True)
     # `facecolor` WAJIB diteruskan: tanpa itu PNG tema gelap keluar berlatar putih dengan
     # teks terang -- nyaris tak terbaca, dan lolos bila test hanya memeriksa ukuran berkas.
@@ -279,18 +597,27 @@ def render_mesh_plan(
     geom: GeometryModel,
     mesh: MeshModel,
     *,
-    project_name: str = "",
     mesh_size_m: float | None = None,
     n_tri: int = 0,
     style: PlotStyle | None = None,
+    block: TitleBlock | None = None,
 ) -> Path:
-    """Denah mesh + label pile & pier (PRD Bagian 9.1 `mesh_plan.png`)."""
+    """Denah mesh + label pile & pier (PRD Bagian 9.1 `mesh_plan.png`).
+
+    `project_name` sudah tidak ada: nama proyek kini datang lewat `block`. Dua sumber
+    untuk satu nama adalah cara keduanya mulai berbeda.
+    """
     st = style or PlotStyle()
     _use_agg(st.preview)
     from matplotlib.collections import PolyCollection
 
     unit = io_utils.display_unit("length")
-    fig, ax = _figure_for(geom, theme=st.theme)
+    stats = [f"{mesh.n_nodes:,} node", f"{mesh.n_elements:,} quad", f"{n_tri:,} tri"]
+    if mesh_size_m is not None:
+        stats.append(f"h = {_to_mm(mesh_size_m):.0f} {unit}")
+    block = _with_geometry_context(block, geom).with_assumptions(" · ".join(stats))
+
+    fig, ax = _figure_for(geom, theme=st.theme, reserve_bottom_in=_reserve_bottom_in(block, 12.0))
     ax.add_collection(
         PolyCollection(
             _element_polygons(mesh),
@@ -300,36 +627,30 @@ def render_mesh_plan(
         )
     )
     _annotate_plan(ax, geom, theme=st.theme)
+    _set_heading(ax, st.theme, heading="Denah Mesh Pilecap")
 
-    title = "Denah Mesh Pilecap"
-    if project_name:
-        title += f" - {project_name}"
-    subtitle_parts = [
-        f"{mesh.n_nodes:,} node",
-        f"{mesh.n_elements:,} quad",
-        f"{n_tri:,} tri",
-    ]
-    if mesh_size_m is not None:
-        subtitle_parts.append(f"h = {_to_mm(mesh_size_m):.0f} {unit}")
-    subtitle = " | ".join(subtitle_parts)
-
-    override = _override_subtitle(geom)
-    if override is not None:
-        ax.set_title(f"{title}\n{subtitle}\n{override}", fontsize=11, color=st.theme.pier_line)
-    else:
-        ax.set_title(f"{title}\n{subtitle}", fontsize=11, color=st.theme.text)
-    _watermark(ax, st.theme)
-
-    _save(fig, path, st.dpi, st.preview, st.theme)
+    _save(fig, path, st.dpi, st.preview, st.theme, block=block)
     _log.info("%s ditulis: %s", path.name, path)
     return path
+
+
+def _with_geometry_context(block: TitleBlock | None, geom: GeometryModel) -> TitleBlock:
+    """Sisipkan baris `GEOMETRI OVERRIDE` sebagai PERINGATAN bila ada override CSV.
+
+    PRD Bagian 9.3 menuntut override terlihat di gambar. Sebelumnya itu dicapai dengan
+    mewarnai seluruh judul; kini ia baris tersendiri berwarna peringatan, sehingga judul
+    dapat tetap netral.
+    """
+    base = block or TitleBlock()
+    override = _override_subtitle(geom)
+    return base.with_warnings(override) if override else base
 
 
 def render_geometry_plan(
     geom: GeometryModel,
     *,
-    project_name: str = "",
     style: PlotStyle | None = None,
+    block: TitleBlock | None = None,
 ) -> Any:
     """Denah geometri TANPA mesh, dikembalikan sebagai `Figure` (bukan ditulis ke berkas).
 
@@ -339,36 +660,25 @@ def render_geometry_plan(
 
     Anotasinya `_annotate_plan` yang sama dengan seluruh plot denah lain, sehingga apa yang
     dilihat pengguna di formulir persis apa yang muncul di laporan.
+
+    Jalur ini TIDAK lewat `_save`, tetapi tetap memanggil `_finalize` -- itulah yang membuat
+    kop tampil sama di `st.pyplot` seperti di PNG, tanpa bergantung `bbox_inches`.
     """
     st = style or PlotStyle()
     _use_agg(st.preview)
 
     unit = io_utils.display_unit("length")
-    fig, ax = _figure_for(geom, width=7.0, theme=st.theme)
-    _annotate_plan(ax, geom, theme=st.theme)
+    block = _with_geometry_context(block, geom).with_assumptions(
+        f"Luas {geom.pilecap_area:,.2f} m² · t {_to_mm(geom.thickness):,.0f} {unit} · "
+        f"{geom.n_piles} pile · {geom.n_piers} pier"
+    )
 
-    title = "Denah Geometri Pilecap"
-    if project_name:
-        title += f" - {project_name}"
-    subtitle = " | ".join(
-        [
-            f"luas {geom.pilecap_area:,.2f} m2",
-            f"t = {_to_mm(geom.thickness):.0f} {unit}",
-            f"{geom.n_piles} pile",
-            f"{geom.n_piers} pier",
-        ]
+    fig, ax = _figure_for(
+        geom, width=7.0, theme=st.theme, reserve_bottom_in=_reserve_bottom_in(block, 7.0)
     )
-    # Dibungkus: figur pratinjau sengaja sempit (7 inci, agar muat di panel formulir), dan
-    # baris override memuat tiga nama berkas sekaligus sehingga pasti terpotong di kedua
-    # sisi bila dibiarkan satu baris -- justru baris yang paling perlu terbaca utuh.
-    override = _override_subtitle(geom)
-    color = st.theme.pier_line if override is not None else st.theme.text
-    wrapped = textwrap.fill(override, width=62) if override else ""
-    ax.set_title(
-        f"{title}\n{subtitle}" + (f"\n{wrapped}" if wrapped else ""), fontsize=10, color=color
-    )
-    _watermark(ax, st.theme)
-    fig.tight_layout()
+    _annotate_plan(ax, geom, theme=st.theme)
+    _set_heading(ax, st.theme, heading="Denah Geometri Pilecap")
+    _finalize(fig, block, st.theme, three_d=False)
     return fig
 
 
@@ -475,18 +785,23 @@ def _mark_extremes(
         )
 
 
-def _watermark(ax: Any, theme: config.Theme) -> None:
-    ax.text(
-        0.01,
-        0.01,
+def _watermark(fig: Any, theme: config.Theme) -> None:
+    """Watermark di kanan-bawah FIGUR, bukan di dalam axes.
+
+    Dulu ia menempati sudut kiri-bawah axes -- tempat yang kini ditempati kop, dan yang
+    sejak dulu sudah berebut dengan legenda NaN dan legenda "tidak ada batang yang
+    memadai" (keduanya `loc="lower left"`).
+    """
+    fig.text(
+        0.995,
+        0.006,
         f"pilecap-fem | TEMA {theme.name.upper()}",
-        transform=ax.transAxes,
         color=theme.text,
         alpha=0.3,
-        fontsize=8,
+        fontsize=7,
         fontweight="bold",
         va="bottom",
-        ha="left",
+        ha="right",
         zorder=12,
     )
 
@@ -581,7 +896,7 @@ def render_contour(
     diverging: bool = True,
     pz_by_pile: dict[str, float] | None = None,
     style: PlotStyle | None = None,
-    info: str = "",
+    block: TitleBlock | None = None,
     n_inadequate: int = 0,
 ) -> Path:
     """Kontur satu besaran per elemen (PRD Bagian 9.1 `contour_*.png`).
@@ -589,9 +904,10 @@ def render_contour(
     `values_si` adalah nilai SI per elemen; konversi ke satuan tampilan terjadi di sini
     (PRD Bagian 4.3). `quantity` menentukan satuan colorbar lewat `config.DISPLAY_UNITS`.
 
-    `info` adalah baris konteks material (`f'c`, `fy`, tebal, selimut, `d_eff`). Tanpa itu
-    gambar yang dicetak dan ditempel ke laporan kehilangan seluruh asumsi yang melahirkan
-    angkanya.
+    `block` membawa asumsi yang melahirkan angka pada gambar. Tanpa itu gambar yang dicetak
+    dan ditempel ke laporan kehilangan seluruh konteksnya. Nilai maks/min TIDAK ikut ke
+    kop: `_mark_extremes` sudah menuliskannya di atas elemennya sendiri beserta koordinat,
+    dan colorbar membawa rentangnya.
     """
     st = style or PlotStyle()
     _use_agg(st.preview)
@@ -614,7 +930,15 @@ def render_contour(
     cmap = matplotlib.colormaps[cmap_name].copy()
     cmap.set_bad(st.theme.color_nan)
 
-    fig, ax = _figure_for(geom, theme=st.theme)
+    block = _with_geometry_context(block, geom)
+    if norm_note:
+        # Tanpa catatan ini skala simetris terbaca seperti skala sekuensial biasa.
+        block = block.with_notes(norm_note.strip(" ()").capitalize() + ".")
+    if st.method != config.DEFAULT_CONTOUR_METHOD:
+        # WAJIB tampil: `average-nodal` menampilkan kehalusan yang tidak pernah dihitung.
+        block = block.with_assumptions(f"Metode kontur: {st.method}")
+
+    fig, ax = _figure_for(geom, theme=st.theme, reserve_bottom_in=_reserve_bottom_in(block, 12.0))
     mappable = _draw_field(ax, mesh, values, cmap=cmap, norm=norm, method=st.method, theme=st.theme)
     _annotate_plan(ax, geom, pz_by_pile=pz_by_pile, theme=st.theme)
 
@@ -624,30 +948,24 @@ def render_contour(
 
     _mark_extremes(ax, mesh, values, finite, unit, st.theme)
     _inadequate_badge(ax, n_inadequate, st.theme, "PENAMPANG TIDAK MEMADAI")
-    _watermark(ax, st.theme)
 
     if n_nan:
+        # Jumlah elemen masuk ke LABEL legenda -- ia menerangkan warna, jadi tempatnya di
+        # sebelah warna itu, bukan di kop satu inci di bawah gambar.
         ax.legend(
-            handles=[Patch(facecolor=st.theme.color_nan, label=config.LABEL_NAN)],
-            loc="lower left",
+            handles=[
+                Patch(facecolor=st.theme.color_nan, label=f"{config.LABEL_NAN} ({n_nan:,} elemen)")
+            ],
+            loc="upper left",
             fontsize=8,
             framealpha=0.9,
             labelcolor=st.theme.text,
             facecolor=st.theme.background,
             edgecolor=st.theme.grid,
         )
+    _set_heading(ax, st.theme, heading=title, combo=combo)
 
-    heading = title if not combo else f"{title} - Kombinasi {combo}"
-    subtitle = f"maks {vmax:,.1f} | min {vmin:,.1f} {unit}{norm_note}"
-    if n_nan:
-        subtitle += f" | {n_nan} elemen NaN"
-    if st.method != config.DEFAULT_CONTOUR_METHOD:
-        subtitle += f" | metode {st.method}"
-    if info:
-        subtitle += f"\n{info}"
-    ax.set_title(f"{heading}\n{subtitle}", fontsize=11, color=st.theme.text)
-
-    _save(fig, path, st.dpi, st.preview, st.theme)
+    _save(fig, path, st.dpi, st.preview, st.theme, block=block)
     _log.debug("%s ditulis (maks %.3f, min %.3f %s)", path.name, vmax, vmin, unit)
     return path
 
@@ -663,7 +981,7 @@ def render_categorical(
     combo: str = "",
     pz_by_pile: dict[str, float] | None = None,
     style: PlotStyle | None = None,
-    info: str = "",
+    block: TitleBlock | None = None,
     n_inadequate: int = 0,
     zero_label: str = "tanpa tulangan",
 ) -> Path:
@@ -696,7 +1014,11 @@ def render_categorical(
     cmap.set_bad(st.theme.color_inadequate)
     norm = BoundaryNorm(np.arange(n_bins + 1) - 0.5, cmap.N)
 
-    fig, ax = _figure_for(geom, theme=st.theme)
+    used = sorted({int(v) for v in values[np.isfinite(values)] if v > 0})
+    dipakai = ", ".join(labels[i - 1] for i in used) if used else "(tidak ada)"
+    block = _with_geometry_context(block, geom).with_notes(f"Kategori terpakai: {dipakai}.")
+
+    fig, ax = _figure_for(geom, theme=st.theme, reserve_bottom_in=_reserve_bottom_in(block, 12.0))
     collection = PolyCollection(
         _element_polygons(mesh),
         array=np.ma.masked_invalid(values),
@@ -712,17 +1034,18 @@ def render_categorical(
     colorbar.set_label(title, color=st.theme.text)
     colorbar.ax.tick_params(colors=st.theme.text)
 
-    used = sorted({int(v) for v in values[np.isfinite(values)] if v > 0})
     n_bad = int(np.count_nonzero(~np.isfinite(values)))
     _inadequate_badge(ax, n_inadequate or n_bad, st.theme, "TIDAK ADA BATANG YANG MEMADAI")
-    _watermark(ax, st.theme)
 
     if n_bad:
         ax.legend(
             handles=[
-                Patch(facecolor=st.theme.color_inadequate, label="tidak ada batang yang memadai")
+                Patch(
+                    facecolor=st.theme.color_inadequate,
+                    label=f"Tidak ada batang yang memadai ({n_bad:,} elemen)",
+                )
             ],
-            loc="lower left",
+            loc="upper left",
             fontsize=8,
             framealpha=0.9,
             labelcolor=st.theme.text,
@@ -730,14 +1053,9 @@ def render_categorical(
             edgecolor=st.theme.grid,
         )
 
-    heading = title if not combo else f"{title} - Kombinasi {combo}"
-    dipakai = ", ".join(labels[i - 1] for i in used) if used else "(tidak ada)"
-    subtitle = f"dipakai: {dipakai}"
-    if info:
-        subtitle += f"\n{info}"
-    ax.set_title(f"{heading}\n{subtitle}", fontsize=11, color=st.theme.text)
+    _set_heading(ax, st.theme, heading=title, combo=combo)
 
-    _save(fig, path, st.dpi, st.preview, st.theme)
+    _save(fig, path, st.dpi, st.preview, st.theme, block=block)
     _log.debug("%s ditulis (%d kategori dipakai)", path.name, len(used))
     return path
 
@@ -749,12 +1067,17 @@ def render_boundary_load_check(
     *,
     pz_by_pile: dict[str, float] | None = None,
     style: PlotStyle | None = None,
+    block: TitleBlock | None = None,
 ) -> Path:
     """Peta node jepit & area terbeban (PRD Bagian 9.1 `boundary_load_check.png`).
 
     Gambar ini menjawab satu pertanyaan yang sulit dijawab dari angka: apakah tumpuan
     dan beban benar-benar menempel di tempat yang seharusnya. Physical group yang salah
     atau kosong terlihat langsung di sini.
+
+    Cacahan node jepit & elemen terbeban tidak masuk kop: label legendanya sudah memuat
+    angka yang sama persis, dan mengulangnya di dua tempat hanya membuka peluang keduanya
+    berbeda.
     """
     st = style or PlotStyle()
     _use_agg(st.preview)
@@ -762,7 +1085,8 @@ def render_boundary_load_check(
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
 
-    fig, ax = _figure_for(geom, theme=st.theme)
+    block = _with_geometry_context(block, geom)
+    fig, ax = _figure_for(geom, theme=st.theme, reserve_bottom_in=_reserve_bottom_in(block, 12.0))
 
     is_pier = np.zeros(mesh.n_elements, dtype=bool)
     is_pile = np.zeros(mesh.n_elements, dtype=bool)
@@ -822,16 +1146,9 @@ def render_boundary_load_check(
         facecolor=st.theme.background,
         edgecolor=st.theme.grid,
     )
-    ax.set_title(
-        "Cek Visual Tumpuan & Pembebanan\n"
-        f"{len(fixed_nodes)} node jepit di {len(mesh.pier_groups())} pier | "
-        f"{int(is_pile.sum())} elemen terbeban di {len(mesh.pile_groups())} pile",
-        fontsize=11,
-        color=st.theme.text,
-    )
-    _watermark(ax, st.theme)
+    _set_heading(ax, st.theme, heading="Cek Visual Tumpuan & Pembebanan")
 
-    _save(fig, path, st.dpi, st.preview, st.theme)
+    _save(fig, path, st.dpi, st.preview, st.theme, block=block)
     _log.info("%s ditulis: %s", path.name, path)
     return path
 
@@ -874,10 +1191,12 @@ def _render_opsvis(
     plot_call: Any,
     *,
     title: str,
+    combo: str = "",
     n_elements: int,
     force: bool,
     style: PlotStyle,
     warnings: list[str],
+    block: TitleBlock | None = None,
 ) -> Path | None:
     """Kerangka bersama kedua plot opsvis: ambang, figure 3D, penanganan kegagalan."""
     if opsvis_would_skip(n_elements, force):
@@ -889,7 +1208,8 @@ def _render_opsvis(
     matplotlib.use("Agg", force=True)
     import matplotlib.pyplot as plt
 
-    fig = plt.figure(figsize=(11.0, 8.0))
+    reserve = _reserve_bottom_in(block, 11.0)
+    fig = plt.figure(figsize=(11.0, 8.0 + reserve + _HEADING_RESERVE_IN))
     fig.patch.set_facecolor(style.theme.background)
     ax = fig.add_subplot(projection="3d")
     ax.set_facecolor(style.theme.background)
@@ -909,10 +1229,9 @@ def _render_opsvis(
         warnings.append(message)
         return None
 
-    ax.set_title(title, fontsize=11, color=style.theme.text)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=style.dpi, facecolor=style.theme.background)
-    plt.close(fig)
+    _set_heading(ax, style.theme, heading=title, combo=combo)
+    # Lewat `_save` agar jaminan `facecolor=` dan penanganan kop terpusat di satu tempat.
+    _save(fig, path, style.dpi, False, style.theme, block=block, three_d=True)
     _log.info("%s ditulis: %s", path.name, path)
     return path
 
@@ -925,6 +1244,7 @@ def render_opsvis_model(
     force: bool = False,
     style: PlotStyle | None = None,
     warnings: list[str] | None = None,
+    block: TitleBlock | None = None,
 ) -> Path | None:
     """`opsv.plot_model()` -- cek geometri & tumpuan (PRD Bagian 9.3).
 
@@ -942,14 +1262,15 @@ def render_opsvis_model(
             local_axes=False,
             ax=ax,
         ),
-        title=(
-            f"Model OpenSees - {n_elements:,} elemen shell, {n_fixed_nodes:,} node jepit\n"
-            "opsv.plot_model() | label node & elemen dimatikan agar terbaca"
-        ),
+        title="Model OpenSees",
         n_elements=n_elements,
         force=force,
         style=style or PlotStyle(),
         warnings=warnings if warnings is not None else [],
+        block=(block or TitleBlock()).with_assumptions(
+            f"{n_elements:,} elemen shell · {n_fixed_nodes:,} node jepit",
+            "opsv.plot_model() — label node & elemen dimatikan agar terbaca",
+        ),
     )
 
 
@@ -963,20 +1284,22 @@ def render_opsvis_defo(
     force: bool = False,
     style: PlotStyle | None = None,
     warnings: list[str] | None = None,
+    block: TitleBlock | None = None,
 ) -> Path | None:
-    """`opsv.plot_defo()` -- deformasi, faktor skala dicantumkan di judul."""
+    """`opsv.plot_defo()` -- deformasi; faktor skala WAJIB dinyatakan (PRD Bagian 9.3)."""
     import opsvis as opsv
 
     max_mm = io_utils.to_display(max_deflection_m, "deflection")
     return _render_opsvis(
         path,
         lambda ax: opsv.plot_defo(sfac=sfac, node_supports=False, ax=ax),
-        title=(
-            f"Deformasi - Kombinasi {combo}\n"
-            f"faktor skala = {sfac:,.1f}x | lendutan maksimum = {max_mm:,.2f} mm"
-        ),
+        title="Bentuk Terdeformasi",
+        combo=combo,
         n_elements=n_elements,
         force=force,
         style=style or PlotStyle(),
         warnings=warnings if warnings is not None else [],
+        block=(block or TitleBlock()).with_assumptions(
+            f"Faktor skala deformasi {sfac:,.1f}× · lendutan maksimum {max_mm:,.2f} mm"
+        ),
     )

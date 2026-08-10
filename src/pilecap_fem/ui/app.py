@@ -447,8 +447,14 @@ if preview:
         st.pyplot(
             renderer.render_geometry_plan(
                 geom,
-                project_name=str(values.get("project.name") or ""),
                 style=renderer.PlotStyle(theme=config.theme(run_values["theme"])),
+                # Engineer & tanggal sudah lama dikumpulkan formulir tetapi dibuang di
+                # pratinjau; kini ikut ke kop, sama seperti pada plot hasil run.
+                block=renderer.TitleBlock(
+                    project=str(values.get("project.name") or ""),
+                    engineer=str(values.get("project.engineer") or ""),
+                    date=str(values.get("project.date") or ""),
+                ),
             )
         )
         st.caption(

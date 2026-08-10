@@ -2,6 +2,111 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.8.0] — 2026-08-10 — VC-6 tertutup & kop gambar teknik pada setiap plot
+
+Dua pekerjaan yang tidak berkaitan, dari dua kebutuhan berbeda: menutup blocker rilis
+terakhir yang tersisa, dan merapikan penyajian plot.
+
+### Added — VC-6 berjalan sebagai release gate
+
+`PRD Bagian 17 item 8` **DITUTUP**. Model pembanding Midas Civil untuk ketiga contoh
+bawaan kini ada di `tests/data/vc6/` (~28 MB), dan `VC-6` berjalan sebagai release gate —
+bukan lagi `@pytest.mark.skip` dengan janji.
+
+Model Midas-nya **diimpor dari `model.mct` yang ditulis tool ini sendiri**, sehingga
+penomoran node & elemen identik 1:1 dan perbandingan per-elemen bermakna tanpa pemetaan.
+
+Tiga jalur validasi yang saling bebas, seluruhnya terukur (3 contoh × 2 kombinasi):
+
+| Jalur | Besaran | RMS terburuk | Korelasi min |
+|-------|---------|-------------:|-------------:|
+| 1 | Momen `m_xx`/`m_yy`/`m_xy` | 0,144% | 0,99991 |
+| 1 | Geser `q_x`/`q_y` | 0,265% | 0,99993 |
+| 1 | Momen **puncak** (penentu tulangan) | 0,515% | — |
+| 2 | Lendutan `uz` per node (ex01 & ex02) | 0,216% | 0,999986 |
+| 3 | Reaksi tumpuan `Rz` (ketiga contoh) | 0,539% | 0,999596 |
+
+Ditambah **cek-silang transformasi tensor**: merotasi ekspor sumbu lokal Midas dengan
+`theta` kami mereproduksi ekspor sumbu global Midas sampai RMS 0,0001%. Itu menguji
+`postproc_engine` terhadap implementasi independen — VC-2 menguji hal yang sama, tetapi
+secara sintetis.
+
+**Efek samping yang tidak diduga:** `Σ FZ` reaksi Midas sama dengan `Σ Pz` masukan sampai
+~9 angka berarti. Karena model Midas diimpor dari MCT kita, ini **memvalidasi
+`exporters/mct.py` secara end-to-end** — satu-satunya cek yang pernah menyentuh sisi Midas
+yang sesungguhnya. Sebelumnya seluruh test MCT hanya memeriksa berkas kita terhadap harapan
+kita sendiri.
+
+Dua hal dinyatakan apa adanya, bukan ditambal:
+- **Konvensi tanda geser Midas berlawanan** dengan konvensi PRD Bagian 7.1. Direkonsiliasi
+  eksplisit di `validation_helpers.MIDAS_SHEAR_SIGN`, dengan bukti keseragaman: tidak satu
+  pun dari ~5.500 elemen menyimpang, dan pembalikan itu tetap muncul pada ekspor sumbu
+  global yang tidak melewati rotasi apa pun.
+- **Lendutan ex01 dibatasi resolusi ekspor Midas** (1 µm = 0,44% dari skala, lebih besar
+  daripada selisih terukur 0,216%). Lulusnya gate itu hanya berarti "tidak berbeda sejauh
+  yang dapat diukur", dan docstring test menyatakannya.
+- **Lendutan per node ex03 tidak tersedia**: berkas yang disediakan untuk ex03 ternyata
+  byte-identik dengan berkas reaksinya. Tidak disalin, dan kekurangannya dicatat.
+
+Simpangan titik-per-titik maksimum sengaja **tidak** di-gate (dicetak di pesan kegagalan):
+ex02 `q_y` mencapai 7,7% pada satu elemen di singularitas tepi pier, tempat kedua formulasi
+elemen memang paling sah berbeda.
+
+### Changed — kop gambar teknik menggantikan judul empat baris
+
+Judul plot sebelumnya menumpuk empat baris (nama besaran, statistik, asumsi material,
+catatan metodologi), sehingga yang paling penting tenggelam. Sekarang:
+
+- **Judul dua baris**: nama besaran (13 pt tebal) dan kombinasi (9,5 pt redup).
+- **Kop bertepi di kiri-bawah, DI LUAR area gambar**, berisi identitas proyek → asumsi
+  desain → catatan → peringatan, berformat kop gambar teknik. Berlaku untuk **semua** plot:
+  kontur, kategorikal, envelope, denah mesh, denah geometri, cek tumpuan, dan opsvis.
+- `renderer.TitleBlock` menggantikan parameter `info: str`. `warnings` jadi field
+  tersendiri, bukan konvensi awalan teks: `GEOMETRI OVERRIDE` (wajib menonjol menurut PRD
+  Bagian 9.3) sebelumnya dicapai dengan mewarnai **seluruh judul** merah, termasuk nama
+  besaran yang tidak ada hubungannya.
+- **`φ lentur`/`φ geser` beserta sumbernya kini tampil di plot.** Keduanya mengubah setiap
+  angka tulangan pada gambar tetapi sebelumnya tidak pernah sampai ke satu plot pun.
+- **Plot envelope kini berkop.** Sebelumnya envelope sama sekali tidak membawa konteks,
+  padahal justru itu yang paling sering dicetak.
+- `engineer` dan `date` dari config akhirnya sampai ke gambar — selama ini dikumpulkan
+  formulir lalu hanya dipakai calc sheet.
+- Bahasa dibakukan: `"PETA ORIENTASI - ..."` → `"Peta orientasi — nilai desain diambil dari
+  lajur muka pier, bukan dari nilai puncak elemen."`; `"V_u > phi.V_c"` → `"V_u > φV_c"`;
+  tanda pisah `—`.
+
+Statistik maks/min **dihapus dari judul tanpa pindah ke kop**: `_mark_extremes` sudah
+menuliskannya di atas elemennya sendiri beserta koordinat, dan colorbar membawa rentangnya.
+Menyalinnya ke kop hanya menciptakan tempat kedua yang bisa berbeda dari gambarnya.
+
+**Seluruh PNG bertambah tinggi** (~12%) karena kop DITAMBAHKAN di bawah, bukan diambil dari
+area gambar — pada pilecap panjang-ramping, mengambilnya berarti kehilangan seperempat
+tinggi gambar. Diperiksa: `reporter.py` tidak menyematkan gambar dengan lebar tetap, jadi
+tidak ada konsumen hilir yang rusak. `tests/test_golden.py` juga tidak terdampak (ia
+membandingkan statistik mesh dan nilai probe, tidak pernah menyentuh PNG).
+
+### Fixed
+
+- **Judul terpotong di tepi atas figur.** DIUKUR: dengan `rect` yang hanya membatasi sisi
+  bawah, `tight_layout` menempatkan judul `loc="left"` berikut `pad`-nya sampai `y1 = 1,013`
+  — di luar figur. Ruang atas kini dicadangkan eksplisit dalam inci
+  (`_HEADING_RESERVE_IN`), sama seperti perlakuan kop.
+- `textwrap.fill(override, width=62)` diganti anggaran karakter yang **diturunkan dari
+  lebar panel**; angka 62 hanya benar untuk satu lebar figur dan diam-diam salah pada
+  pratinjau UI yang lebarnya 7 inci.
+- Watermark, legenda NaN, dan legenda "tidak ada batang yang memadai" sebelumnya
+  berebut sudut kiri-bawah axes yang sama. Watermark pindah ke kanan-bawah figur, kedua
+  legenda ke kiri-atas, dan jumlah elemen masuk ke label legendanya sendiri.
+- Judul envelope tidak lagi berbunyi "Kombinasi seluruh kombinasi".
+
+### Catatan pemeliharaan
+
+`tests/data/vc6/` menambah ~28 MB ke repo. Ekspor Midas disimpan **apa adanya, tanpa
+penyaringan** demi jejak audit langsung; `midas_force_local.csv` (12,6 MB) hanya melayani
+cek-silang rotasi dan merupakan kandidat pemangkasan paling jelas bila ukurannya
+dipermasalahkan. Provenance lengkap beserta sha256 setiap berkas ada di
+`tests/data/vc6/SUMBER.md`.
+
 ## [0.7.1] — 2026-08-10 — Instalasi tanpa git
 
 Ditemukan saat menjawab pertanyaan: dapatkah tool ini dipasang permanen di PC yang tidak

@@ -226,6 +226,19 @@ def test_mesh_plan_menampilkan_subjudul_override(sample, tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
+def _panel_ax(fig):
+    """Axes kop, dicari lewat label.
+
+    Bukan `fig.axes[-1]`: figur kontur punya tiga axes (gambar, colorbar, kop) dan
+    aritmetika indeks akan salah begitu ada colorbar kedua.
+    """
+    return next(a for a in fig.axes if a.get_label() == renderer.PANEL_LABEL)
+
+
+def _panel_lines(fig) -> list[str]:
+    return [t.get_text() for t in _panel_ax(fig).texts]
+
+
 def test_denah_geometri_mengembalikan_figure_tanpa_menyentuh_mesh(sample):
     """Pratinjau `pilecap-ui` harus jadi sebelum gmsh dipanggil sama sekali.
 
@@ -235,16 +248,28 @@ def test_denah_geometri_mengembalikan_figure_tanpa_menyentuh_mesh(sample):
     import matplotlib.pyplot as plt
 
     geom, _ = sample
-    fig = renderer.render_geometry_plan(geom, project_name="UJI", style=renderer.PlotStyle(dpi=60))
+    fig = renderer.render_geometry_plan(
+        geom, style=renderer.PlotStyle(dpi=60), block=renderer.TitleBlock(project="UJI")
+    )
     try:
         assert fig.axes, "figure tanpa axes"
-        judul = fig.axes[0].get_title()
-        assert "UJI" in judul
-        assert f"{geom.n_piles} pile" in judul
+        # Judul kini RINGKAS: nama gambar saja, tanpa konteks apa pun.
+        assert fig.axes[0].get_title(loc="left") == "Denah Geometri Pilecap"
+
+        kop = "\n".join(_panel_lines(fig))
+        assert "UJI" in kop
+        assert f"{geom.n_piles} pile" in kop
+
         # Anotasi pile & pier yang sama dengan seluruh plot denah lain.
         teks = {t.get_text() for t in fig.axes[0].texts}
         assert {p.pile_id for p in geom.piles} <= teks
         assert any("JEPIT" in t for t in teks)
+
+        # Tanpa asersi geometris ini, asersi string di atas tetap lulus meskipun kop
+        # tergambar MENIMPA area gambar.
+        utama, panel = fig.axes[0].get_position(), _panel_ax(fig).get_position()
+        assert panel.y1 <= utama.y0, "kop menimpa area gambar"
+        assert panel.x0 < 0.5, "kop tidak berada di kiri"
     finally:
         plt.close(fig)
 
@@ -252,8 +277,8 @@ def test_denah_geometri_mengembalikan_figure_tanpa_menyentuh_mesh(sample):
 def test_denah_geometri_membungkus_baris_override(sample):
     """Figur pratinjau sempit; baris override memuat tiga nama berkas sekaligus.
 
-    Dibiarkan satu baris, ia terpotong di kedua sisi -- justru baris yang paling perlu
-    terbaca utuh, karena ia mengumumkan bahwa nilai di formulir sedang diabaikan.
+    Dibiarkan satu baris, ia terpotong -- justru baris yang paling perlu terbaca utuh,
+    karena ia mengumumkan bahwa nilai di formulir sedang diabaikan.
     """
     import matplotlib.pyplot as plt
 
@@ -271,9 +296,111 @@ def test_denah_geometri_membungkus_baris_override(sample):
     )
     fig = renderer.render_geometry_plan(overridden, style=renderer.PlotStyle(dpi=60))
     try:
-        judul = fig.axes[0].get_title()
-        assert "GEOMETRI OVERRIDE" in judul
-        assert max(len(baris) for baris in judul.splitlines()) <= 70
+        baris = [t for t in _panel_ax(fig).texts if "OVERRIDE" in t.get_text()]
+        assert baris, "baris GEOMETRI OVERRIDE tidak muncul di kop"
+
+        # Anggaran DITURUNKAN dari `_wrap`, bukan angka ajaib. Yang lama (`<= 70`) adalah
+        # konstanta kedua yang membayangi `textwrap.fill(..., 62)` dan itulah yang membuat
+        # test ini rapuh terhadap perubahan lebar figur.
+        anggaran = len(renderer._wrap("x" * 500, renderer._panel_width_in(7.0), 7.5)[0])
+        semua = [t for t in _panel_ax(fig).texts if t.get_text()]
+        assert all(len(t.get_text()) <= anggaran for t in semua), (
+            "ada baris kop yang melewati lebar"
+        )
+
+        # Nama berkas TIDAK boleh terpenggal -- nama yang terpotong justru menyesatkan.
+        gabung = " ".join(t.get_text() for t in semua)
+        for nama in ("pilecap_polygon.csv", "custom_pile_coords.csv", "pier_polygon.csv"):
+            assert nama in gabung, f"{nama} terpenggal saat dibungkus"
+
+        # PRD Bagian 9.3 menuntut override MENONJOL. Warnanya tidak pernah benar-benar
+        # diuji sebelum ini -- yang diuji hanya ada/tidaknya teks.
+        assert baris[0].get_color() == config.theme().pier_line
+    finally:
+        plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Kop gambar
+# ---------------------------------------------------------------------------
+
+
+def test_kop_tidak_terpotong_savefig(sample, tmp_path: Path):
+    """`tight_layout()` polos + `savefig` tanpa `bbox_inches` MEMOTONG kop.
+
+    Karena itu tinggi figur ditambah lebih dulu dan `tight_layout` dipanggil dengan
+    `rect`. Test ini membaca PIKSEL pita kiri-bawah PNG, sehingga gagal keras bila
+    seseorang mengembalikan `fig.tight_layout()` polos ke `_save`.
+    """
+    import matplotlib.image as mpimg
+
+    geom, mesh = sample
+    path = renderer.render_contour(
+        tmp_path / "kop.png",
+        geom,
+        mesh,
+        _values(mesh),
+        quantity="moment_per_width",
+        title="Momen m_x",
+        style=renderer.PlotStyle(dpi=80),
+        block=renderer.TitleBlock(project="UJI KOP", notes=("catatan uji",)),
+    )
+    data = mpimg.imread(path)
+    tinggi, lebar = data.shape[:2]
+    pita = data[int(tinggi * 0.90) :, : lebar // 2]
+    assert not np.allclose(pita, pita[0, 0]), "kop tidak tergambar / terpotong di tepi bawah"
+
+
+def test_kop_memuat_asumsi_tetapi_bukan_statistik(sample):
+    """Statistik TETAP di plot (`_mark_extremes` + colorbar), tidak disalin ke kop.
+
+    Menyalinnya berarti menciptakan tempat kedua yang bisa berbeda dari gambarnya.
+    """
+    import matplotlib.pyplot as plt
+
+    geom, _ = sample
+    fig = renderer.render_geometry_plan(
+        geom,
+        style=renderer.PlotStyle(dpi=60),
+        block=renderer.TitleBlock(assumptions=("f'c 30 MPa · fy 420 MPa",)),
+    )
+    try:
+        kop = " ".join(_panel_lines(fig)).lower()
+        assert "f'c 30 mpa" in kop
+        assert "maks" not in kop and "min " not in kop
+    finally:
+        plt.close(fig)
+
+
+def test_tinggi_kop_tumbuh_mengikuti_jumlah_baris():
+    """Fungsi murni -- tidak butuh backend gambar sama sekali."""
+    satu = renderer._reserve_bottom_in(renderer.TitleBlock(notes=("a",)), 12.0)
+    banyak = renderer._reserve_bottom_in(renderer.TitleBlock(notes=tuple("abcdefghijkl")), 12.0)
+    assert banyak > satu
+    assert renderer._reserve_bottom_in(None, 12.0) == 0.0
+    assert renderer._reserve_bottom_in(renderer.TitleBlock(), 12.0) == 0.0
+
+
+def test_kop_yang_kelebihan_dipangkas_dengan_pengumuman():
+    """Dipangkas DENGAN pengumuman, tidak pernah diam-diam (sikap Core 3)."""
+    padat = renderer.TitleBlock(notes=tuple(f"catatan panjang nomor {i}" for i in range(80)))
+    baris = renderer._fit_lines(padat, renderer._panel_width_in(12.0))
+    assert renderer._panel_height_in(baris) <= renderer._PANEL_MAX_H_IN
+    assert any(renderer._TRUNCATION_NOTE in b.text for b in baris), (
+        "pemangkasan terjadi tanpa satu pun tanda di gambar"
+    )
+
+
+def test_judul_kombinasi_terpisah_dari_judul_utama():
+    """Dua baris dengan ukuran berbeda menuntut dua artist; judul utama tetap bersih."""
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    try:
+        renderer._set_heading(ax, config.theme(), heading="Momen m_x", combo="1.2D+1.6L")
+        assert ax.get_title(loc="left") == "Momen m_x"
+        assert "Kombinasi" not in ax.get_title(loc="left")
+        assert any("Kombinasi 1.2D+1.6L" in t.get_text() for t in ax.texts)
     finally:
         plt.close(fig)
 

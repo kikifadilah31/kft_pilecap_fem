@@ -1,0 +1,200 @@
+{
+  "unit_system": "SI (N, m, Pa)",
+  "thickness_m": 1.4000000000000001,
+  "pilecap_polygon_m": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      8.0,
+      0.0
+    ],
+    [
+      8.0,
+      3.5
+    ],
+    [
+      4.0,
+      3.5
+    ],
+    [
+      4.0,
+      7.0
+    ],
+    [
+      0.0,
+      7.0
+    ]
+  ],
+  "piles": [
+    {
+      "pile_id": "P1",
+      "x_m": 0.9,
+      "y_m": 0.9,
+      "diameter_m": 0.7000000000000001
+    },
+    {
+      "pile_id": "P2",
+      "x_m": 2.6,
+      "y_m": 0.9,
+      "diameter_m": 0.7000000000000001
+    },
+    {
+      "pile_id": "P3",
+      "x_m": 4.6000000000000005,
+      "y_m": 0.9,
+      "diameter_m": 0.9
+    },
+    {
+      "pile_id": "P4",
+      "x_m": 7.4,
+      "y_m": 0.9,
+      "diameter_m": 0.9
+    },
+    {
+      "pile_id": "P5",
+      "x_m": 0.9,
+      "y_m": 2.6,
+      "diameter_m": 0.7000000000000001
+    },
+    {
+      "pile_id": "P6",
+      "x_m": 2.6,
+      "y_m": 2.6,
+      "diameter_m": 0.7000000000000001
+    },
+    {
+      "pile_id": "P7",
+      "x_m": 4.6000000000000005,
+      "y_m": 2.6,
+      "diameter_m": 0.9
+    },
+    {
+      "pile_id": "P8",
+      "x_m": 7.4,
+      "y_m": 2.6,
+      "diameter_m": 0.9
+    },
+    {
+      "pile_id": "P9",
+      "x_m": 0.9,
+      "y_m": 4.2,
+      "diameter_m": 0.7000000000000001
+    },
+    {
+      "pile_id": "P10",
+      "x_m": 3.1,
+      "y_m": 4.2,
+      "diameter_m": 0.7000000000000001
+    },
+    {
+      "pile_id": "P11",
+      "x_m": 0.9,
+      "y_m": 6.3,
+      "diameter_m": 0.7000000000000001
+    },
+    {
+      "pile_id": "P12",
+      "x_m": 3.1,
+      "y_m": 6.3,
+      "diameter_m": 0.7000000000000001
+    }
+  ],
+  "piers": [
+    {
+      "pier_id": "PIER_A",
+      "shape": "polygon",
+      "centerline_m": [
+        5.999999999999997,
+        1.7499999999999993
+      ],
+      "polygon_m": [
+        [
+          5.3,
+          1.25
+        ],
+        [
+          6.7,
+          1.25
+        ],
+        [
+          6.7,
+          2.25
+        ],
+        [
+          5.3,
+          2.25
+        ]
+      ],
+      "width_x_m": null,
+      "width_y_m": null,
+      "diameter_m": null
+    },
+    {
+      "pier_id": "PIER_B",
+      "shape": "polygon",
+      "centerline_m": [
+        1.9999999999999993,
+        5.249999999999999
+      ],
+      "polygon_m": [
+        [
+          1.3,
+          4.55
+        ],
+        [
+          2.7,
+          4.55
+        ],
+        [
+          2.7,
+          5.95
+        ],
+        [
+          1.3,
+          5.95
+        ]
+      ],
+      "width_x_m": null,
+      "width_y_m": null,
+      "diameter_m": null
+    }
+  ],
+  "geometry_resolution": {
+    "pilecap": {
+      "source": "csv_autodetect",
+      "file": "input/pilecap_polygon.csv",
+      "sha256": "6ba5de58c8417296ac996b1d4ff2c2a6a07d18b049fa35afade82e09c8663964",
+      "overridden_json_keys": [
+        "pilecap.length_x",
+        "pilecap.length_y",
+        "pilecap.origin"
+      ]
+    },
+    "pile": {
+      "source": "csv_autodetect",
+      "file": "input/custom_pile_coords.csv",
+      "sha256": "c8df9e1e8350e897dab6d0a8d4094702b86548662cdf9c0a238d50cfc7c9f577",
+      "overridden_json_keys": [
+        "pile.n_col",
+        "pile.n_row",
+        "pile.spacing_x",
+        "pile.spacing_y",
+        "pile.grid_origin"
+      ]
+    },
+    "pier": {
+      "source": "csv_autodetect",
+      "file": "input/pier_polygon.csv",
+      "sha256": "d398d37bad627801e83f16e7a61bb765d6997493b829409d7b5291ea59a2f3ee",
+      "overridden_json_keys": [
+        "pier.shape",
+        "pier.width_x",
+        "pier.width_y",
+        "pier.diameter",
+        "pier.centerline"
+      ]
+    }
+  }
+}

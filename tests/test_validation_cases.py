@@ -4,9 +4,13 @@ PRD Bagian 1.3 poin 1: rilis DIBLOKIR bila ada validation case yang gagal. Ini b
 target aspirasional.
 
 Aturan mutlak PRD Bagian 8.1: koefisien VC-1 (Timoshenko) dan VC-7 (metode konvensional)
-TIDAK BOLEH dipakai sebelum diverifikasi ke sumbernya. Karena PRD Bagian 17 item 7 & 8
-masih terbuka, kedua case itu di-`skip` dengan alasan eksplisit -- BUKAN diisi angka
-tebakan.
+TIDAK BOLEH dipakai sebelum diverifikasi ke sumbernya. Karena PRD Bagian 17 item 7 masih
+terbuka, kedua case itu di-`skip` dengan alasan eksplisit -- BUKAN diisi angka tebakan.
+
+**VC-6 kini berjalan** (PRD Bagian 17 item 8 TERTUTUP sejak 2026-08-10): model pembanding
+Midas Civil untuk ketiga contoh bawaan tersedia di `tests/data/vc6/`. Ia membandingkan
+resultan elemen, lendutan per node, dan reaksi tumpuan; provenance beserta rekonsiliasi
+konvensinya ada di `tests/data/vc6/SUMBER.md`.
 
 Kalibrasi tanda (`config.MOMENT_SIGN_FACTOR`, `config.SHEAR_SIGN_FACTOR`) TIDAK
 bergantung pada koefisien buku: VC-3 memakai pelat satu arah bertumpuan sederhana, yang
@@ -16,11 +20,14 @@ statis tertentu sehingga momen & gesernya mengikuti kesetimbangan saja.
 from __future__ import annotations
 
 import dataclasses
+import json
 import math
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
+import validation_helpers
 from validation_helpers import (
     EdgeSupport,
     UniformPressure,
@@ -508,7 +515,275 @@ def test_opensees_state_dibersihkan_antar_kombinasi(ex01_model):
 
 
 # ===========================================================================
-# VC-1, VC-6, VC-7 -- DILEWATI dengan alasan eksplisit
+# VC-6 -- cross-check terhadap Midas Civil
+# ===========================================================================
+#
+# Menutup PRD Bagian 17 item 8. Seluruh provenance, rekonsiliasi konvensi, dan batas
+# ketelitian ekspor terdokumentasi di `tests/data/vc6/SUMBER.md` -- dibaca dulu sebelum
+# mengubah angka gate mana pun di bawah.
+
+VC6_DATA = Path(__file__).resolve().parent / "data" / "vc6"
+VC6_KASUS = ("ex01", "ex02", "ex03")
+#: (nama tampilan, slug Midas). Urutannya sama dengan urutan subcase di `.log`/`.out`.
+VC6_KOMBINASI = (("1.2D+1.6L", "1_2D_1_6L"), ("1.2D+1.0W", "1_2D_1_0W"))
+
+#: Gate. Angka di kolom "terukur" pada rencana v0.8.0 memberi margin 3-7x terhadap nilai
+#: terburuk yang benar-benar diamati; jangan dilonggarkan tanpa mengukur ulang ketiganya.
+VC6_KORELASI_MIN = 0.999
+VC6_RMS_MOMEN = 0.010  # terburuk terukur 0,144%
+VC6_RMS_GESER = 0.015  # terburuk terukur 0,265%
+VC6_PUNCAK_MOMEN = 0.020  # terburuk terukur 0,515%
+VC6_RMS_LENDUTAN = 0.010  # terburuk terukur 0,216% (ex01 dibatasi resolusi ekspor)
+VC6_RMS_REAKSI = 0.015  # terburuk terukur 0,539%
+VC6_TOTAL_REAKSI = 1e-4  # terburuk terukur ~6e-9
+VC6_ROTASI = 1e-4  # terburuk terukur 2e-6
+
+
+def _vc6_jalankan(kasus: str, combo: str):
+    """Jalankan solver di atas mesh TERSIMPAN milik kasus VC-6.
+
+    Mesh sengaja dimuat dari CSV, tidak dibangun ulang: model Midas dibuat dari mesh itu,
+    sedangkan gmsh tidak reproducible bit-demi-bit (README, "mesh tidak reproducible").
+    Me-mesh ulang berarti membandingkan dua diskretisasi berbeda -- dan seluruh
+    perbandingan per-elemen kehilangan maknanya tanpa satu pun tanda kegagalan.
+    """
+    folder = VC6_DATA / kasus
+    geom = geometry_builder.GeometryModel.from_json_dict(
+        json.loads((folder / "geometry.json").read_text(encoding="utf-8"))
+    )
+    mesh = mesh_model.from_csv(folder / "nodes.csv", folder / "elements.csv")
+    loaded = io_utils.load_config(folder / "pilecap_config.json")
+    reactions = io_utils.load_reactions(
+        folder / "pile_reactions.csv", config.FORCE_TO_SI[loaded.input_units["force"]]
+    )
+    hasil = fem_engine.analyze_combo(
+        mesh,
+        geom,
+        fem_engine.MaterialProperties.from_config(loaded.si),
+        fem_engine.AnalysisOptions.from_config(loaded.si),
+        combo=combo,
+        pz_by_pile=reactions.values[combo],
+        load_strategy=fem_engine.make_load_strategy(
+            (loaded.si.get("pile") or {}).get("modeling", "pressure")
+        ),
+    )
+    return mesh, hasil, postproc_engine.compute_element_results(hasil, mesh), reactions
+
+
+@pytest.fixture(scope="module")
+def vc6_hasil() -> dict[tuple[str, str], tuple]:
+    """Enam analisis (3 kasus x 2 kombinasi) dijalankan sekali; terukur ~5,6 detik total.
+
+    Secepat itu justru KARENA mesh dimuat dari CSV -- gmsh tidak pernah dijalankan.
+    """
+    return {
+        (kasus, combo): _vc6_jalankan(kasus, combo)
+        for kasus in VC6_KASUS
+        for combo, _ in VC6_KOMBINASI
+    }
+
+
+def _rms_relatif(midas: np.ndarray, kami: np.ndarray) -> float:
+    """RMS selisih dibagi PUNCAK nilai kami -- bukan dibagi nilai per titik.
+
+    Pembagian per titik akan meledak di dekat garis nol momen, tempat kedua kode sama-sama
+    benar tetapi rasionya tak terhingga. Skala puncak adalah besaran yang benar-benar
+    dipakai mendesain.
+    """
+    skala = float(np.max(np.abs(kami)))
+    if skala == 0.0:
+        return 0.0
+    return float(np.sqrt(np.mean((midas - kami) ** 2)) / skala)
+
+
+def _laporan(nama: str, midas: np.ndarray, kami: np.ndarray) -> str:
+    """Pesan kegagalan yang memuat ANGKANYA, bukan sekadar 'tidak cocok'."""
+    skala = float(np.max(np.abs(kami))) or 1.0
+    return (
+        f"{nama}: RMS={_rms_relatif(midas, kami) * 100:.3f}% "
+        f"maks={np.max(np.abs(midas - kami)) / skala * 100:.3f}% "
+        f"korelasi={np.corrcoef(midas, kami)[0, 1]:.6f} "
+        f"(puncak kami={skala:,.4g}, Midas={np.max(np.abs(midas)):,.4g})"
+    )
+
+
+@pytest.mark.parametrize("kasus", VC6_KASUS)
+@pytest.mark.parametrize(("combo", "slug"), VC6_KOMBINASI)
+def test_vc6_resultan_elemen_cocok_dengan_midas(vc6_hasil, kasus: str, combo: str, slug: str):
+    """Momen & geser per elemen vs Midas Civil, memakai ekspor sumbu GLOBAL.
+
+    Tanda geser Midas dibalik lebih dulu (`MIDAS_SHEAR_SIGN`); itu perbedaan KONVENSI yang
+    terbukti seragam pada seluruh elemen, bukan faktor penyetel -- lihat SUMBER.md 4.1.
+
+    Simpangan titik-per-titik maksimum sengaja TIDAK di-gate: ex02 `q_y` mencapai 7,7% pada
+    SATU elemen di singularitas tepi pier, tempat kedua formulasi elemen (ShellMITC4 vs
+    QUAD4 hibrida Midas) memang paling sah berbeda. Angkanya tetap dicetak.
+    """
+    mesh, _, hasil, _ = vc6_hasil[(kasus, combo)]
+    rows = validation_helpers.load_midas_centroid(VC6_DATA / kasus / "midas_force_global.csv", slug)
+    assert list(rows.index) == [int(t) for t in mesh.elem_tags], (
+        "penomoran elemen Midas tidak lagi 1:1 dengan mesh tersimpan"
+    )
+    midas = validation_helpers.midas_resultants_si(rows)
+
+    for medan, batas in (
+        ("m_xx", VC6_RMS_MOMEN),
+        ("m_yy", VC6_RMS_MOMEN),
+        ("m_xy", VC6_RMS_MOMEN),
+        ("q_x", VC6_RMS_GESER),
+        ("q_y", VC6_RMS_GESER),
+    ):
+        kami = getattr(hasil, medan)
+        pesan = _laporan(f"{kasus}/{combo} {medan}", midas[medan], kami)
+        assert _rms_relatif(midas[medan], kami) <= batas, pesan
+        assert np.corrcoef(midas[medan], kami)[0, 1] >= VC6_KORELASI_MIN, pesan
+
+
+@pytest.mark.parametrize("kasus", VC6_KASUS)
+@pytest.mark.parametrize(("combo", "slug"), VC6_KOMBINASI)
+def test_vc6_momen_puncak_cocok_dengan_midas(vc6_hasil, kasus: str, combo: str, slug: str):
+    """Momen PUNCAK -- inilah yang menentukan tulangan, jadi diuji terpisah dari RMS.
+
+    RMS yang baik masih mungkin menyembunyikan puncak yang meleset, dan puncaklah yang
+    dipakai mendesain.
+    """
+    _, _, hasil, _ = vc6_hasil[(kasus, combo)]
+    rows = validation_helpers.load_midas_centroid(VC6_DATA / kasus / "midas_force_global.csv", slug)
+    midas = validation_helpers.midas_resultants_si(rows)
+    for medan in ("m_xx", "m_yy"):
+        puncak_kami = float(np.max(np.abs(getattr(hasil, medan))))
+        puncak_midas = float(np.max(np.abs(midas[medan])))
+        beda = abs(puncak_midas - puncak_kami) / puncak_kami
+        assert beda <= VC6_PUNCAK_MOMEN, (
+            f"{kasus}/{combo} |{medan}| puncak: kami={puncak_kami / 1e3:,.2f} "
+            f"Midas={puncak_midas / 1e3:,.2f} kNm/m -> beda {beda * 100:.3f}%"
+        )
+
+
+@pytest.mark.parametrize("kasus", VC6_KASUS)
+@pytest.mark.parametrize(("combo", "slug"), VC6_KOMBINASI)
+def test_vc6_rotasi_lokal_ke_global_cocok_dengan_midas(kasus: str, combo: str, slug: str):
+    """Cek-silang transformasi tensor terhadap implementasi INDEPENDEN.
+
+    Ekspor tersedia dalam sumbu lokal maupun global. Merotasi yang lokal dengan `theta`
+    dari `elements.csv` harus menghasilkan yang global. Lulusnya membuktikan dua hal
+    sekaligus: `theta` kami adalah sudut sumbu material yang sama dengan yang dipakai
+    Midas, DAN rumus rotasi `postproc_engine` sama dengan rumus Midas.
+
+    VC-2 menguji hal yang sama secara sintetis dengan sudut yang diketahui; ini mengujinya
+    terhadap kode nyata.
+    """
+    folder = VC6_DATA / kasus
+    mesh = mesh_model.from_csv(folder / "nodes.csv", folder / "elements.csv")
+    lokal = validation_helpers.load_midas_centroid(folder / "midas_force_local.csv", slug)
+    global_ = validation_helpers.load_midas_centroid(folder / "midas_force_global.csv", slug)
+
+    diputar = validation_helpers.rotate_moment_tensor(lokal, mesh.elem_theta)
+    for medan, kolom, nilai in zip(
+        ("m_xx", "m_yy", "m_xy"), validation_helpers.MIDAS_MOMENT_COLUMNS, diputar, strict=True
+    ):
+        acuan = global_[kolom].to_numpy(dtype=np.float64)
+        assert _rms_relatif(nilai, acuan) <= VC6_ROTASI, _laporan(
+            f"{kasus}/{combo} rotasi(lokal)->global {medan}", nilai, acuan
+        )
+
+
+@pytest.mark.parametrize("kasus", ("ex01", "ex02"))
+@pytest.mark.parametrize(("combo", "slug"), VC6_KOMBINASI)
+def test_vc6_lendutan_per_node_cocok_dengan_midas(vc6_hasil, kasus: str, combo: str, slug: str):
+    """Lendutan vertikal per node vs Midas.
+
+    HANYA ex01 & ex02: berkas yang disediakan untuk ex03 ternyata berisi reaksi, bukan
+    lendutan (SUMBER.md 5.1). Kekurangan itu dinyatakan, tidak ditambal.
+
+    PERINGATAN TAFSIR: ekspor Midas menulis 6 desimal dalam METER, jadi resolusinya 1 um.
+    Pada ex01 (lendutan maks 0,226 mm) itu setara 0,44% dari skala -- LEBIH BESAR daripada
+    selisih terukur 0,216%. Lulusnya test ini di ex01 karena itu hanya membuktikan "tidak
+    berbeda sejauh yang dapat diukur", bukan ketelitian 0,2%.
+    """
+    mesh, mentah, _, _ = vc6_hasil[(kasus, combo)]
+    jenis, tabel = validation_helpers.midas_nodal(VC6_DATA / kasus / "midas_displacement.csv", slug)
+    assert jenis == "displacement", f"{kasus}: berkas lendutan ternyata berisi {jenis}"
+
+    tag_ke_indeks = {int(t): i for i, t in enumerate(mesh.node_tags)}
+    indeks = [tag_ke_indeks[int(t)] for t in tabel.index]
+    kami = mentah.displacements[indeks, 2]
+    midas = tabel["DZ(m)"].to_numpy(dtype=np.float64)
+
+    pesan = _laporan(f"{kasus}/{combo} uz", midas, kami)
+    assert _rms_relatif(midas, kami) <= VC6_RMS_LENDUTAN, pesan
+    assert np.corrcoef(midas, kami)[0, 1] >= VC6_KORELASI_MIN, pesan
+
+
+@pytest.mark.parametrize("kasus", VC6_KASUS)
+def test_vc6_lendutan_maksimum_cocok_dengan_log_midas(vc6_hasil, kasus: str):
+    """`MAXIMUM TRANSLATION` di `.log` solver Midas vs lendutan maksimum kami.
+
+    Tersedia untuk KETIGA kasus, termasuk ex03 yang ekspor per-node-nya tidak ada.
+    """
+    acuan = validation_helpers.midas_max_translation(VC6_DATA / kasus / "midas_solver.log")
+    assert len(acuan) == len(VC6_KOMBINASI), (
+        f"{kasus}: .log memuat {len(acuan)} subcase, diharapkan {len(VC6_KOMBINASI)}"
+    )
+    for (combo, _), midas in zip(VC6_KOMBINASI, acuan, strict=True):
+        _, mentah, _, _ = vc6_hasil[(kasus, combo)]
+        beda = abs(midas - mentah.max_deflection) / midas
+        assert beda <= VC6_RMS_LENDUTAN, (
+            f"{kasus}/{combo} lendutan maks: kami={mentah.max_deflection * 1e3:.5f} mm "
+            f"Midas={midas * 1e3:.5f} mm -> beda {beda * 100:.3f}%"
+        )
+
+
+@pytest.mark.parametrize("kasus", VC6_KASUS)
+@pytest.mark.parametrize(("combo", "slug"), VC6_KOMBINASI)
+def test_vc6_reaksi_tumpuan_cocok_dengan_midas(vc6_hasil, kasus: str, combo: str, slug: str):
+    """Reaksi vertikal per node jepit vs Midas, pada ketiga kasus."""
+    mesh, mentah, _, _ = vc6_hasil[(kasus, combo)]
+    jenis, tabel = validation_helpers.midas_nodal(VC6_DATA / kasus / "midas_reaction.csv", slug)
+    assert jenis == "reaction"
+
+    kami = pd.Series(
+        mentah.reactions[:, 2] / 1e3,
+        index=[int(t) for t in mesh.node_tags[mentah.reaction_nodes]],
+    ).sort_index()
+    midas = tabel["FZ(kN)"].astype(float).sort_index()
+    assert list(kami.index) == list(midas.index), (
+        f"{kasus}: himpunan node jepit berbeda -- kami {len(kami)}, Midas {len(midas)}"
+    )
+
+    pesan = _laporan(f"{kasus}/{combo} Rz", midas.to_numpy(), kami.to_numpy())
+    assert _rms_relatif(midas.to_numpy(), kami.to_numpy()) <= VC6_RMS_REAKSI, pesan
+    assert np.corrcoef(midas.to_numpy(), kami.to_numpy())[0, 1] >= VC6_KORELASI_MIN, pesan
+
+
+@pytest.mark.parametrize("kasus", VC6_KASUS)
+@pytest.mark.parametrize(("combo", "slug"), VC6_KOMBINASI)
+def test_vc6_total_reaksi_midas_membuktikan_ekspor_mct(kasus: str, combo: str, slug: str):
+    """Sigma FZ Midas == Sigma Pz masukan. Ini MENGUJI EKSPOR MCT, bukan solver kami.
+
+    Model Midas diimpor dari `model.mct` yang ditulis `exporters.mct`. Bila totalnya cocok,
+    terbukti Midas benar-benar menerima beban yang kita maksudkan -- satu-satunya cek yang
+    pernah menyentuh sisi Midas yang sesungguhnya. Seluruh test MCT lainnya hanya memeriksa
+    berkas kita terhadap harapan kita sendiri.
+    """
+    folder = VC6_DATA / kasus
+    _, tabel = validation_helpers.midas_nodal(folder / "midas_reaction.csv", slug)
+    loaded = io_utils.load_config(folder / "pilecap_config.json")
+    reactions = io_utils.load_reactions(
+        folder / "pile_reactions.csv", config.FORCE_TO_SI[loaded.input_units["force"]]
+    )
+
+    total_pz = sum(reactions.values[combo].values()) / 1e3  # kN, ke ATAS
+    total_fz = float(tabel["FZ(kN)"].astype(float).sum())  # ke BAWAH
+    beda = abs(total_pz + total_fz) / total_pz
+    assert beda <= VC6_TOTAL_REAKSI, (
+        f"{kasus}/{combo}: Sigma Pz masukan={total_pz:,.5f} kN, Sigma FZ Midas={total_fz:,.5f} kN "
+        f"-> beda relatif {beda:.3e}. Ekspor MCT tidak membebani Midas seperti yang dimaksud."
+    )
+
+
+# ===========================================================================
+# VC-1, VC-7 -- DILEWATI dengan alasan eksplisit
 # ===========================================================================
 
 
@@ -523,16 +798,6 @@ def test_opensees_state_dibersihkan_antar_kombinasi(ex01_model):
 )
 def test_vc1_pelat_bujursangkar_tumpuan_sederhana():  # pragma: no cover
     raise AssertionError("tidak boleh dijalankan sebelum sumbernya dikonfirmasi")
-
-
-@pytest.mark.skip(
-    reason=(
-        "VC-6 butuh model pembanding SAP2000/Midas untuk pilecap yang sama. "
-        "PRD Bagian 17 item 8 masih TERBUKA (ketersediaan akses belum dikonfirmasi user)."
-    )
-)
-def test_vc6_cross_check_software_mapan():  # pragma: no cover
-    raise AssertionError("tidak boleh dijalankan sebelum model pembanding tersedia")
 
 
 @pytest.mark.skip(

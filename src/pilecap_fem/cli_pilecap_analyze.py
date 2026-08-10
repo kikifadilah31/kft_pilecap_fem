@@ -277,6 +277,7 @@ def _run_inner(
                 force=args.opsvis,
                 style=renderer.PlotStyle.from_args(args),
                 warnings=plot_warnings,
+                block=prepared.title_block,
             )
             opsvis_plotted = True
         renderer.render_opsvis_defo(
@@ -288,6 +289,7 @@ def _run_inner(
             force=args.opsvis,
             style=renderer.PlotStyle.from_args(args),
             warnings=plot_warnings,
+            block=prepared.title_block,
         )
 
         checks[f"equilibrium_VC0[{combo}]"] = "PASS" if result.equilibrium.passed else "FAIL"

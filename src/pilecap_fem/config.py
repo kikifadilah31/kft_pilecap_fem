@@ -464,10 +464,10 @@ SHEAR_REBAR_FIELDS: Final[dict[str, tuple[str, str, str, str]]] = {
 #: Muka BAWAH lahir dari momen POSITIF dan muka ATAS dari momen NEGATIF -- pemisahan itu
 #: dilakukan `capacity_engine._face_moments`, bukan di sini.
 REBAR_FACES: Final[dict[tuple[str, str], tuple[str, str]]] = {
-    ("x", "bawah"): ("contour_As_x_bawah.png", "As perlu arah X - muka BAWAH (m_x > 0)"),
-    ("x", "atas"): ("contour_As_x_atas.png", "As perlu arah X - muka ATAS (m_x < 0)"),
-    ("y", "bawah"): ("contour_As_y_bawah.png", "As perlu arah Y - muka BAWAH (m_y > 0)"),
-    ("y", "atas"): ("contour_As_y_atas.png", "As perlu arah Y - muka ATAS (m_y < 0)"),
+    ("x", "bawah"): ("contour_As_x_bawah.png", "As perlu arah X — muka bawah (m_x > 0)"),
+    ("x", "atas"): ("contour_As_x_atas.png", "As perlu arah X — muka atas (m_x < 0)"),
+    ("y", "bawah"): ("contour_As_y_bawah.png", "As perlu arah Y — muka bawah (m_y > 0)"),
+    ("y", "atas"): ("contour_As_y_atas.png", "As perlu arah Y — muka atas (m_y < 0)"),
 }
 #: Field ElementResults yang menjadi sumber momen tiap arah.
 REBAR_MOMENT_FIELD: Final[dict[str, str]] = {"x": "m_xx", "y": "m_yy"}
@@ -549,11 +549,15 @@ OPEN_BLOCKERS: Final[dict[str, str]] = {
     # sitasi pasalnya (lihat capacity_engine.SNI_CLAUSES). Yang TIDAK ikut tertutup adalah
     # b_o & d untuk geser PONS -- shell-kit hanya menyediakan geser satu arah -- sehingga
     # bagian itu tetap terbuka dan dicatat terpisah di bawah.
+    #
+    # #8 (model pembanding untuk VC-6) DITUTUP pada v0.8.0: model Midas Civil untuk
+    # KETIGA contoh bawaan tersedia di `tests/data/vc6/`, dan VC-6 kini berjalan sebagai
+    # release gate -- membandingkan resultan elemen, lendutan per node, dan reaksi
+    # tumpuan. Provenance-nya di `tests/data/vc6/SUMBER.md`.
     "#3b": "Pasal kapasitas geser PONS: V_c dua arah, definisi b_o & d, phi",
     "#5": "Kriteria batas deep pile cap + pasal",
     "#6": "Apakah Pz input sudah termasuk berat sendiri pilecap",
     "#7": "Sumber & angka koefisien VC-1 (Timoshenko, tabel mana)",
-    "#8": "Ketersediaan model pembanding SAP2000/Midas untuk VC-6",
     "#10": "Skala data realistis (jumlah elemen & kombinasi)",
     "#18": "Redaksi disclaimer/pernyataan tanggung jawab",
 }

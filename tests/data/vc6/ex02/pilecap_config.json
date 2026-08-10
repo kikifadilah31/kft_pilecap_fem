@@ -1,0 +1,84 @@
+{
+  "project": {
+    "name": "EX02 - Pilecap persegi grid 4x3, pier lingkaran",
+    "engineer": "[ISI]",
+    "date": "2026-08-04"
+  },
+
+  "units": {
+    "length": "mm",
+    "force": "kN",
+    "stress": "MPa"
+  },
+
+  "pilecap": {
+    "length_x": 11000,
+    "length_y": 8000,
+    "origin": [0, 0],
+    "thickness": 1500
+  },
+
+  "pile": {
+    "diameter": 800,
+    "n_col": 4,
+    "n_row": 3,
+    "spacing_x": 3000,
+    "spacing_y": 2600,
+    "grid_origin": [0, 0],
+    "modeling": "pressure"
+  },
+
+  "pier": {
+    "shape": "circular",
+    "centerline": [0, 0],
+    "diameter": 1800,
+    "support": "fixed"
+  },
+
+  "material": {
+    "fc": 30,
+    "E": 25000,
+    "E_source": "[CONTOH - ganti dengan nilai & sumber yang Anda tetapkan] nilai placeholder 25000 MPa",
+    "poisson": 0.2,
+    "density": 24
+  },
+
+  "mesh": {
+    "size_mode": "uniform",
+    "size_global": 130,
+    "size_local_pile": null,
+    "size_local_pier": null,
+    "algorithm": 11,
+    "recombination_algorithm": 3,
+    "recombine": true,
+    "require_all_quad": true,
+    "element_order": 1
+  },
+
+  "analysis": {
+    "shell_element": "ShellMITC4",
+    "section": "PlateFiber",
+    "n_layers": 10,
+    "include_self_weight": false
+  },
+
+  "design": {
+    "code": "SNI 2847:2019 (lewat shell-kit)",
+    "phi_flexure": null,
+    "phi_shear": null,
+    "fy": 420,
+    "fy_source": "[CONTOH - ganti dengan mutu & sumber yang Anda tetapkan] placeholder BjTS 420",
+    "rebar_mode": "spacing_fixed",
+    "rebar_spacing": 150,
+    "rebar_config": null,
+    "rebar_select_codes": null,
+    "stirrup_spacing_long": 200,
+    "stirrup_spacing_trans": 200,
+    "stirrup_select_diameters": null,
+    "as_min_surface_zone": null,
+    "cover": 75,
+    "strips_x": 5,
+    "strips_y": 5,
+    "moment_at": "pier_face"
+  }
+}
