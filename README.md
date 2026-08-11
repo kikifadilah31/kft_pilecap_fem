@@ -302,10 +302,46 @@ lewat blok `units` di config. Konversi terjadi **hanya** di `io_utils.py`; tabel
 | `examples/ex01_standard_4pile/` | Pilecap persegi 4 pile, pier persegi — kasus paling umum |
 | `examples/ex02_standard_12pile/` | Grid 4×3, pier lingkaran |
 | `examples/ex03_custom_polygon/` | Pilecap poligon L, pile custom non-grid, **dua** pier poligon. Sekaligus acuan format ketiga CSV geometri. |
+| `examples/ex04_pile_overlap_pier/` | Dua dari enam pile **menindih pier** (`f` = 7,2%). Contoh satu-satunya yang memakai `pier.max_pile_overlap_fraction`. |
 
 Jalankan `ex03` untuk melihat mekanisme **override geometri**: setiap entitas yang datang
 dari CSV diteriakkan sebagai WARNING 5 baris, dicatat di `run_manifest.json`, dan muncul
 sebagai baris PERINGATAN berwarna di kop setiap gambar.
+
+Jalankan `ex04` untuk melihat penanganan **pile yang tumpang tindih dengan pier** — lihat
+bagian berikutnya.
+
+## Pile yang tumpang tindih dengan pier (`pier.max_pile_overlap_fraction`)
+
+Bawaannya tool **menolak** geometri yang pile-nya menyentuh atau menindih pier. Sejak
+v0.9.0 tumpang tindih **berluas** dapat diizinkan dengan mengisi
+`pier.max_pile_overlap_fraction` (nirdimensi, `null` = menolak seperti sebelumnya).
+
+Yang terjadi bila diizinkan: seluruh cakram pile tetap dibebani `p = Pz / A_pile`, tetapi
+pier dimodelkan **jepit sempurna**, sehingga bagian beban yang jatuh di dalam footprint
+pier langsung masuk ke reaksi dan **tidak melenturkan pelat**. Laporan memisahkan dua
+komponen yang sifatnya berbeda:
+
+| Komponen | Asal | Bergantung mesh? |
+|----------|------|------------------|
+| `pz_strut` = `f × Pz` | **Geometri** — bagian cakram di dalam footprint pier (aksi strut) | tidak |
+| `pz_bocor_mesh` | **Diskretisasi** — elemen di muka pier yang sebagian bebannya mendarat di node jepit | ya, orde `h` |
+
+Keduanya tampil terpisah di `equilibrium_check.json` dan `calc_sheet.md` bagian 3a. Yang
+digabung menjadi satu angka akan menyamar sebagai parameter geometri padahal separuhnya
+parameter meshing.
+
+**Yang perlu Anda putuskan sendiri:** tool **tidak menghitung kapasitas strut**. Bagian
+`pz_strut` wajib dicek terpisah sebagai tumpu/strut. Mengisi
+`pier.max_pile_overlap_fraction` adalah pernyataan bahwa Anda menerima itu — nilainya
+tercatat di `run_manifest.json` sebagai keputusan Anda, dan peringatannya muncul di log,
+manifest, `SUMMARY.md`, calc sheet, serta **kop setiap gambar**.
+
+**Pile yang hanya bersinggungan** dengan muka pier (luas irisan tepat nol) **selalu
+ditolak**, dengan atau tanpa opsi ini: di sana tidak ada lensa untuk diukur, sehingga
+seluruh beban yang terserap adalah artefak diskretisasi murni tanpa satu pun komponen
+geometri yang dapat dilaporkan. Geser pile-nya sedikit sehingga menjadi tumpang tindih
+yang terukur, atau celah yang jelas.
 
 ## Pengembangan
 
@@ -448,3 +484,9 @@ Dampaknya pada angka desain terukur kecil: momen lajur dan `As` bergeser paling 
   yang sama karena elemennya memang bukan elemen yang sama.
 - Untuk mereproduksi angka secara persis, simpan `00_Model/nodes.csv` dan `elements.csv`;
   keduanya memuat mesh yang benar-benar dipakai, dan `pilecap-report` membacanya kembali.
+
+Diukur ulang pada 8 run (v0.9.0): ex02 **0,0069%**, ex04 **0,0001%**. Contoh yang pile-nya
+menindih pier ternyata **lebih stabil**, bukan kurang — pada ukuran elemen yang tetap,
+jumlah node yang jatuh di muka pier praktis tidak berubah antar run. Yang memang menggeser
+angka desainnya pada geometri seperti itu adalah **ukuran elemen yang Anda pilih**, bukan
+pengulangan run; lihat bagian tumpang tindih pile–pier di atas.

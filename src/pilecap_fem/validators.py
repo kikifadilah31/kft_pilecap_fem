@@ -27,7 +27,7 @@ import numpy as np
 from shapely.geometry import Point
 from shapely.validation import explain_validity
 
-from pilecap_fem import config
+from pilecap_fem import config, geometry_builder
 from pilecap_fem.geometry_builder import GeometryModel
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -178,6 +178,20 @@ def validate_config_geometry_params(cfg: dict, sources_present: dict[str, bool])
     """
     thickness = _require(cfg, "pilecap", "thickness", why="Tebal pilecap selalu dibutuhkan.")
     _require_positive(float(thickness), "pilecap.thickness")
+
+    # Divalidasi DI LUAR cabang `sources_present["pier"]`: pier dari CSV pun boleh memakai
+    # opsi ini. Nirdimensi -- sengaja TIDAK didaftarkan di `io_utils._LENGTH_SCALARS`;
+    # fraksi yang diam-diam dikali 1e-3 akan katastrofik dan tak terlihat.
+    batas = (cfg.get("pier") or {}).get("max_pile_overlap_fraction")
+    if batas is not None:
+        nilai = float(batas)
+        if not 0.0 < nilai < 1.0:
+            raise InputError(
+                f"`pier.max_pile_overlap_fraction` = {nilai} harus di antara 0 dan 1 "
+                "(fraksi luas pile yang boleh berada di dalam footprint pier).\n"
+                "  Nilai 1,0 berarti pile boleh lenyap seluruhnya ke dalam pier, yang "
+                "membuat model pelat lentur ini tidak bermakna untuk pile tersebut."
+            )
 
     if not sources_present["pilecap"]:
         for key in ("length_x", "length_y"):
@@ -559,12 +573,18 @@ def _validate_stirrups(design: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def validate_geometry(geom: GeometryModel) -> None:
+def validate_geometry(
+    geom: GeometryModel, *, max_overlap_fraction: float | None = None
+) -> list[str]:
     """Rule 8, 9, 10, 11, 12, 14 -- konsistensi geometri antar entitas.
 
     Multi-pier: rule 11 & 14 di-loop untuk setiap pier, ditambah cek pier-vs-pier yang
     tidak ada di PRD (PRD menulis Bagian 5.3 saat asumsinya masih satu pier) tetapi
     diperlukan agar dua pier tidak berbagi node jepit yang sama secara ambigu.
+
+    `max_overlap_fraction` = `pier.max_pile_overlap_fraction` dari config. Bila `None`
+    (bawaan), rule 14 berperilaku PERSIS seperti sebelum v0.9.0: tumpang tindih pile-pier
+    ditolak. Mengembalikan daftar peringatan, seperti `validate_reactions`.
     """
     cap_poly = geom.pilecap.to_shapely()
 
@@ -634,13 +654,55 @@ def validate_geometry(geom: GeometryModel) -> None:
 
         # Rule 14 -- pier tumpang tindih dengan pile
         for pile in geom.piles:
-            overlap = poly.intersection(pile.to_shapely()).area
-            if overlap > 0.0:
+            pile_poly = pile.to_shapely()
+            irisan = poly.intersection(pile_poly)
+            overlap = irisan.area
+
+            if overlap <= 0.0 and poly.intersects(pile_poly):
+                # BERSINGGUNGAN: ditolak SELALU, dengan atau tanpa opt-in.
+                #
+                # Bukan kehati-hatian berlebih. Pada persinggungan tidak ada lensa sama
+                # sekali, sehingga tidak ada komponen geometri yang dapat dihitung dan
+                # dilaporkan -- 100% dari beban yang terserap ke node jepit adalah artefak
+                # diskretisasi murni, dan besarnya bergantung pada node mana yang kebetulan
+                # dipakai mesher. Kondisi ini sebelum v0.9.0 LOLOS rule 14 (`area > 0.0`
+                # saja) dan menghasilkan penyerapan senyap yang VC-0 pun tidak menangkapnya.
+                raise GeometryError(
+                    f"Pile {pile.pile_id} BERSINGGUNGAN dengan pier {pier.pier_id} "
+                    "(luas irisan nol, tetapi keduanya bersentuhan).\n"
+                    "  Node di titik sentuh menjadi milik grup pile SEKALIGUS pier: ia "
+                    "dijepit, tetapi tetap menerima beban pile. Gaya pada DOF terjepit "
+                    "menghasilkan perpindahan NOL, jadi beban itu tidak melenturkan pelat "
+                    "sama sekali -- dan VC-0 tetap LULUS karena kedua sisi neracanya "
+                    "memuat gaya yang sama.\n"
+                    "  Berbeda dari tumpang tindih yang berluas, di sini tidak ada bagian "
+                    "geometri yang dapat dihitung: seluruhnya artefak kehalusan mesh.\n"
+                    "  Geser pile sedikit -- keluar sehingga ada celah yang jelas, atau "
+                    "masuk sehingga tumpang tindihnya terukur (lihat "
+                    "`pier.max_pile_overlap_fraction`)."
+                )
+
+            if overlap <= 0.0:
+                continue
+
+            fraction = overlap / pile.nominal_area
+            if max_overlap_fraction is None:
                 raise GeometryError(
                     f"Area pier {pier.pier_id} tumpang tindih dengan pile {pile.pile_id} "
-                    f"seluas {overlap:.6f} m^2.\n"
+                    f"seluas {overlap:.6f} m^2 ({fraction:.1%} dari luas pile).\n"
                     "  Node tidak bisa sekaligus dijepit (pier) dan dibebani (pile) "
-                    "(PRD Bagian 5.3 rule 14)."
+                    "(PRD Bagian 5.3 rule 14).\n"
+                    "  Bila ini memang dimaksudkan, isi `pier.max_pile_overlap_fraction` "
+                    "di config -- itu keputusan pemodelan Anda, dan konsekuensinya "
+                    "dijelaskan di KNOWN_LIMITATIONS #10."
+                )
+            if fraction > max_overlap_fraction:
+                raise GeometryError(
+                    f"Tumpang tindih pile {pile.pile_id} dengan pier {pier.pier_id} = "
+                    f"{fraction:.1%} dari luas pile, MELEBIHI batas "
+                    f"`pier.max_pile_overlap_fraction` = {max_overlap_fraction:.1%} "
+                    "yang Anda tetapkan.\n"
+                    "  Naikkan batasnya bila memang disengaja, atau geser pile."
                 )
 
     # Tambahan multi-pier: dua pier tidak boleh tumpang tindih.
@@ -652,6 +714,22 @@ def validate_geometry(geom: GeometryModel) -> None:
                 "  Setiap pier harus menempati area terpisah agar physical group-nya "
                 "tidak ambigu."
             )
+
+    # Nama group lensa DIBENTUK, tidak pernah diurai; id yang memuat pemisahnya membuat
+    # `LENS_<pile>__<pier>` ambigu dan dua pasangan berbeda bisa bertabrak nama.
+    if geom.overlaps:
+        for entitas, ident in [("pile", p.pile_id) for p in geom.piles] + [
+            ("pier", p.pier_id) for p in geom.piers
+        ]:
+            if config.GROUP_LENS_SEP in ident:
+                raise GeometryError(
+                    f"{entitas}_id {ident!r} memuat {config.GROUP_LENS_SEP!r}, yang dipakai "
+                    "sebagai pemisah nama physical group lensa "
+                    f"(`{config.GROUP_LENS_PREFIX}<pile>{config.GROUP_LENS_SEP}<pier>`).\n"
+                    "  Ganti id-nya agar nama group tetap tak ambigu."
+                )
+
+    return list(geometry_builder.overlap_warning_lines(geom, max_overlap_fraction or 0.0))
 
 
 # ---------------------------------------------------------------------------
@@ -836,12 +914,18 @@ def validate_mesh_result(
         )
         return warnings
 
-    # Physical group pile/pier tanpa elemen = beban/tumpuan hilang secara diam-diam.
+    # Physical group pile/pier/lensa tanpa elemen = beban/tumpuan hilang secara diam-diam.
+    #
+    # LENSA ikut diperiksa: lensa yang lebih kecil daripada satu elemen akan lenyap dari
+    # `elements.csv`, lalu meledak jauh di hilir sebagai `KeyError` saat laporan dibuat --
+    # bukan sebagai pesan yang menjelaskan bahwa mesh-nya terlalu kasar.
     empty = sorted(
         name
         for name, count in group_element_counts.items()
         if count == 0
-        and (name.startswith(config.GROUP_PILE_PREFIX) or name.startswith(config.GROUP_PIER_PREFIX))
+        and name.startswith(
+            (config.GROUP_PILE_PREFIX, config.GROUP_PIER_PREFIX, config.GROUP_LENS_PREFIX)
+        )
     )
     if empty:
         raise MeshError(
@@ -855,7 +939,7 @@ def validate_mesh_result(
     if n_ungrouped > 0:
         raise MeshError(
             f"{n_ungrouped} elemen tidak masuk physical group mana pun. "
-            "Setiap elemen harus terklasifikasi sebagai CAP, PILE_*, atau PIER_*."
+            "Setiap elemen harus terklasifikasi sebagai CAP, PILE_*, PIER_*, atau LENS_*."
         )
 
     if not math.isclose(total_group_area, pilecap_area, rel_tol=config.AREA_RTOL):

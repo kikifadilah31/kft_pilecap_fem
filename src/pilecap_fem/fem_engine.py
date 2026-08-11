@@ -126,10 +126,44 @@ class PileLoadTrace:
     pressure: float
     n_elements: int
     applied_total: float
+    #: Luas bagian cakram di dalam footprint pier [m^2]; 0 bila tanpa overlap.
+    a_lens: float = 0.0
+    #: Beban yang mendarat pada node JEPIT dan karena itu tidak melenturkan pelat [N].
+    #: DIUKUR, bukan diperkirakan: jumlah `nodal_fz` pada himpunan node terjepit.
+    absorbed_total: float = 0.0
 
     @property
     def discrepancy(self) -> float:
         return self.applied_total - self.pz
+
+    @property
+    def overlap_fraction(self) -> float:
+        return self.a_lens / self.a_disk_mesh if self.a_disk_mesh else 0.0
+
+    @property
+    def pz_strut(self) -> float:
+        """KOMPONEN GEOMETRI: `p x A_lensa`. Mesh-independen.
+
+        Gaya yang tersalur langsung pile->pier menembus tebal pilecap (aksi strut). Tool
+        TIDAK menghitung kapasitas strut ini; wajib dicek terpisah sebagai tumpu/strut.
+        """
+        return self.pressure * self.a_lens
+
+    @property
+    def pz_bocor_mesh(self) -> float:
+        """KOMPONEN DISKRETISASI: sisa yang terserap di luar lensa. Mesh-dependen.
+
+        Berasal dari elemen bulan sabit yang bersentuhan dengan potongan pile pada muka
+        pier: sebagian beban konsistennya mendarat di node yang dijepit. Besarnya sebanding
+        `L x h / (2 A)` -- orde `h`, jadi mengecil saat mesh diperhalus. Dipisahkan dari
+        `pz_strut` supaya angka geometri tidak tercampur angka meshing.
+        """
+        return self.absorbed_total - self.pz_strut
+
+    @property
+    def pz_ke_pelat(self) -> float:
+        """Bagian `Pz` yang benar-benar melenturkan pelat."""
+        return self.pz - self.absorbed_total
 
 
 @dataclass(frozen=True)
@@ -212,6 +246,41 @@ class SupportStrategy(Protocol):
         """Terapkan tumpuan; kembalikan indeks node yang tertahan."""
 
 
+def fixed_support_nodes(mesh: MeshModel, geom: GeometryModel) -> np.ndarray:
+    """Node yang dijepit: seluruh node area pier DITAMBAH node setiap group LENSA.
+
+    Group lensa disebut **eksplisit dari `geom.overlaps`**, bukan lewat kecocokan awalan
+    nama. Lensa dijepit karena ia berada di dalam footprint pier, dan pier diidealkan kaku
+    (KNOWN_LIMITATIONS #2) -- itu keputusan pemodelan, dan keputusan tidak boleh bergantung
+    pada kebetulan penamaan group.
+
+    Dipakai bersama oleh `FixedPierSupport` dan `exporters.mct._constraint_section`. Tanpa
+    sumber tunggal ini, model Midas yang diekspor akan punya himpunan tumpuan berbeda dari
+    model OpenSees -- dan VC-6 membandingkan keduanya.
+    """
+    fixed: set[int] = set()
+    for pier in geom.piers:
+        nodes = mesh.nodes_in_group(pier.group_name)
+        if nodes.size == 0:
+            raise AnalysisError(
+                f"Physical group {pier.group_name} tidak punya node -- tumpuan akan "
+                "HILANG dari model. Perkecil ukuran mesh."
+            )
+        fixed.update(int(n) for n in nodes)
+
+    for overlap in geom.overlaps:
+        nama = overlap.lens_group_name
+        if not mesh.has_group(nama):
+            raise AnalysisError(
+                f"Group lensa {nama} terdaftar di geometri tetapi tidak ada di mesh. "
+                "Irisan pile-pier kemungkinan lebih kecil daripada satu elemen; perkecil "
+                "`mesh.size_global`."
+            )
+        fixed.update(int(n) for n in mesh.nodes_in_group(nama))
+
+    return np.array(sorted(fixed), dtype=np.int64)
+
+
 class FixedPierSupport:
     """v1.0 -- seluruh node di area pier dijepit sempurna 6 DOF (PRD Bagian 5.1(a)).
 
@@ -225,23 +294,12 @@ class FixedPierSupport:
             raise AnalysisError(
                 "FixedPierSupport membutuhkan GeometryModel untuk mengetahui area pier."
             )
-        fixed: set[int] = set()
-        for pier in geom.piers:
-            nodes = mesh.nodes_in_group(pier.group_name)
-            if nodes.size == 0:
-                raise AnalysisError(
-                    f"Physical group {pier.group_name} tidak punya node -- tumpuan akan "
-                    "HILANG dari model. Perkecil ukuran mesh."
-                )
-            fixed.update(int(n) for n in nodes)
-            _log.debug("Pier %s: %d node dijepit", pier.pier_id, nodes.size)
-
+        ordered = fixed_support_nodes(mesh, geom)
         # fix() dipanggil SEKALI per node: OpenSees menolak SP_Constraint ganda pada
         # DOF yang sama, dan dua pier bisa berbagi node bila bersentuhan.
-        ordered = np.array(sorted(fixed), dtype=np.int64)
         for index in ordered:
             ops.fix(int(index) + 1, 1, 1, 1, 1, 1, 1)
-        _log.info("Node jepit (PIER): %d", ordered.size)
+        _log.info("Node jepit (PIER%s): %d", " + LENS" if geom.overlaps else "", ordered.size)
         return ordered
 
 
@@ -294,15 +352,40 @@ class PilePressure:
 
     pile_id: str
     group_name: str
-    #: Indeks elemen mesh dalam physical group pile ini.
+    #: Indeks elemen mesh SELURUH cakram pile -- group `PILE_*` ditambah group `LENS_*`
+    #: miliknya bila ada. Keduanya dibebani; lensa juga kebetulan dijepit.
     element_index: np.ndarray
     pz: float  # N, positif = pile mendorong pilecap ke ATAS
-    a_disk: float  # m^2 -- jumlah luas elemen mesh, BUKAN pi r^2 analitis
+    a_disk: float  # m^2 -- jumlah luas elemen mesh SELURUH cakram, BUKAN pi r^2 analitis
     pressure: float  # Pa, positif = ke atas
+    #: Luas bagian cakram yang berada di dalam footprint pier [m^2]. 0 bila tanpa overlap.
+    a_lens: float = 0.0
+    #: Nama group lensa milik pile ini (bisa lebih dari satu bila menindih dua pier).
+    lens_group_names: tuple[str, ...] = ()
 
     @property
     def n_elements(self) -> int:
         return int(self.element_index.size)
+
+    @property
+    def overlap_fraction(self) -> float:
+        """`f_mesh` -- fraksi cakram yang berada di dalam pier, dari LUAS ELEMEN MESH.
+
+        Ini yang dipakai seluruh pelaporan. Jangan tertukar dengan
+        `PileOverlap.fraction_geom` (shapely, poligon 64 segmen), yang hanya dipakai
+        membandingkan terhadap ambang `pier.max_pile_overlap_fraction`.
+        """
+        return self.a_lens / self.a_disk if self.a_disk else 0.0
+
+    @property
+    def pz_strut(self) -> float:
+        """Bagian `Pz` yang berada di dalam footprint pier -- KOMPONEN GEOMETRI.
+
+        Mesh-independen (mengikuti `f_mesh`, yang konvergen ke fraksi geometrinya). Inilah
+        gaya yang tersalur langsung pile->pier menembus tebal pilecap (aksi strut) dan
+        TIDAK melenturkan pelat.
+        """
+        return self.pressure * self.a_lens
 
 
 def pile_pressures(
@@ -317,10 +400,29 @@ def pile_pressures(
 
     `A_disk` sengaja diambil dari jumlah luas elemen, bukan `pi r^2`: itulah yang menjamin
     `Sigma(p x A_e)` persis sama dengan `Pz`.
+
+    Bila pile tumpang tindih dengan pier, group `LENS_*` miliknya **ikut** dihitung sebagai
+    bagian cakram. Akibatnya `A_disk` tetap bermakna "luas cakram penuh" dan rumus
+    `p = Pz / A_disk` tidak berubah sama sekali -- seluruh cakram dibebani, termasuk bagian
+    yang berada di dalam pier. Bagian itu kemudian terserap ke reaksi karena node-nya
+    dijepit; besarnya diukur dan dilaporkan, tidak dibiarkan senyap (KNOWN_LIMITATIONS #10).
     """
+    lens_by_pile: dict[str, list[str]] = {}
+    for overlap in geom.overlaps:
+        lens_by_pile.setdefault(overlap.pile_id, []).append(overlap.lens_group_name)
+
     result: list[PilePressure] = []
     for pile in geom.piles:
         mask = mesh.group_mask(pile.group_name)
+        lens_names = tuple(lens_by_pile.get(pile.pile_id, ()))
+        for nama in lens_names:
+            if not mesh.has_group(nama):
+                raise AnalysisError(
+                    f"Group lensa {nama} terdaftar di geometri tetapi tidak ada di mesh. "
+                    "Perkecil `mesh.size_global`."
+                )
+            mask = mask | mesh.group_mask(nama)
+
         index = np.flatnonzero(mask)
         if index.size == 0:
             raise AnalysisError(
@@ -328,6 +430,7 @@ def pile_pressures(
                 "akan HILANG dari model. Perkecil ukuran mesh."
             )
         a_disk = float(mesh.elem_area[mask].sum())
+        a_lens = float(sum(mesh.group_area(n) for n in lens_names))
         pz = float(pz_by_pile[pile.pile_id])
         result.append(
             PilePressure(
@@ -337,6 +440,8 @@ def pile_pressures(
                 pz=pz,
                 a_disk=a_disk,
                 pressure=pz / a_disk,
+                a_lens=a_lens,
+                lens_group_names=lens_names,
             )
         )
     return tuple(result)
@@ -344,9 +449,18 @@ def pile_pressures(
 
 class PileLoadStrategy(Protocol):
     def apply(
-        self, mesh: MeshModel, geom: GeometryModel | None, pz_by_pile: dict[str, float]
+        self,
+        mesh: MeshModel,
+        geom: GeometryModel | None,
+        pz_by_pile: dict[str, float],
+        fixed_nodes: np.ndarray | None = None,
     ) -> tuple[np.ndarray, tuple[PileLoadTrace, ...]]:
-        """Kembalikan (beban nodal Fz per node [N], jejak per pile)."""
+        """Kembalikan (beban nodal Fz per node [N], jejak per pile).
+
+        `fixed_nodes` diteruskan dari strategi tumpuan yang BARU SAJA dijalankan, bukan
+        disimpulkan sendiri: dengan begitu pengukuran beban terserap tidak bergantung pada
+        asumsi strategi tumpuan mana yang dipakai.
+        """
 
 
 class _PileAreaLoadBase:
@@ -358,7 +472,11 @@ class _PileAreaLoadBase:
         raise NotImplementedError
 
     def apply(
-        self, mesh: MeshModel, geom: GeometryModel | None, pz_by_pile: dict[str, float]
+        self,
+        mesh: MeshModel,
+        geom: GeometryModel | None,
+        pz_by_pile: dict[str, float],
+        fixed_nodes: np.ndarray | None = None,
     ) -> tuple[np.ndarray, tuple[PileLoadTrace, ...]]:
         if geom is None:
             raise AnalysisError(
@@ -368,12 +486,22 @@ class _PileAreaLoadBase:
         traces: list[PileLoadTrace] = []
         nominal_area = {p.pile_id: p.nominal_area for p in geom.piles}
 
+        terjepit = np.zeros(mesh.n_nodes, dtype=bool)
+        if fixed_nodes is not None:
+            terjepit[np.asarray(fixed_nodes, dtype=np.int64)] = True
+
         for load in pile_pressures(mesh, geom, pz_by_pile):
             conn = mesh.elem_conn[load.element_index]
             coords = mesh.node_xy[conn]
             factors = self._node_factors(coords, mesh.elem_area[load.element_index])
+            gaya = load.pressure * factors
             # Tekanan positif -> gaya ke ATAS pada pilecap (+Z), sesuai PRD Bagian 7.1.
-            np.add.at(nodal, conn.ravel(), (load.pressure * factors).ravel())
+            np.add.at(nodal, conn.ravel(), gaya.ravel())
+
+            # DIUKUR per pile, bukan diperkirakan: gaya yang mendarat di node terjepit
+            # tidak menghasilkan perpindahan, jadi tidak melenturkan pelat sama sekali.
+            # Dipisah jadi komponen geometri & diskretisasi lewat properti `PileLoadTrace`.
+            absorbed = float(gaya[terjepit[conn]].sum())
 
             traces.append(
                 PileLoadTrace(
@@ -383,7 +511,9 @@ class _PileAreaLoadBase:
                     a_disk_nominal=nominal_area[load.pile_id],
                     pressure=load.pressure,
                     n_elements=load.n_elements,
-                    applied_total=float((load.pressure * factors).sum()),
+                    applied_total=float(gaya.sum()),
+                    a_lens=load.a_lens,
+                    absorbed_total=absorbed,
                 )
             )
 
@@ -545,7 +675,29 @@ def analyze_combo(
 
     fixed_nodes = support_strategy.apply(mesh, geom)
 
-    nodal_fz, traces = load_strategy.apply(mesh, geom, pz_by_pile)
+    nodal_fz, traces = load_strategy.apply(mesh, geom, pz_by_pile, fixed_nodes=fixed_nodes)
+
+    # Jaring pengaman: geometri bilang tidak ada tumpang tindih, tetapi ada beban pile yang
+    # tetap mendarat di node jepit. Penyebab yang mungkin: celah pile-pier jauh lebih kecil
+    # daripada ukuran elemen sehingga mesher menyatukan node-nya. Menguji KONDISI YANG
+    # SEBENARNYA -- bukan proksi geometrinya -- sehingga menangkap setiap jalur, termasuk
+    # mesh yang dimuat ulang dari CSV.
+    #
+    # TIDAK bisa diserahkan ke VC-0: gaya pada DOF terjepit terserap ke reaksi, sehingga
+    # `Sigma beban` dan `Sigma reaksi` sama-sama memuatnya dan residunya NOL.
+    if geom is not None and not geom.overlaps:
+        terserap = float(np.abs(nodal_fz[fixed_nodes]).sum())
+        if terserap > 0.0:
+            raise AnalysisError(
+                f"Ada beban pile sebesar {terserap / 1e3:,.4f} kN yang mendarat pada node "
+                "JEPIT, padahal geometri tidak mencatat satu pun tumpang tindih pile-pier.\n"
+                "  Gaya pada DOF terjepit menghasilkan perpindahan NOL, jadi beban itu "
+                "TIDAK melenturkan pelat -- dan VC-0 tetap lulus karena kedua sisi "
+                "neracanya memuat gaya yang sama.\n"
+                "  Kemungkinan penyebab: celah antara pile dan pier jauh lebih kecil "
+                "daripada ukuran elemen, sehingga mesher menyatukan node keduanya.\n"
+                "  Perbaiki geometrinya (perbesar celah), atau perkecil `mesh.size_global`."
+            )
     self_weight_total = 0.0
     if options.include_self_weight:
         self_weight = _self_weight_nodal(mesh, material)
@@ -668,8 +820,14 @@ def _report_equilibrium(combo: str, check: EquilibriumCheck) -> None:
             f"    M_x = {check.moment_residual_x:,.4f} N.m, "
             f"M_y = {check.moment_residual_y:,.4f} N.m terhadap titik "
             f"{check.reference_point}\n"
-            "  Kemungkinan penyebab: ada beban pile yang jatuh pada node jepit, "
-            "physical group pile bertumpang tindih dengan pier, atau solver tidak "
-            "menyelesaikan sistem dengan benar.\n"
+            # "beban pile jatuh pada node jepit" SENGAJA TIDAK disebut di sini: kondisi itu
+            # justru TIDAK PERNAH membuat VC-0 gagal -- gayanya terserap ke reaksi sehingga
+            # kedua sisi neraca memuatnya dan residunya nol. Menyebutnya sebagai dugaan
+            # penyebab hanya mengarahkan pembaca ke tempat yang salah. Kondisi itu punya
+            # penjaganya sendiri di `analyze_combo`, dan bila disengaja ia dilaporkan
+            # terpisah sebagai transfer langsung (KNOWN_LIMITATIONS #10).
+            "  Kemungkinan penyebab: beban nodal tidak lengkap terpasang, tumpuan tidak "
+            "terbentuk seperti yang diharapkan, atau solver tidak menyelesaikan sistem "
+            "dengan benar.\n"
             "  Run yang gagal VC-0 TIDAK menghasilkan output desain (PRD Bagian 1.3 poin 3)."
         )

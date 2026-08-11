@@ -375,7 +375,10 @@ def _face_colors(mesh: MeshModel, theme: config.Theme) -> list[str]:
     for name in mesh.group_names:
         if name.startswith(config.GROUP_PILE_PREFIX):
             palette.append(theme.pile)
-        elif name.startswith(config.GROUP_PIER_PREFIX):
+        elif name.startswith((config.GROUP_PIER_PREFIX, config.GROUP_LENS_PREFIX)):
+            # Lensa diwarnai seperti pier: ia memang ikut DIJEPIT. Bahwa ia juga dibebani
+            # dinyatakan lewat arsir & legenda pada `render_boundary_load_check`, yaitu plot
+            # yang memang dibuat untuk memeriksa tumpuan & pembebanan.
             palette.append(theme.pier)
         else:
             palette.append(theme.cap)
@@ -1090,12 +1093,17 @@ def render_boundary_load_check(
 
     is_pier = np.zeros(mesh.n_elements, dtype=bool)
     is_pile = np.zeros(mesh.n_elements, dtype=bool)
+    is_lens = np.zeros(mesh.n_elements, dtype=bool)
     for name in mesh.pier_groups():
         is_pier |= mesh.group_mask(name)
     for name in mesh.pile_groups():
         is_pile |= mesh.group_mask(name)
+    for name in mesh.lens_groups():
+        is_lens |= mesh.group_mask(name)
 
-    colors = np.where(is_pier, st.theme.pier, np.where(is_pile, st.theme.pile, st.theme.cap))
+    colors = np.where(
+        is_lens | is_pier, st.theme.pier, np.where(is_pile, st.theme.pile, st.theme.cap)
+    )
     ax.add_collection(
         PolyCollection(
             _element_polygons(mesh),
@@ -1105,8 +1113,11 @@ def render_boundary_load_check(
         )
     )
 
+    # Node lensa ikut dijepit, sama seperti di model FEM. Plot ini justru dibuat untuk
+    # memeriksa tumpuan & pembebanan, jadi menampilkan himpunan yang berbeda dari model
+    # akan membuatnya berbohong tepat pada pertanyaan yang seharusnya ia jawab.
     fixed_nodes: set[int] = set()
-    for name in mesh.pier_groups():
+    for name in (*mesh.pier_groups(), *mesh.lens_groups()):
         fixed_nodes.update(int(n) for n in mesh.nodes_in_group(name))
     if fixed_nodes:
         pts = _to_mm(mesh.node_xy[sorted(fixed_nodes)])
@@ -1134,6 +1145,18 @@ def render_boundary_load_check(
                 label=f"Node JEPIT 6 DOF ({len(fixed_nodes)})",
             ),
             Patch(facecolor=st.theme.pile, label=f"Elemen terbeban ({int(is_pile.sum())})"),
+            *(
+                [
+                    Patch(
+                        facecolor=st.theme.pier,
+                        hatch="xxx",
+                        edgecolor=st.theme.pile,
+                        label=f"LENS: dijepit SEKALIGUS dibebani ({int(is_lens.sum())})",
+                    )
+                ]
+                if is_lens.any()
+                else []
+            ),
             Patch(
                 facecolor=st.theme.cap,
                 label=f"Pelat bebas ({int((~is_pier & ~is_pile).sum())})",

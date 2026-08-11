@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pilecap_fem import config, validators
+from pilecap_fem import config, geometry_builder, validators
 from pilecap_fem.geometry_builder import (
     EntityResolution,
     GeometryModel,
@@ -77,12 +77,17 @@ def make_geom(
     default_pier = (
         Pier(pier_id="PIER1", shape="rectangular", centerline=(0.0, 0.0), width_x=1.2, width_y=1.2),
     )
+    piles_final = default_piles if piles is None else piles
+    piers_final = default_pier if piers is None else piers
     return GeometryModel(
         pilecap=polygon_from_rect(4.8, 4.8, (0.0, 0.0)) if cap is None else cap,
         thickness=1.2,
-        piles=default_piles if piles is None else piles,
-        piers=default_pier if piers is None else piers,
+        piles=piles_final,
+        piers=piers_final,
         resolution=resolution,
+        # Dihitung seperti `build_geometry_model`, supaya test bekerja pada model yang sama
+        # bentuknya dengan yang dipakai produksi.
+        overlaps=geometry_builder.compute_pile_pier_overlaps(piles_final, piers_final),
     )
 
 
@@ -356,6 +361,114 @@ def test_rule14_pier_tumpang_tindih_pile_raise():
     )
     with pytest.raises(GeometryError, match="rule 14"):
         validators.validate_geometry(make_geom(piers=piers))
+
+
+# ---------------------------------------------------------------------------
+# Tumpang tindih pile-pier (v0.9.0)
+# ---------------------------------------------------------------------------
+
+
+def _geom_bersinggungan() -> GeometryModel:
+    """Pile yang menyinggung muka pier TEPAT: luas irisan nol, tetapi bersentuhan.
+
+    Pier setengah-lebar 0,6 m; pile berjari-jari 0,4 m berpusat di x = 1,0 m, sehingga
+    tepinya tepat menyentuh x = 0,6 m.
+    """
+    piles = (Pile(pile_id="P1", x=1.0, y=0.0, diameter=0.8),)
+    piers = (
+        Pier(pier_id="PIER1", shape="rectangular", centerline=(0.0, 0.0), width_x=1.2, width_y=1.2),
+    )
+    return make_geom(piles=piles, piers=piers)
+
+
+def test_bersinggungan_ditolak_tanpa_opsi():
+    """Lubang yang ditutup v0.9.0: kondisi ini LOLOS rule 14 versi lama (`area > 0.0`).
+
+    Node di titik sentuh menjadi milik grup pile sekaligus pier: ia dijepit tetapi tetap
+    dibebani, sehingga bebannya terserap ke reaksi tanpa melenturkan pelat -- dan VC-0
+    tetap lulus karena kedua sisi neracanya memuat gaya yang sama.
+    """
+    geom = _geom_bersinggungan()
+    assert geom.overlaps == (), "persinggungan berluas nol tidak boleh jadi PileOverlap"
+    with pytest.raises(GeometryError, match="BERSINGGUNGAN"):
+        validators.validate_geometry(geom)
+
+
+def test_bersinggungan_ditolak_meski_opsi_diisi():
+    """Ditolak SELALU, berbeda dari tumpang tindih berluas.
+
+    Pada persinggungan tidak ada lensa untuk dibagi, sehingga 100% dari yang terserap
+    adalah artefak diskretisasi murni -- tidak ada komponen geometri yang dapat dihitung
+    dan dilaporkan.
+    """
+    with pytest.raises(GeometryError, match="BERSINGGUNGAN"):
+        validators.validate_geometry(_geom_bersinggungan(), max_overlap_fraction=0.9)
+
+
+def _geom_overlap() -> GeometryModel:
+    """Pile berpusat 0,3 m di luar muka pier -> f = 7,21% (kasus terverifikasi gmsh)."""
+    piles = (Pile(pile_id="P1", x=0.9, y=0.0, diameter=0.8),)
+    piers = (
+        Pier(pier_id="PIER1", shape="rectangular", centerline=(0.0, 0.0), width_x=1.2, width_y=1.2),
+    )
+    return make_geom(piles=piles, piers=piers)
+
+
+def test_overlap_ditolak_bila_opsi_tidak_diisi():
+    """Perilaku bawaan HARUS sama persis dengan sebelum v0.9.0."""
+    with pytest.raises(GeometryError, match="rule 14"):
+        validators.validate_geometry(_geom_overlap())
+
+
+def test_overlap_di_bawah_ambang_diterima_dengan_peringatan():
+    peringatan = validators.validate_geometry(_geom_overlap(), max_overlap_fraction=0.15)
+    assert peringatan, "overlap yang diizinkan tetap wajib memunculkan peringatan"
+    assert "TUMPANG TINDIH" in peringatan[0]
+    assert "7.2%" in peringatan[0]
+    # Peringatan ini juga dikirim ke log konsol (cp1252 di Windows); satu karakter
+    # non-ASCII akan melempar UnicodeEncodeError dan MENGHENTIKAN run.
+    assert all(ord(c) < 128 for c in peringatan[0])
+
+
+def test_overlap_di_atas_ambang_ditolak_menyebut_fraksi_dan_ambang():
+    with pytest.raises(GeometryError, match="MELEBIHI batas"):
+        validators.validate_geometry(_geom_overlap(), max_overlap_fraction=0.05)
+
+
+def test_id_mengandung_pemisah_group_lens_ditolak():
+    """Nama group lensa DIBENTUK, tidak pernah diurai -- id ambigu harus ditolak."""
+    piles = (Pile(pile_id=f"P{config.GROUP_LENS_SEP}1", x=0.9, y=0.0, diameter=0.8),)
+    piers = (
+        Pier(pier_id="PIER1", shape="rectangular", centerline=(0.0, 0.0), width_x=1.2, width_y=1.2),
+    )
+    with pytest.raises(GeometryError, match="pemisah nama physical group"):
+        validators.validate_geometry(make_geom(piles=piles, piers=piers), max_overlap_fraction=0.9)
+
+
+@pytest.mark.parametrize("nilai", [0.0, 1.0, -0.1, 1.5])
+def test_max_pile_overlap_fraction_di_luar_rentang_ditolak(nilai: float):
+    cfg = base_cfg()
+    cfg["pier"]["max_pile_overlap_fraction"] = nilai
+    with pytest.raises(InputError, match="harus di antara 0 dan 1"):
+        validators.validate_config_geometry_params(cfg, ALL_JSON)
+
+
+def test_max_pile_overlap_fraction_tidak_dikonversi_satuan(tmp_path):
+    """Nirdimensi -- TIDAK boleh ikut `io_utils._LENGTH_SCALARS`.
+
+    Fraksi yang diam-diam dikali 1e-3 akan katastrofik dan tak terlihat: 0,25 menjadi
+    0,00025 sehingga setiap overlap ditolak dengan pesan yang membingungkan.
+    """
+    import json
+
+    from pilecap_fem import io_utils
+
+    path = tmp_path / "pilecap_config.json"
+    path.write_text(
+        json.dumps({"units": {"length": "mm"}, "pier": {"max_pile_overlap_fraction": 0.25}}),
+        encoding="utf-8",
+    )
+    assert io_utils.load_config(path).si["pier"]["max_pile_overlap_fraction"] == 0.25
 
 
 def test_multi_pier_tumpang_tindih_raise():

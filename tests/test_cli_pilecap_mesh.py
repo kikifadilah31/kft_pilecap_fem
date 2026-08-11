@@ -111,6 +111,26 @@ def test_ex03_no_custom_tidak_ada_override(ex03: Path, tmp_path: Path):
     assert "PERHATIAN" not in text
 
 
+def test_peringatan_overlap_sampai_ke_mesh_summary(tmp_path: Path):
+    """Peringatan GEOMETRI, bukan hanya peringatan mesher, harus masuk `mesh_summary.md`.
+
+    Di sinilah pembaca pertama kali melihat group `LENS_*` pada tabel luas -- tempat
+    penjelasannya paling dibutuhkan. Sempat terlewat: pemanggilnya hanya meneruskan
+    `raw.warnings`, sehingga tabelnya memuat lensa tanpa satu baris pun yang menerangkan
+    mengapa ia ada.
+    """
+    import shutil
+
+    source = Path(__file__).resolve().parents[1] / "examples" / "ex04_pile_overlap_pier"
+    target = tmp_path / "ex04"
+    shutil.copytree(source, target)
+    run_dir = run_cli(target, tmp_path / "output", "--dpi", "80")
+
+    text = (run_dir / "00_Model" / "mesh_summary.md").read_text(encoding="utf-8")
+    assert "TUMPANG TINDIH" in text
+    assert "LENS_P2__PIER1" in text, "group lensa harus muncul di tabel luas"
+
+
 def test_override_cli_tercatat_di_manifest(ex01: Path, tmp_path: Path):
     """`--size` diberikan dalam satuan input (mm) dan dikonversi memakai faktor yang sama."""
     run_dir = run_cli(ex01, tmp_path / "output", "--size", "120", "--algorithm", "8", "--dpi", "80")

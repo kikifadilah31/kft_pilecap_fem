@@ -688,18 +688,20 @@ def test_vc6_rotasi_lokal_ke_global_cocok_dengan_midas(kasus: str, combo: str, s
         )
 
 
-@pytest.mark.parametrize("kasus", ("ex01", "ex02"))
+@pytest.mark.parametrize("kasus", VC6_KASUS)
 @pytest.mark.parametrize(("combo", "slug"), VC6_KOMBINASI)
 def test_vc6_lendutan_per_node_cocok_dengan_midas(vc6_hasil, kasus: str, combo: str, slug: str):
-    """Lendutan vertikal per node vs Midas.
+    """Lendutan vertikal per node vs Midas, KETIGA contoh.
 
-    HANYA ex01 & ex02: berkas yang disediakan untuk ex03 ternyata berisi reaksi, bukan
-    lendutan (SUMBER.md 5.1). Kekurangan itu dinyatakan, tidak ditambal.
+    Ekspor ex03 semula salah -- isinya reaksi, bukan lendutan -- sehingga jalur ini sempat
+    hanya mencakup ex01 & ex02. Pemilik proyek memperbaikinya; riwayat itu tetap tercatat di
+    SUMBER.md 5.1 supaya jejak auditnya tidak hilang.
 
     PERINGATAN TAFSIR: ekspor Midas menulis 6 desimal dalam METER, jadi resolusinya 1 um.
     Pada ex01 (lendutan maks 0,226 mm) itu setara 0,44% dari skala -- LEBIH BESAR daripada
     selisih terukur 0,216%. Lulusnya test ini di ex01 karena itu hanya membuktikan "tidak
-    berbeda sejauh yang dapat diukur", bukan ketelitian 0,2%.
+    berbeda sejauh yang dapat diukur", bukan ketelitian 0,2%. Pada ex02 & ex03 (lendutan
+    2,6 dan 1,9 mm) batasan itu tidak lagi mengikat.
     """
     mesh, mentah, _, _ = vc6_hasil[(kasus, combo)]
     jenis, tabel = validation_helpers.midas_nodal(VC6_DATA / kasus / "midas_displacement.csv", slug)

@@ -130,6 +130,18 @@ class MeshModel:
     def pier_groups(self) -> tuple[str, ...]:
         return tuple(n for n in self.group_names if n.startswith(config.GROUP_PIER_PREFIX))
 
+    def lens_groups(self) -> tuple[str, ...]:
+        """Group irisan pile-pier (`LENS_*`).
+
+        Awalannya bukan turunan `PILE_`/`PIER_`, sehingga kedua helper di atas TIDAK
+        menyerapnya. Itu disengaja: lensa ikut dibebani DAN ikut dijepit, dan kedua
+        keanggotaan itu disebut eksplisit oleh `fem_engine`, bukan disimpulkan dari nama.
+        """
+        return tuple(n for n in self.group_names if n.startswith(config.GROUP_LENS_PREFIX))
+
+    def has_group(self, name: str) -> bool:
+        return name in self.group_names
+
     # -- ekspor ------------------------------------------------------------
 
     def write_nodes_csv(self, path: Path) -> None:

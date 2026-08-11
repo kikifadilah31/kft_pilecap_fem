@@ -49,7 +49,10 @@ def build_preview_geometry(cfg: dict[str, Any], input_dir: Path | None) -> Geome
     validators.validate_config_geometry_params(loaded.si, present)
 
     geom = geometry_builder.build_geometry_model(loaded.si, sources)
-    validators.validate_geometry(geom)
+    validators.validate_geometry(
+        geom,
+        max_overlap_fraction=(loaded.si.get("pier") or {}).get("max_pile_overlap_fraction"),
+    )
     return geom
 
 

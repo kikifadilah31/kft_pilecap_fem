@@ -76,12 +76,21 @@ MESH_COUNT_RTOL = 0.02
 AREA_RTOL = 1e-6
 #: `atol` per besaran, dinyatakan sebagai fraksi dari nilai terbesar di golden. Tanpa ini
 #: elemen yang nilainya nyaris nol akan gagal pada `rtol` meskipun bedanya tidak berarti.
-NEAR_ZERO_FRACTION = 1e-4
+#:
+#: DINAIKKAN dari 1e-4 di v0.9.0 karena **1e-4 lebih kecil daripada jitter yang memang ada**,
+#: sehingga test ini gagal secara intermiten dengan kode yang tidak berubah. DIUKUR pada
+#: 8 run ex02: sebaran nilai medan pada probe mencapai **2,75e-4 dari puncak** (`m_xy`;
+#: `m_xx` 1,0e-5, `q_y` 7,7e-5). Angka 1e-3 memberi margin ~3,6x terhadap sebaran terukur.
+#:
+#: Ini TIDAK melonggarkan pemeriksaan besaran desain: `DESIGN_RTOL` di bawah tidak berubah,
+#: dan sebaran `As` per lajur pada 8 run yang sama hanya 6,8e-5 -- dua orde di bawahnya.
+#: Yang berisik adalah nilai medan pada titik yang nyaris nol, bukan angka desainnya.
+NEAR_ZERO_FRACTION = 1e-3
 
-#: Toleransi besaran DESAIN (momen lajur, `d`, `As`). DIUKUR pada 3 run berturut-turut
-#: dengan kode yang sama: sebaran maksimum 0,021% (ex02), 0,000% (ex01 & ex03). Nilai
-#: `VALIDATION_RTOL` = 0,1% karena itu memberi margin ~5x terhadap variasi mesh yang
-#: memang ada, tanpa melonggar sampai perubahan nyata bisa lolos.
+#: Toleransi besaran DESAIN (momen lajur, `d`, `As`). DIUKUR pada 8 run berturut-turut
+#: dengan kode yang sama: sebaran maksimum 0,0069% (ex02) dan 0,0001% (ex04); ex01 & ex03
+#: 0,000% pada 3 run. Nilai `VALIDATION_RTOL` = 0,1% karena itu memberi margin ~14x
+#: terhadap variasi mesh yang memang ada, tanpa melonggar sampai perubahan nyata bisa lolos.
 DESIGN_RTOL = config.VALIDATION_RTOL
 #: Toleransi nilai medan hasil rata-rata kernel Gauss. Lebih longgar dari besaran desain:
 #: rata-rata itu memuluskan medan tetapi tetap dihitung dari elemen yang posisinya berbeda

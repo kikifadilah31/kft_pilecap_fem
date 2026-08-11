@@ -80,7 +80,7 @@ rotasi `postproc_engine` cocok dengan rumus Midas.
 | `midas_force_global.csv` | resultan elemen, sumbu **global** | Jalur 1 (pembanding utama) |
 | `midas_force_local.csv` | resultan elemen, sumbu **lokal** | cek-silang rotasi saja |
 | `midas_reaction.csv` | reaksi tumpuan per node + blok TOTAL | Jalur 3 |
-| `midas_displacement.csv` | lendutan per node (`DX…RZ`) | Jalur 2 — **ex01 & ex02 saja** |
+| `midas_displacement.csv` | lendutan per node (`DX…RZ`) | Jalur 2 — ketiga contoh |
 | `midas_solver.log` | `MAXIMUM TRANSLATION` per subcase | Jalur 2 |
 | `midas_solver.out` | urutan subcase, konfirmasi run sukses | acuan urutan |
 
@@ -98,22 +98,26 @@ Jebakan yang semuanya sudah terverifikasi dan ditangani `tests/validation_helper
   berkolom `Node` kosong → saring dengan `pd.to_numeric(..., errors="coerce")`;
   `astype(int)` akan meledak.
 
-### 5.1 Berkas ex03 yang salah ekspor — sengaja TIDAK disalin
+### 5.1 Riwayat: ekspor lendutan ex03 sempat salah, lalu diperbaiki
 
-Arsip pemilik proyek memuat `ex03_custom_polygon_output_displacement.csv`, tetapi berkas itu
-**byte-identik** dengan `ex03_custom_polygon_output_reaction.csv`
-(sha256 `f811482294fbd10af6da923b7cebecf6842c99e660b9a02dd40a52eefdcb51ce`, sama persis) dan
-isinya memang reaksi (`FX…MZ` dalam kN), bukan lendutan.
+**Keadaan sekarang: sudah benar.** `ex03/midas_displacement.csv` berisi lendutan per node
+(`DX…RZ` dalam m/rad), cakupan 100% (4.949 node × 2 kombinasi), dan Jalur 2 mencakup ketiga
+contoh.
 
-Berkas itu tidak disalin ke sini: menyimpan data yang sama dua kali di bawah nama yang
-menyesatkan adalah cara test membandingkan besaran yang salah tanpa ada yang menyadarinya.
+Riwayatnya tetap dicatat di sini karena menghapusnya berarti menghapus jejak audit. Pada
+penyalinan pertama (v0.8.0), berkas ex03 yang tersedia **byte-identik** dengan berkas
+reaksinya (sha256 `f81148229…dcb51ce` pada keduanya) dan isinya memang reaksi (`FX…MZ` dalam
+kN), bukan lendutan — jelas salah ekspor. Berkas itu **tidak** disalin, dan keterbatasannya
+dinyatakan apa adanya alih-alih ditambal.
 
-**Akibatnya lendutan per node tidak tersedia untuk ex03**, dan Jalur 2 hanya mencakup ex01 &
-ex02. Ini dinyatakan apa adanya, bukan ditambal dengan angka karangan.
+Pemilik proyek kemudian mengulang ekspornya. Berkas yang tersimpan sekarang adalah hasil
+perbaikan itu; sha256-nya ada di tabel §6 dan **berbeda** dari berkas reaksi ex03.
 
-Meski begitu, pembaca di `validation_helpers.py` tetap **menentukan isi dari header, bukan
-dari nama berkas**, dan melempar `ValueError` bila header tidak dikenali — supaya kekeliruan
-sejenis di kemudian hari tertangkap, bukan terdiam.
+Yang membuat kekeliruan itu tertangkap, dan akan tertangkap lagi: pembaca di
+`validation_helpers.midas_nodal` **menentukan isi dari header, bukan dari nama berkas**, dan
+melempar `ValueError` bila header tidak dikenali. Test Jalur 2 juga mengasersi
+`jenis == "displacement"` secara eksplisit, sehingga berkas reaksi yang menyamar sebagai
+lendutan menggagalkan test, bukan diam-diam dibandingkan sebagai besaran yang salah.
 
 ### 5.2 Batas ketelitian ekspor lendutan
 
@@ -171,6 +175,7 @@ Dihitung terhadap berkas sumber di arsip pemilik proyek pada saat penyalinan
 |--------|-----:|--------|
 | `elements.csv` | 391,641 | `db6a3ef3c6499fcf8bbf9e246885f96f1d5bec456130f7eaad6d1dfde72780e6` |
 | `geometry.json` | 3,793 | `8ac28618104311a8036260e89542b548078790038092aba4f9556615707fc1be` |
+| `midas_displacement.csv` | 472,557 | `27198a734dc3c899f2c77e39a3f3574fb59b5040c147a3a687e44250682f5f3b` |
 | `midas_force_global.csv` | 4,468,666 | `dc985c4339d7186c4c089bc6368507baecb613e25fc4c7eba4943b1f293b1ca1` |
 | `midas_force_local.csv` | 4,502,028 | `9528059f336f67fe5e444c546c9c89b0e1bbe6e6562b7c525a36078326d49513` |
 | `midas_reaction.csv` | 27,239 | `f811482294fbd10af6da923b7cebecf6842c99e660b9a02dd40a52eefdcb51ce` |

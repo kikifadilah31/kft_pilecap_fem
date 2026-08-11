@@ -423,6 +423,24 @@ SECTIONS: tuple[Section, ...] = (
                 "diimplementasikan dan sengaja tidak ditawarkan agar tidak ada pilihan yang "
                 "tampak ada tetapi tidak berfungsi.",
             ),
+            Field(
+                "pier.max_pile_overlap_fraction",
+                "Batas tumpang tindih pile-pier",
+                "number",
+                None,
+                optional=True,
+                min_value=0.0,
+                max_value=1.0,
+                help="Kosongkan (bawaan) bila pile TIDAK boleh menindih pier — run akan "
+                "ditolak bila ternyata menindih. Diisi = Anda mengizinkannya sampai fraksi "
+                "ini (mis. 0,15 = paling banyak 15% luas pile berada di dalam pier). "
+                "KONSEKUENSI: bagian yang berada di dalam pier TIDAK melenturkan pelat — "
+                "pier dimodelkan jepit sempurna, jadi gaya di sana tersalur langsung ke "
+                "pier (aksi strut) dan kapasitasnya HARUS Anda cek terpisah; tool tidak "
+                "menghitungnya. Untuk geometri seperti ini angka desain juga menjadi "
+                "sensitif terhadap kehalusan mesh. Besarnya dilaporkan terpisah di calc "
+                "sheet (komponen strut vs komponen diskretisasi).",
+            ),
         ),
     ),
     Section(

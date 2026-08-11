@@ -33,6 +33,7 @@ from pilecap_fem import (
     __version__,
     capacity_engine,
     config,
+    geometry_builder,
     io_utils,
     math_engine,
     mesh_model,
@@ -243,7 +244,9 @@ def run(args: argparse.Namespace, command: str) -> Path:
     capacity_inputs = capacity_engine.CapacityInputs.from_config(cfg)
     style = renderer.PlotStyle.from_args(args)
     # Dibangun sekali lalu diteruskan: identitas proyek harus sama persis di seluruh plot.
-    base_block = _project_block(manifest).with_assumptions(*_assumption_lines(capacity_inputs))
+    base_block = _project_block(manifest, geom).with_assumptions(
+        *_assumption_lines(capacity_inputs)
+    )
     # Asumsi kapasitas MENGUBAH angka desain (mode tulangan, grid sengkang, batas
     # `As_min`, asumsi `dv`). Tanpa langkah ini semuanya hanya hidup di calc sheet dan
     # tidak pernah masuk catatan provenance run.
@@ -347,18 +350,24 @@ def run(args: argparse.Namespace, command: str) -> Path:
     return run_dir
 
 
-def _project_block(manifest: dict[str, Any]) -> renderer.TitleBlock:
+def _project_block(manifest: dict[str, Any], geom: GeometryModel) -> renderer.TitleBlock:
     """Identitas proyek untuk kop gambar, dibaca dari config yang terekam manifest.
 
     `engineer` dan `date` sudah lama diminta formulir dan tersimpan di config, tetapi
     sebelum v0.8.0 tidak pernah sampai ke satu plot pun -- hanya ke calc sheet.
+
+    Peringatan tumpang tindih DIBANGUN ULANG dari `geom.overlaps`, bukan diendus dari
+    daftar warning manifest: yang dicari adalah data, dan mencocokkan string warning akan
+    diam-diam berhenti bekerja begitu kalimatnya diubah sedikit.
     """
-    project = ((manifest.get("parameters") or {}).get("config_raw") or {}).get("project") or {}
+    parameters = (manifest.get("parameters") or {}).get("config_raw") or {}
+    project = parameters.get("project") or {}
+    limit = (parameters.get("pier") or {}).get("max_pile_overlap_fraction") or 0.0
     return renderer.TitleBlock(
         project=str(project.get("name", "") or ""),
         engineer=str(project.get("engineer", "") or ""),
         date=str(project.get("date", "") or ""),
-    )
+    ).with_warnings(*geometry_builder.overlap_warning_lines(geom, float(limit)))
 
 
 def _assumption_lines(inputs: capacity_engine.CapacityInputs) -> tuple[str, ...]:

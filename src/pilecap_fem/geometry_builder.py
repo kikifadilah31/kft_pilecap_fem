@@ -12,6 +12,7 @@ diuji secara parametrized (PRD Bagian 15.1).
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -125,6 +126,79 @@ class Pile:
     @property
     def group_name(self) -> str:
         return f"{config.GROUP_PILE_PREFIX}{self.pile_id}"
+
+
+def lens_group_name(pile_id: str, pier_id: str) -> str:
+    """Nama physical group untuk irisan satu pile dengan satu pier.
+
+    DIBENTUK, tidak pernah diurai. Mengurai `LENS_A__B` kembali menjadi (A, B) ambigu bila
+    id memuat pemisahnya; karena itu `validators` menolak id semacam itu, dan setiap
+    pemakai membentuk ulang namanya lewat fungsi ini.
+    """
+    return f"{config.GROUP_LENS_PREFIX}{pile_id}{config.GROUP_LENS_SEP}{pier_id}"
+
+
+@dataclass(frozen=True)
+class PileOverlap:
+    """Satu pasangan pile-pier yang tumpang tindih.
+
+    `fraction_geom` berasal dari shapely (lingkaran didekati poligon 64 segmen) dan dipakai
+    HANYA untuk membandingkan terhadap ambang `pier.max_pile_overlap_fraction`. Fraksi yang
+    dipakai untuk seluruh PELAPORAN adalah `f_mesh`, yang dihitung dari luas elemen mesh --
+    lihat `fem_engine.pile_pressures`. Keduanya tidak boleh tertukar.
+    """
+
+    pile_id: str
+    pier_id: str
+    area_geom_m2: float
+    fraction_geom: float
+
+    @property
+    def lens_group_name(self) -> str:
+        return lens_group_name(self.pile_id, self.pier_id)
+
+
+def compute_pile_pier_overlaps(
+    piles: Sequence[Pile], piers: Sequence[Pier]
+) -> tuple[PileOverlap, ...]:
+    """Pasangan pile-pier dengan luas irisan > 0, terurut agar hasilnya reproducible.
+
+    Persinggungan (irisan berluas nol) TIDAK termasuk: tidak ada lensa untuk dibagi ke
+    physical group, dan `validators` menolaknya secara terpisah.
+    """
+    hasil: list[PileOverlap] = []
+    for pier in piers:
+        pier_poly = pier.to_shapely()
+        for pile in piles:
+            area = float(pier_poly.intersection(pile.to_shapely()).area)
+            if area > 0.0:
+                hasil.append(
+                    PileOverlap(
+                        pile_id=pile.pile_id,
+                        pier_id=pier.pier_id,
+                        area_geom_m2=area,
+                        fraction_geom=area / pile.nominal_area,
+                    )
+                )
+    return tuple(sorted(hasil, key=lambda o: (o.pile_id, o.pier_id)))
+
+
+def overlap_warning_lines(geom: GeometryModel, limit: float) -> tuple[str, ...]:
+    """Baris peringatan tumpang tindih pile-pier, siap dipancarkan ke seluruh saluran.
+
+    Fungsi murni tanpa I/O supaya sumbernya SATU: log, manifest, calc sheet, SUMMARY, dan
+    kop gambar semuanya membentuk teks dari sini, bukan saling menyalin string.
+    """
+    if not geom.overlaps:
+        return ()
+    # ASCII saja: peringatan ini juga dikirim ke log konsol, dan `StreamHandler` memakai
+    # encoding bawaan konsol (cp1252 di Windows). Satu karakter non-ASCII di sini akan
+    # melempar UnicodeEncodeError dan MENGHENTIKAN run -- kegagalan yang tidak ada
+    # hubungannya dengan rekayasanya.
+    detail = "; ".join(
+        f"{o.pile_id} dengan {o.pier_id} f={o.fraction_geom:.1%}" for o in geom.overlaps
+    )
+    return (config.PARTIAL_OVERLAP_WARNING.format(detail=detail, limit=limit),)
 
 
 @dataclass(frozen=True)
@@ -271,6 +345,9 @@ class GeometryModel:
     piers: tuple[Pier, ...]
     resolution: GeometryResolution
     warnings: tuple[str, ...] = field(default=())
+    #: Pasangan pile-pier yang tumpang tindih, bila `pier.max_pile_overlap_fraction` diisi.
+    #: Kosong = tidak ada overlap, dan seluruh jalur terkait tidak aktif sama sekali.
+    overlaps: tuple[PileOverlap, ...] = field(default=())
 
     @property
     def n_piles(self) -> int:
@@ -326,6 +403,15 @@ class GeometryModel:
                 for p in self.piers
             ],
             "geometry_resolution": self.resolution.to_manifest(),
+            "pile_pier_overlaps": [
+                {
+                    "pile_id": o.pile_id,
+                    "pier_id": o.pier_id,
+                    "area_geom_m2": o.area_geom_m2,
+                    "fraction_geom": o.fraction_geom,
+                }
+                for o in self.overlaps
+            ],
         }
 
     @classmethod
@@ -356,12 +442,26 @@ class GeometryModel:
             )
             for p in data["piers"]
         )
+        # Dibaca toleran: `geometry.json` dari run sebelum v0.9.0 tidak punya kunci ini,
+        # dan run lama harus tetap dapat dilaporkan. TIDAK dihitung ulang dari geometri --
+        # folder run wajib mereproduksi apa yang benar-benar dianalisis, bukan apa yang
+        # akan dihitung versi tool hari ini.
+        overlaps = tuple(
+            PileOverlap(
+                pile_id=str(o["pile_id"]),
+                pier_id=str(o["pier_id"]),
+                area_geom_m2=float(o["area_geom_m2"]),
+                fraction_geom=float(o["fraction_geom"]),
+            )
+            for o in (data.get("pile_pier_overlaps") or [])
+        )
         return cls(
             pilecap=Polygon2D(np.asarray(data["pilecap_polygon_m"], dtype=np.float64)),
             thickness=float(data["thickness_m"]),
             piles=piles,
             piers=piers,
             resolution=GeometryResolution.from_manifest(data["geometry_resolution"]),
+            overlaps=overlaps,
         )
 
 
@@ -532,10 +632,16 @@ def build_geometry_model(cfg: dict, sources: ResolvedGeometrySources) -> Geometr
     Tidak memvalidasi -- pemanggil WAJIB menjalankan `validators.validate_geometry()`
     setelah ini (PRD Bagian 3.2).
     """
+    piles = build_piles(cfg, sources)
+    piers = build_piers(cfg, sources)
     return GeometryModel(
         pilecap=build_pilecap(cfg, sources),
         thickness=cfg["pilecap"]["thickness"],
-        piles=build_piles(cfg, sources),
-        piers=build_piers(cfg, sources),
+        piles=piles,
+        piers=piers,
         resolution=sources.resolution,
+        # Selalu dihitung; yang menentukan boleh/tidaknya adalah `validators`, bukan di
+        # sini. Dengan begitu validator punya angkanya untuk dibandingkan ke ambang, dan
+        # geometri yang ditolak tetap dapat melaporkan berapa besar overlap-nya.
+        overlaps=compute_pile_pier_overlaps(piles, piers),
     )

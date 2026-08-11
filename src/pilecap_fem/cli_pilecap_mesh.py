@@ -209,6 +209,9 @@ class PreparedModel:
     material: fem_engine.MaterialProperties | None = None
     #: `f'c` [Pa], hanya untuk MENAMAI material di MCT -- tidak pernah dipakai menurunkan `E`.
     fc: float | None = None
+    #: Peringatan dari `validate_geometry` (mis. tumpang tindih pile-pier). Dibawa di sini
+    #: supaya SATU sumber mengalir ke manifest, laporan, dan kop gambar.
+    geometry_warnings: tuple[str, ...] = ()
 
     @property
     def project_name(self) -> str:
@@ -226,7 +229,7 @@ class PreparedModel:
             project=str(project.get("name", "") or ""),
             engineer=str(project.get("engineer", "") or ""),
             date=str(project.get("date", "") or ""),
-        )
+        ).with_warnings(*self.geometry_warnings)
 
 
 def prepare_model(
@@ -271,7 +274,12 @@ def prepare_model(
         geom.n_piles,
         geom.n_piers,
     )
-    validators.validate_geometry(geom)
+    geometry_warnings = validators.validate_geometry(
+        geom,
+        max_overlap_fraction=(loaded.si.get("pier") or {}).get("max_pile_overlap_fraction"),
+    )
+    for baris in geometry_warnings:
+        _log.warning("%s", baris)
     validators.validate_mesh_vs_geometry(loaded.si, geom)
 
     options = mesh_engine.MeshOptions.from_config(loaded.si)
@@ -316,6 +324,7 @@ def prepare_model(
         cli_overrides=cli_overrides,
         material=material,
         fc=fc,
+        geometry_warnings=tuple(geometry_warnings),
     )
 
 
@@ -371,7 +380,10 @@ def write_model_artifacts(
         options=prepared.options,
         project_name=prepared.project_name,
         run_dir=run_dir,
-        warnings=prepared.raw.warnings,
+        # Peringatan GEOMETRI ikut, bukan hanya peringatan mesher: tumpang tindih pile-pier
+        # muncul di sini (`validate_geometry`), dan `mesh_summary.md` adalah tempat pertama
+        # pembaca melihat group `LENS_*` -- persis tempat penjelasannya dibutuhkan.
+        warnings=tuple(prepared.raw.warnings) + prepared.geometry_warnings,
     )
     renderer.render_mesh_plan(
         model_dir / "mesh_plan.png",
@@ -409,7 +421,7 @@ def record_model_stats(prepared: PreparedModel, manifest: provenance.Manifest) -
             "group_area_occ_m2": raw.surface_area_by_group,
         }
     )
-    manifest.add_warnings(list(raw.warnings))
+    manifest.add_warnings(list(raw.warnings) + list(prepared.geometry_warnings))
 
 
 def run(args: argparse.Namespace, command: str) -> Path:

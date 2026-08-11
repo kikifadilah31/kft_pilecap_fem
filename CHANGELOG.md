@@ -2,6 +2,154 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.9.0] — 2026-08-11 — Pile yang tumpang tindih dengan pier, dan satu cacat senyap yang ditutup
+
+Berawal dari satu pertanyaan: *apakah gaya aksial pile tetap diteruskan ke shell bila
+pile-nya menindih pier?* Menelusurinya menemukan cacat yang **sudah aktif** di v0.8.0.
+
+### Fixed — beban pile yang hilang tanpa satu pun tanda
+
+Node yang dimiliki bersama oleh grup pile dan grup pier **dijepit 6 DOF**. Gaya pada DOF
+terjepit menghasilkan perpindahan nol, jadi ia **tidak melenturkan pelat** dan langsung
+masuk ke reaksi.
+
+**VC-0 tidak dapat menangkapnya.** `Σ beban` dan `Σ reaksi` sama-sama memuat gaya itu,
+sehingga residunya nol dan run dilaporkan LULUS — momen desainnya lebih kecil daripada
+yang seharusnya, tanpa satu pun peringatan.
+
+Pintu masuknya: rule 14 menolak `intersection().area > 0.0` secara ketat, sehingga pile
+yang **bersinggungan tepat** dengan muka pier (luas irisan nol, tetapi node-nya tetap
+terbagi) **lolos**. Jaring kedua di `_assign_groups` hanya menangkap *sub-face* yang
+diklaim ganda, bukan *node* yang terbagi.
+
+Dua penutup, dari dua arah:
+
+- **Persinggungan eksak kini SELALU ditolak**, dengan atau tanpa opt-in. Di sana tidak ada
+  lensa untuk diukur: 100% dari yang terserap adalah artefak diskretisasi murni, tanpa satu
+  pun komponen geometri yang dapat dihitung dan dilaporkan. **Ini perubahan perilaku, dan
+  memang itu maksudnya** — run lama pada geometri seperti itu salah, dan pesannya
+  mengatakannya.
+- **Jaring pengaman di `analyze_combo`**: bila `geom.overlaps` kosong tetapi ada beban yang
+  mendarat di node jepit, run **berhenti** dengan `AnalysisError`. Menguji kondisi yang
+  sebenarnya, bukan proksi geometrinya, sehingga menangkap juga celah pile–pier yang jauh
+  lebih kecil daripada satu elemen dan diam-diam disatukan mesher — termasuk pada mesh yang
+  dimuat ulang dari CSV.
+
+### Added — `pier.max_pile_overlap_fraction`
+
+Tumpang tindih **berluas** dapat diizinkan lewat field baru ini (nirdimensi, `null` =
+menolak, yaitu perilaku v0.8.0 persis). Angka, bukan boolean, mengikuti pola
+`design.as_min_surface_zone`: sekaligus rem eksplisit dan keputusan user yang tercatat di
+`run_manifest.json`.
+
+Skemanya: **seluruh cakram pile dibebani tanpa terkecuali**, `p = Pz / A_pile` tidak
+berubah. Bagian yang jatuh di dalam footprint pier terserap ke reaksi, dan yang terserap
+**diukur lalu dilaporkan** — dipecah menjadi dua komponen yang sifatnya berbeda:
+
+| Komponen | Asal | Bergantung mesh? |
+|----------|------|------------------|
+| `pz_strut` = `p × A_lensa` | **Geometri** — aksi strut pile→pier menembus tebal pilecap | tidak |
+| `pz_bocor_mesh` = terserap − `pz_strut` | **Diskretisasi** — beban konsisten elemen di muka pier | ya, orde `h` |
+
+Memisahkannya bukan kosmetik. TERUKUR pada `a` = 300 mm, `r` = 400 mm:
+
+| D/h | `f_mesh` (= strut/`Pz`) | bocor mesh | ke pelat |
+|-----|------------------------:|-----------:|---------:|
+| 6 (terkasar yang diizinkan) | 7,0768% | 4,8744% | 88,05% |
+| 12 | 7,1587% | 3,2175% | 89,62% |
+| 24 | 7,2021% | 1,3717% | 91,43% |
+| rumus analitis | **7,2147%** | 0 | 92,79% |
+
+Komponen strut **konvergen** ke `r²·acos(a/r) − a·√(r²−a²)`; komponen bocoran **mengecil
+sebanding `h`**. Digabung menjadi satu angka, keduanya akan menyamar sebagai parameter
+geometri padahal separuhnya parameter meshing.
+
+Implementasinya: grup mesh kelas satu `LENS_<pile>__<pier>` yang **dibebani bersama pile
+dan dijepit bersama pier** — dua keanggotaan yang disebut eksplisit lewat
+`fem_engine.fixed_support_nodes`, bukan disimpulkan dari awalan nama. Awalannya sengaja
+bukan turunan `PILE_`/`PIER_` sehingga `pile_groups()`/`pier_groups()` tidak mungkin
+menyerapnya diam-diam; dijaga test disjoint.
+
+`exporters/mct.py` memakai `fixed_support_nodes` yang sama. Tanpa itu model Midas akan
+punya himpunan tumpuan berbeda dari model OpenSees yang dibandingkan VC-6.
+
+**Peringatannya wajib dan menyeluruh**: log WARNING, `run_manifest.json`, `SUMMARY.md`,
+`mesh_summary.md`, `calc_sheet.md` bagian 3a, dan **kop setiap gambar** — dibangun ulang
+dari `geom.overlaps`, bukan diendus dari string. Elemen lensa juga diberi warna dan entri
+legenda tersendiri di `boundary_load_check.png`.
+
+**Tool tidak menghitung kapasitas strut.** `KNOWN_LIMITATIONS` item #10 baru menyatakan itu
+dan, sama pentingnya, bahwa **batas reproducibility 0,02% pada item #9 tidak berlaku** untuk
+geometri overlap.
+
+### Fixed — `a/d` tampak aman persis ketika kondisinya paling deep
+
+`shear_span_ratio` memakai `pier.exterior.distance(centroid)`. Untuk pusat pile yang berada
+**di dalam** pier, `exterior` mengembalikan jarak ke ring — angka positif besar — sehingga
+`a/d` besar dan pilecap tampak tidak-deep tepat pada kasus yang paling deep. Kebalikan dari
+yang benar. Kini `a = 0` bila pier menutupi centroid pile. Perilaku untuk pile tanpa overlap
+tidak berubah.
+
+Pesan kegagalan VC-0 tidak lagi menyebut *"ada beban pile yang jatuh pada node jepit"*
+sebagai dugaan penyebab: kondisi itu **tidak pernah** membuat VC-0 gagal, dan kini justru
+keadaan yang sengaja diizinkan serta dilaporkan tersendiri.
+
+### Added — contoh bawaan `ex04_pile_overlap_pier`
+
+Pilecap 6.000 × 4.000 × 1.500 mm, pier persegi 2.400 × 1.200, enam pile D800. Dua di
+antaranya (`P2`, `P5`) berpusat 300 mm di luar muka pier sehingga `f` = 7,21% — **geometri
+yang sama dengan yang diverifikasi terhadap rumus analitis**, jadi contoh ini diuji terhadap
+rumus, bukan terhadap dirinya sendiri.
+
+`EXAMPLE_NAMES` sebelumnya terduplikasi di tiga tempat (`config.py`, `tests/conftest.py`,
+`tests/test_mesh_engine.py`); kedua daftar di test kini mengimpor dari `config` sehingga
+contoh baru otomatis ikut teruji.
+
+### Fixed — peringatan overlap tidak sampai ke `mesh_summary.md`
+
+Ketahuan pada verifikasi manual: `cli_pilecap_mesh` hanya meneruskan `raw.warnings` (milik
+mesher) ke `write_mesh_summary`, sehingga peringatan geometri tidak ikut. Akibatnya
+`mesh_summary.md` memuat baris `LENS_P2__PIER1` di tabel luas group **tanpa satu pun kalimat
+yang menerangkan mengapa group itu ada** — padahal di situlah pembaca pertama kali
+melihatnya. Dikunci `test_peringatan_overlap_sampai_ke_mesh_summary`.
+
+### Fixed — golden `test_resultant_pada_probe` gagal intermiten dengan kode yang tidak berubah
+
+`NEAR_ZERO_FRACTION = 1e-4` **lebih kecil daripada jitter yang memang ada**. DIUKUR pada
+8 run ex02 berturut-turut dengan kode identik: sebaran nilai medan pada probe mencapai
+**2,75e-4 dari puncak** (`m_xy`). Toleransi yang lebih ketat daripada kebisingan alat ukur
+menghasilkan kegagalan acak — dan kegagalan acak melatih orang mengabaikan test.
+
+Dinaikkan ke `1e-3` (margin ~3,6× terhadap sebaran terukur). **Pemeriksaan besaran desain
+tidak dilonggarkan**: `DESIGN_RTOL` tetap 0,1%, dan sebaran `As` per lajur pada 8 run yang
+sama hanya 6,8e-5 — dua orde di bawahnya. Yang berisik adalah nilai medan di titik yang
+nyaris nol, bukan angka desainnya.
+
+### Changed — dugaan tentang sensitivitas mesh pada geometri overlap TERBANTAH
+
+Rencana v0.9.0 memperkirakan ex04 butuh toleransi golden lebih longgar, karena pergeseran
+node antar run akan mengubah berapa banyak beban mendarat di node jepit. Konstanta terpisah
+`MESH_NONDETERMINISM_DESIGN_SPREAD_OVERLAP` disediakan untuk itu, dengan catatan bahwa
+angkanya **harus diukur, bukan ditebak**.
+
+Diukur: 8 run ex04, sebaran besaran desain **0,0001%** — **70× lebih kecil** daripada ex02
+yang tanpa overlap. Kedelapan mesh-nya memang berbeda (sha256 `nodes.csv` kedelapannya
+berlainan), tetapi pada ukuran elemen yang **tetap**, jumlah node yang jatuh di muka pier
+praktis tidak berubah.
+
+Konstanta terpisahnya **dihapus**; dugaan yang terbantah dicatat di komentar konstanta yang
+tersisa supaya tidak diulang. Yang memang sensitif pada geometri overlap adalah **ukuran
+elemen** — hal yang berbeda, dan itulah yang dinyatakan `KNOWN_LIMITATIONS` #10.
+
+### Changed — VC-6 Jalur 2 kini mencakup ketiga contoh
+
+Ekspor lendutan ex03 yang di v0.8.0 ternyata byte-identik dengan berkas reaksinya sudah
+diperbaiki pemilik proyek. Jalur 2 naik dari 4 menjadi 6 pasangan contoh×kombinasi:
+RMS 0,045% / 0,042%, korelasi 1,000000 — di dalam gate yang sudah ada.
+
+`tests/data/vc6/SUMBER.md` §5.1 **ditulis ulang, bukan dihapus**: arsip semula memuat berkas
+salah ekspor, dan menghapus riwayatnya berarti menghapus jejak audit.
+
 ## [0.8.0] — 2026-08-10 — VC-6 tertutup & kop gambar teknik pada setiap plot
 
 Dua pekerjaan yang tidak berkaitan, dari dua kebutuhan berbeda: menutup blocker rilis

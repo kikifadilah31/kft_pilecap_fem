@@ -177,14 +177,20 @@ def _thickness_section(material: MaterialProperties) -> list[str]:
     return ["*THICKNESS", f"1, VALUE, 1, YES, {_num(material.thickness)}, 0, NO, 0, 0"]
 
 
-def _constraint_section(mesh: MeshModel) -> list[str]:
-    """Jepit 6 DOF pada seluruh node area pier, setara `fem_engine.FixedPierSupport`."""
-    nodes: set[int] = set()
-    for name in mesh.pier_groups():
-        nodes.update(int(mesh.node_tags[n]) for n in mesh.nodes_in_group(name))
-    if not nodes:
+def _constraint_section(mesh: MeshModel, geom: GeometryModel) -> list[str]:
+    """Jepit 6 DOF pada himpunan node yang SAMA dengan model OpenSees.
+
+    Memakai `fem_engine.fixed_support_nodes`, bukan menghitung sendiri dari
+    `mesh.pier_groups()`. Kalau dihitung sendiri, node group LENSA (bagian pile di dalam
+    pier) akan tertinggal bebas di Midas padahal terjepit di OpenSees -- dan VC-6
+    membandingkan kedua model itu.
+    """
+    from pilecap_fem.fem_engine import fixed_support_nodes
+
+    indeks = fixed_support_nodes(mesh, geom)
+    if indeks.size == 0:
         return []
-    daftar = " ".join(str(n) for n in sorted(nodes))
+    daftar = " ".join(str(int(mesh.node_tags[n])) for n in indeks)
     return ["*CONSTRAINT", f"{daftar}, 111111, "]
 
 
@@ -264,7 +270,7 @@ def write_mct(
         lines.append("; TANPA *MATERIAL dan *THICKNESS: `material.E` tidak diisi di konfigurasi.")
         lines.append("; pilecap-fem tidak menurunkan E dari f'c (PRD Bagian 7.4), sehingga")
         lines.append("; nilainya harus Anda isi sendiri di Midas sebelum model dijalankan.")
-    lines += _constraint_section(mesh)
+    lines += _constraint_section(mesh, geom)
     if loads:
         lines += _load_sections(mesh, geom, loads)
     else:

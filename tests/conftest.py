@@ -8,8 +8,12 @@ from pathlib import Path
 
 import pytest
 
+from pilecap_fem import config
+
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
-EXAMPLE_NAMES = ("ex01_standard_4pile", "ex02_standard_12pile", "ex03_custom_polygon")
+#: Diimpor dari `config`, TIDAK disalin: daftar ini pernah ada di tiga tempat, dan
+#: contoh baru harus otomatis ikut teruji, bukan menunggu tiga daftar disamakan.
+EXAMPLE_NAMES = config.EXAMPLE_NAMES
 
 
 @pytest.fixture

@@ -22,7 +22,9 @@ from pilecap_fem.validators import MeshError
 
 pytestmark = pytest.mark.slow
 
-EXAMPLE_NAMES = ("ex01_standard_4pile", "ex02_standard_12pile", "ex03_custom_polygon")
+#: Diimpor dari `config`, TIDAK disalin: daftar ini pernah ada di tiga tempat, dan
+#: contoh baru harus otomatis ikut teruji, bukan menunggu tiga daftar disamakan.
+EXAMPLE_NAMES = config.EXAMPLE_NAMES
 
 
 def build(directory: Path, *, no_custom: bool = False):
@@ -34,7 +36,10 @@ def build(directory: Path, *, no_custom: bool = False):
     )
     validators.validate_config_mesh(loaded.si)
     geom = geometry_builder.build_geometry_model(loaded.si, sources)
-    validators.validate_geometry(geom)
+    validators.validate_geometry(
+        geom,
+        max_overlap_fraction=(loaded.si.get("pier") or {}).get("max_pile_overlap_fraction"),
+    )
     validators.validate_mesh_vs_geometry(loaded.si, geom)
     options = mesh_engine.MeshOptions.from_config(loaded.si)
     raw = mesh_engine.generate_mesh(geom, options)

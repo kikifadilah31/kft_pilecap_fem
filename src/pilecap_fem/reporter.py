@@ -52,6 +52,57 @@ def disclaimer_block() -> str:
     return f"{prefix}> {text}\n"
 
 
+def _overlap_block(equilibrium: dict[str, Any]) -> str:
+    """Rincian beban pile yang TIDAK melenturkan pelat, bila ada tumpang tindih pile-pier.
+
+    Kosong sepenuhnya bila tidak ada overlap, sehingga calc sheet run biasa tidak berubah
+    satu baris pun.
+    """
+    rows = [r for r in equilibrium.get("pile_loads", []) if r.get("A_lens_m2", 0.0) > 0.0]
+    if not rows:
+        return ""
+
+    unit_f = io_utils.display_unit("force")
+    tabel = _markdown_table(
+        [
+            "pile",
+            "f (lensa/cakram)",
+            f"strut -- geometri [{unit_f}]",
+            f"bocor mesh -- diskretisasi [{unit_f}]",
+            f"ke pelat [{unit_f}]",
+        ],
+        [
+            [
+                r["pile_id"],
+                f"{r['overlap_fraction']:.2%}",
+                f"{io_utils.to_display(r['pz_strut_N'], 'force'):,.2f}",
+                f"{io_utils.to_display(r['pz_bocor_mesh_N'], 'force'):,.2f}",
+                f"{io_utils.to_display(r['pz_ke_pelat_N'], 'force'):,.2f}",
+            ]
+            for r in rows
+        ],
+    )
+    return f"""
+### 3a. Beban pile yang TIDAK melenturkan pelat (tumpang tindih dengan pier)
+
+{tabel}
+
+Kolom **strut** adalah komponen GEOMETRI: bagian cakram pile yang berada di dalam footprint
+pier. Pier diidealkan jepit sempurna, sehingga tekanan di sana langsung masuk ke reaksi --
+secara fisik gaya itu tersalur langsung dari kepala pile ke pier menembus tebal pilecap.
+**Tool TIDAK menghitung kapasitas strut tersebut; bagian ini wajib Anda cek terpisah sebagai
+tumpu/strut.**
+
+Kolom **bocor mesh** adalah komponen DISKRETISASI: beban elemen di tepi footprint pier yang
+ikut mendarat pada node jepit. Besarnya sebanding `L x h / (2 A_pile)` sehingga **mengecil
+bila mesh diperhalus** -- angka ini milik kehalusan mesh, bukan milik geometri. Karena itu
+keduanya disajikan terpisah; menjumlahkannya akan menyamarkan yang mana yang mana.
+
+`Sigma reaksi` tetap sama dengan `Sigma Pz` -- tidak ada beban yang hilang dari neraca. Yang
+berbeda adalah berapa banyak yang benar-benar dirasakan PELAT (lihat KNOWN_LIMITATIONS #10).
+"""
+
+
 def open_blockers_block() -> str:
     rows = "\n".join(f"| {key} | {desc} |" for key, desc in config.OPEN_BLOCKERS.items())
     return (
@@ -334,9 +385,28 @@ def write_equilibrium_json(path: Path, combo_result: ComboResult) -> Path:
             "n_elements": t.n_elements,
             "applied_total_N": t.applied_total,
             "discrepancy_N": t.discrepancy,
+            # Tiga angka di bawah hanya bermakna bila pile tumpang tindih dengan pier.
+            # Sengaja DIPISAH: `pz_strut_N` murni geometri (mesh-independen), sedangkan
+            # `pz_bocor_mesh_N` artefak diskretisasi (mengecil saat mesh diperhalus).
+            # Satu angka gabungan akan menyamar sebagai parameter geometri.
+            "A_lens_m2": t.a_lens,
+            "overlap_fraction": t.overlap_fraction,
+            "pz_strut_N": t.pz_strut,
+            "pz_bocor_mesh_N": t.pz_bocor_mesh,
+            "pz_ke_pelat_N": t.pz_ke_pelat,
         }
         for t in combo_result.load_traces
     ]
+    if any(t.a_lens > 0.0 for t in combo_result.load_traces):
+        payload["catatan_overlap"] = (
+            "Sebagian beban pile mendarat pada node JEPIT (bagian cakram di dalam footprint "
+            "pier) sehingga TIDAK melenturkan pelat. `pz_strut_N` adalah komponen "
+            "geometrinya -- gaya yang tersalur langsung pile->pier menembus tebal pilecap, "
+            "yang WAJIB dicek terpisah sebagai tumpu/strut karena tool tidak menghitung "
+            "kapasitasnya. `pz_bocor_mesh_N` adalah komponen diskretisasi dan mengecil bila "
+            "mesh diperhalus. Sigma reaksi tetap = Sigma Pz: tidak ada beban yang hilang "
+            "dari neraca, yang berbeda adalah berapa banyak yang dirasakan PELAT."
+        )
     payload["self_weight_total_N"] = combo_result.self_weight_total
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -1389,7 +1459,7 @@ dalam physical group pile -- bukan `pi r^2` analitis. Itulah yang menjamin
             pile_rows,
         )
     }
-
+{_overlap_block(equilibrium)}
 ## 4. CEK KESEIMBANGAN (VC-0)
 
 | Besaran | Nilai |

@@ -180,6 +180,21 @@ GROUP_CAP: Final[str] = "CAP"
 GROUP_PILE_PREFIX: Final[str] = "PILE_"
 GROUP_PIER_PREFIX: Final[str] = "PIER_"
 
+#: Prefiks group LENSA -- irisan pile dengan pier, bila overlap diizinkan.
+#:
+#: Lensa harus berada di DUA himpunan sekaligus: dibebani (bersama pile) dan dijepit
+#: (bersama pier). Satu label group tidak dapat menyatakan itu, sehingga ia menjadi group
+#: tersendiri yang keanggotaannya di kedua himpunan DISEBUT EKSPLISIT
+#: (`fem_engine.fixed_support_nodes`, `fem_engine.pile_pressures`).
+#:
+#: Awalannya sengaja BUKAN turunan `PILE_`/`PIER_`: dengan begitu `pile_groups()` dan
+#: `pier_groups()` tidak mungkin menyerapnya secara tak sengaja, dan keputusan "lensa ikut
+#: dijepit" tidak pernah bergantung pada kebetulan penamaan.
+GROUP_LENS_PREFIX: Final[str] = "LENS_"
+#: Pemisah `LENS_<pile_id>__<pier_id>`. Nama group DIBENTUK, tidak pernah diurai; validator
+#: menolak id yang memuat pemisah ini agar tidak ambigu.
+GROUP_LENS_SEP: Final[str] = "__"
+
 # ---------------------------------------------------------------------------
 # Konvensi FEM (PRD Bagian 7.1)
 # ---------------------------------------------------------------------------
@@ -534,12 +549,68 @@ KNOWN_LIMITATIONS: Final[str] = """\
    angka berbeda di lokasi yang sama karena elemennya memang bukan elemen yang sama.
    Untuk mereproduksi angka secara persis, simpan `00_Model/nodes.csv` dan
    `elements.csv`; keduanya memuat mesh yang benar-benar dipakai.
+
+10. **Pile yang tumpang tindih dengan pier: bagian di dalam footprint pier TIDAK
+    melenturkan pelat.** Pier dimodelkan jepit sempurna (lihat #2), sehingga tekanan yang
+    bekerja di dalam footprint-nya langsung masuk ke reaksi. Secara fisik itu aksi **strut**
+    -- gaya tersalur langsung dari kepala pile ke pier menembus tebal pilecap. Tool **tidak
+    menghitung kapasitas strut itu**; bagian tersebut wajib dicek terpisah sebagai
+    tumpu/strut, dan besarnya dilaporkan tersendiri di calc sheet.
+
+    **Angka desainnya bergantung pada UKURAN ELEMEN yang Anda pilih.** Selain komponen
+    strut yang murni geometris, ada komponen diskretisasi: beban elemen di tepi footprint
+    pier ikut mendarat pada node jepit. Besarnya sebanding `L·h/(2·A_pile)` (`L` = panjang
+    potongan pile di muka pier, `h` = ukuran elemen), yaitu **orde `h`**. DIUKUR pada
+    `a` = 300 mm, `r` = 400 mm:
+
+    | `D/h` | strut (geometri) | bocor mesh (diskretisasi) | ke pelat |
+    |-------|-----------------:|--------------------------:|---------:|
+    | 6 (terkasar yang diizinkan) | 7,0768% | 4,8744% | 88,05% |
+    | 12 | 7,1587% | 3,2175% | 89,62% |
+    | 24 | 7,2021% | 1,3717% | 91,43% |
+    | rumus analitis | 7,2147% | 0 | 92,79% |
+
+    Artinya bagian `Pz` yang melenturkan pelat bergeser **~3,4%** hanya karena mesh
+    diperhalus 4x. Keduanya dilaporkan **terpisah** supaya terlihat mana yang geometri dan
+    mana yang kehalusan mesh. Memperhalus mesh mengecilkan komponen diskretisasinya.
+
+    Ini sensitivitas terhadap **ukuran elemen**, BUKAN terhadap jitter mesh antar run.
+    Batas 0,02% pada #9 tetap berlaku: DIUKUR pada 8 run ex04 dengan ukuran elemen yang
+    sama, sebaran besaran desainnya hanya **0,0001%** -- lebih kecil daripada contoh tanpa
+    overlap. Kedua hal itu sering tertukar; yang perlu Anda putuskan adalah `mesh.size_*`,
+    bukan berapa kali run diulang.
 """
 
-#: Sebaran relatif maksimum besaran DESAIN antar run berulang dengan kode & input sama.
-#: DIUKUR pada 3 run: ex01 0,000%, ex02 0,021%, ex03 0,000% (lihat KNOWN_LIMITATIONS #9).
-#: Dipakai `tests/test_golden.py` untuk menetapkan toleransi dari data, bukan dari tebakan.
+#: Sebaran relatif maksimum besaran DESAIN (momen lajur, `d`, `As`) antar run berulang
+#: dengan kode & input yang sama. Dipakai `tests/test_golden.py` untuk menetapkan toleransi
+#: dari data, bukan dari tebakan. Lihat KNOWN_LIMITATIONS #9.
+#:
+#: DIUKUR pada 8 run (v0.9.0): ex02 **0,0069%**, ex04 **0,0001%**.
+#: DIUKUR pada 3 run (v0.6.0): ex01 0,000%, ex03 0,000%.
+#:
+#: **ex04 (tumpang tindih pile-pier) TIDAK lebih besar -- ia justru 70x lebih kecil.**
+#: v0.9.0 sempat menyediakan konstanta terpisah dengan alasan bahwa pergeseran node akan
+#: mengubah berapa banyak beban mendarat di node jepit. Pengukurannya membantah dugaan itu:
+#: kedelapan mesh ex04 memang berbeda (sha256 `nodes.csv` kedelapannya berlainan), tetapi
+#: pada ukuran elemen yang TETAP, jumlah node yang jatuh di muka pier praktis tidak berubah.
+#: Konstantanya dihapus, dugaannya dicatat di sini supaya tidak diulang.
+#:
+#: Yang memang sensitif pada geometri overlap adalah **ukuran elemen**, bukan jitter antar
+#: run pada ukuran yang sama -- dan itu hal yang berbeda (KNOWN_LIMITATIONS #10).
 MESH_NONDETERMINISM_DESIGN_SPREAD: Final[float] = 2.1e-4
+
+#: Peringatan yang menyertai setiap run dengan tumpang tindih pile-pier.
+#:
+#: Wajib memuat KEDUA komponen terpisah: yang geometris (strut) dan yang diskretisasi.
+#: Satu angka gabungan akan menyamar sebagai parameter geometri padahal separuhnya
+#: parameter meshing.
+PARTIAL_OVERLAP_WARNING: Final[str] = (
+    "PILE TUMPANG TINDIH DENGAN PIER ({detail}). Bagian di dalam footprint pier TIDAK "
+    "melenturkan pelat (aksi strut) dan HARUS dicek terpisah sebagai tumpu/strut -- tool "
+    "tidak menghitung kapasitasnya. Diizinkan lewat `pier.max_pile_overlap_fraction` = "
+    "{limit:.3f}, yaitu keputusan Anda, bukan hasil hitungan tool. Angka desain untuk "
+    "geometri ini SENSITIF terhadap kehalusan mesh (KNOWN_LIMITATIONS #10)."
+)
 
 #: Item PRD Bagian 17 yang masih terbuka. Ditampilkan di laporan agar checker tahu
 #: cek mana yang BELUM dilakukan tool (PRD Bagian 1.3 poin 5 & 6).
@@ -617,6 +688,7 @@ EXAMPLE_NAMES: Final[tuple[str, ...]] = (
     "ex01_standard_4pile",
     "ex02_standard_12pile",
     "ex03_custom_polygon",
+    "ex04_pile_overlap_pier",
 )
 
 

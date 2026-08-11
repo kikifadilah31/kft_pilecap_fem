@@ -318,8 +318,13 @@ def generate_mesh(
         _log.info("Cek luas: Sigma sub-face = %.6f m2 = luas pilecap  OK", total_area)
 
         if options.size_mode == "graded":
+            # Lensa ikut dihaluskan bersama pile: ia BAGIAN dari cakram pile, dan justru di
+            # tepinya (potongan pile pada muka pier) letak komponen diskretisasi yang
+            # mengecil orde `h` -- lihat KNOWN_LIMITATIONS #10.
             pile_surfaces = [
-                s for s, name in owner.items() if name.startswith(config.GROUP_PILE_PREFIX)
+                s
+                for s, name in owner.items()
+                if name.startswith((config.GROUP_PILE_PREFIX, config.GROUP_LENS_PREFIX))
             ]
             pier_surfaces = [
                 s for s, name in owner.items() if name.startswith(config.GROUP_PIER_PREFIX)
@@ -381,25 +386,38 @@ def _assign_groups(
     **PIER > PILE > CAP**: sub-face yang diklaim pile diklaim ulang oleh pier bila
     keduanya menunjuk sub-face yang sama.
 
-    Kasus tumpang tindih itu sendiri sudah di-RAISE oleh `validators.validate_geometry()`
-    (rule 14); pengecekan di sini adalah jaring pengaman terakhir.
+    Perkecualian: bila pasangan (pile, pier) itu TERDAFTAR di `geom.overlaps` -- artinya
+    user sudah mengizinkannya lewat `pier.max_pile_overlap_fraction` -- sub-face irisannya
+    menjadi group LENSA tersendiri, bukan milik pier maupun pile. Lensa itulah yang nanti
+    ikut dibebani (bersama pile) sekaligus ikut dijepit (bersama pier).
+
+    `MeshError` di bawah TETAP berlaku untuk klaim ganda yang TIDAK terdaftar: selain
+    menjadi jaring pengaman rule 14, ia kini juga menangkap ketidakcocokan antara irisan
+    versi shapely (yang dipakai validator) dan versi OCC (yang dipakai mesher).
     """
     owner: dict[int, str] = {}
+    lensa = {(o.pile_id, o.pier_id): o.lens_group_name for o in geom.overlaps}
 
     n_piles = len(geom.piles)
+    pemilik_pile: dict[int, str] = {}
     for i, pile in enumerate(geom.piles):
         for _, tag in out_map[1 + i]:
             owner[tag] = pile.group_name
+            pemilik_pile[tag] = pile.pile_id
 
     for j, pier in enumerate(geom.piers):
         for _, tag in out_map[1 + n_piles + j]:
             previous = owner.get(tag)
             if previous is not None and previous != pier.group_name:
-                raise MeshError(
-                    f"Sub-face {tag} diklaim oleh {previous} dan {pier.group_name} sekaligus. "
-                    "Area pier dan pile bertumpang tindih (seharusnya sudah tertangkap "
-                    "validators rule 14)."
-                )
+                nama_lensa = lensa.get((pemilik_pile.get(tag, ""), pier.pier_id))
+                if nama_lensa is None:
+                    raise MeshError(
+                        f"Sub-face {tag} diklaim oleh {previous} dan {pier.group_name} "
+                        "sekaligus. Area pier dan pile bertumpang tindih tanpa terdaftar di "
+                        "`geom.overlaps` (seharusnya sudah tertangkap validators rule 14)."
+                    )
+                owner[tag] = nama_lensa
+                continue
             owner[tag] = pier.group_name
 
     for tag in surfaces:

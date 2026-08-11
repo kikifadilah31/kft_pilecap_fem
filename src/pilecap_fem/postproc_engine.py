@@ -551,9 +551,16 @@ def shear_span_ratio(geom: GeometryModel, cover_m: float) -> dict[str, Any]:
     d = effective_depth(geom, cover_m)
     rows: list[dict[str, Any]] = []
     for pier in geom.piers:
-        face = pier.to_shapely().exterior
+        poly = pier.to_shapely()
+        face = poly.exterior
         for pile in geom.piles:
-            a = float(face.distance(pile.to_shapely().centroid))
+            centroid = pile.to_shapely().centroid
+            # Pusat pile DI DALAM pier -> bentang gesernya nol.
+            #
+            # `exterior.distance()` untuk titik di dalam poligon mengembalikan jarak ke
+            # RING, yaitu angka POSITIF BESAR -- sehingga `a/d` tampak aman persis ketika
+            # kondisinya paling deep. Kebalikan dari yang benar.
+            a = 0.0 if poly.covers(centroid) else float(face.distance(centroid))
             rows.append(
                 {
                     "pier_id": pier.pier_id,

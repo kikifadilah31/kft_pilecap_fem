@@ -160,7 +160,11 @@ class UniformPressure:
     pressure: float
 
     def apply(
-        self, mesh: MeshModel, geom: GeometryModel | None = None, pz_by_pile: dict | None = None
+        self,
+        mesh: MeshModel,
+        geom: GeometryModel | None = None,
+        pz_by_pile: dict | None = None,
+        fixed_nodes: np.ndarray | None = None,
     ) -> tuple[np.ndarray, tuple]:
         coords = mesh.node_xy[mesh.elem_conn]
         factors = fem_engine.consistent_quad_load_factors(coords)
