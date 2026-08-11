@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 330" width="720" height="330" role="img" aria-labelledby="judul">
+  <title id="judul">Skema tumpuan dan beban: pier dijepit, pile membebani ke atas</title>
+  <style>
+    :root { color-scheme: light dark; }
+    .cap   { fill: #93c5fd; fill-opacity: .16; stroke: #1d4ed8; stroke-width: 2; }
+    .pier  { fill: #f87171; fill-opacity: .3; stroke: #b91c1c; stroke-width: 1.5; }
+    .pilec { fill: #38bdf8; fill-opacity: .3; stroke: #0369a1; stroke-width: 1.5; }
+    .load  { stroke: #0369a1; stroke-width: 2; }
+    .hatch { stroke: #b91c1c; stroke-width: 1.2; }
+    .t   { font: 13px sans-serif; fill: #334155; }
+    .tb  { font: 500 13px sans-serif; fill: #0f172a; }
+    .ts  { font: 11.5px sans-serif; fill: #64748b; }
+    .key { font: 12px monospace; fill: #0f172a; }
+    @media (prefers-color-scheme: dark) {
+      .t {fill:#cbd5e1;} .tb {fill:#f1f5f9;} .ts {fill:#94a3b8;} .key {fill:#f1f5f9;}
+      .cap {stroke:#60a5fa;} .pier {stroke:#f87171;} .pilec {stroke:#38bdf8;}
+      .load {stroke:#38bdf8;} .hatch {stroke:#f87171;}
+    }
+  </style>
+
+  <text class="tb" x="30" y="34">Potongan melintang — inilah inti pemodelannya</text>
+  <text class="ts" x="30" y="54">Pile BUKAN tumpuan. Reaksi pile yang sudah Anda ketahui menjadi beban ke atas; pier yang dijepit.</text>
+
+  <rect class="cap" x="90" y="120" width="420" height="60"/>
+
+  <rect class="pier" x="255" y="120" width="90" height="60"/>
+  <g class="hatch">
+    <line x1="255" y1="112" x2="345" y2="112"/>
+    <line x1="259" y1="112" x2="249" y2="102"/>
+    <line x1="277" y1="112" x2="267" y2="102"/>
+    <line x1="295" y1="112" x2="285" y2="102"/>
+    <line x1="313" y1="112" x2="303" y2="102"/>
+    <line x1="331" y1="112" x2="321" y2="102"/>
+    <line x1="349" y1="112" x2="339" y2="102"/>
+  </g>
+  <text class="tb" x="300" y="155" text-anchor="middle">PIER</text>
+  <text class="ts" x="300" y="94" text-anchor="middle">dijepit 6 DOF</text>
+
+  <rect class="pilec" x="120" y="180" width="60" height="70"/>
+  <rect class="pilec" x="420" y="180" width="60" height="70"/>
+  <text class="ts" x="150" y="222" text-anchor="middle">pile</text>
+  <text class="ts" x="450" y="222" text-anchor="middle">pile</text>
+
+  <g class="load">
+    <line x1="135" y1="212" x2="135" y2="184"/><path d="M131 190 L135 180 L139 190 Z" fill="#0369a1"/>
+    <line x1="150" y1="212" x2="150" y2="184"/><path d="M146 190 L150 180 L154 190 Z" fill="#0369a1"/>
+    <line x1="165" y1="212" x2="165" y2="184"/><path d="M161 190 L165 180 L169 190 Z" fill="#0369a1"/>
+    <line x1="435" y1="212" x2="435" y2="184"/><path d="M431 190 L435 180 L439 190 Z" fill="#0369a1"/>
+    <line x1="450" y1="212" x2="450" y2="184"/><path d="M446 190 L450 180 L454 190 Z" fill="#0369a1"/>
+    <line x1="465" y1="212" x2="465" y2="184"/><path d="M461 190 L465 180 L469 190 Z" fill="#0369a1"/>
+  </g>
+  <text class="ts" x="150" y="268" text-anchor="middle">Pz ke ATAS</text>
+  <text class="ts" x="450" y="268" text-anchor="middle">Pz ke ATAS</text>
+
+  <line x1="196" y1="200" x2="248" y2="200" stroke="#64748b" stroke-width="1" stroke-dasharray="3 3"/>
+  <text class="ts" x="222" y="194" text-anchor="middle">a</text>
+  <text class="ts" x="222" y="216" text-anchor="middle">bentang geser</text>
+
+  <g>
+    <text class="tb" x="540" y="128">Akibatnya</text>
+    <text class="ts" x="540" y="150">Σ beban = Σ Pz, dan</text>
+    <text class="ts" x="540" y="166">Σ reaksi = −Σ Pz.</text>
+    <text class="ts" x="540" y="188">Keseimbangan dapat</text>
+    <text class="ts" x="540" y="204">diperiksa PERSIS —</text>
+    <text class="ts" x="540" y="220">itulah cek VC-0 yang</text>
+    <text class="ts" x="540" y="236">jalan tiap run.</text>
+    <text class="key" x="540" y="266">pier.support</text>
+    <text class="key" x="540" y="284">pile.modeling</text>
+  </g>
+
+  <text class="ts" x="30" y="310">Momen desain dibaca di MUKA pier, bukan di sumbunya — di sumbu tumpuan momen bersifat singular.</text>
+</svg>

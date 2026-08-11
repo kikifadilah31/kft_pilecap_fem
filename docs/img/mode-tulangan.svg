@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 300" width="720" height="300" role="img" aria-labelledby="judul">
+  <title id="judul">Dua mode pemilihan tulangan: spacing_fixed dan diameter_fixed</title>
+  <style>
+    :root { color-scheme: light dark; }
+    .conc { fill: #cbd5e1; fill-opacity: .35; stroke: #64748b; stroke-width: 1.5; }
+    .barA { fill: #0369a1; }
+    .barB { fill: #b45309; }
+    .dim  { stroke: #64748b; stroke-width: 1; }
+    .box  { fill: none; stroke: #94a3b8; stroke-width: 1; }
+    .t   { font: 13px sans-serif; fill: #334155; }
+    .tb  { font: 500 13px sans-serif; fill: #0f172a; }
+    .ts  { font: 11.5px sans-serif; fill: #64748b; }
+    .key { font: 12px monospace; fill: #0f172a; }
+    @media (prefers-color-scheme: dark) {
+      .t {fill:#cbd5e1;} .tb {fill:#f1f5f9;} .ts {fill:#94a3b8;} .key {fill:#f1f5f9;}
+      .conc {fill:#475569; stroke:#94a3b8;} .dim,.box {stroke:#94a3b8;}
+      .barA {fill:#38bdf8;} .barB {fill:#fbbf24;}
+    }
+  </style>
+
+  <text class="ts" x="30" y="28">Keduanya memenuhi As yang sama. Anda menetapkan SATU hal, tool menghitung sisanya.</text>
+
+  <rect class="box" x="30" y="46" width="320" height="200" rx="6"/>
+  <text class="tb" x="46" y="70">spacing_fixed</text>
+  <text class="ts" x="46" y="90">Anda tetapkan SPASI → tool pilih DIAMETER</text>
+
+  <rect class="conc" x="46" y="110" width="288" height="46"/>
+  <circle class="barA" cx="70"  cy="140" r="7"/>
+  <circle class="barA" cx="118" cy="140" r="7"/>
+  <circle class="barA" cx="166" cy="140" r="7"/>
+  <circle class="barA" cx="214" cy="140" r="7"/>
+  <circle class="barA" cx="262" cy="140" r="7"/>
+  <circle class="barA" cx="310" cy="140" r="7"/>
+  <line class="dim" x1="70" y1="172" x2="118" y2="172"/>
+  <line class="dim" x1="70" y1="166" x2="70" y2="178"/>
+  <line class="dim" x1="118" y1="166" x2="118" y2="178"/>
+  <text class="ts" x="94" y="192" text-anchor="middle">150 mm — Anda</text>
+  <text class="key" x="46" y="216">design.rebar_spacing</text>
+  <text class="ts" x="46" y="236">Hasil: D16, D19, … dipilih tool per lajur</text>
+
+  <rect class="box" x="370" y="46" width="320" height="200" rx="6"/>
+  <text class="tb" x="386" y="70">diameter_fixed</text>
+  <text class="ts" x="386" y="90">Anda tetapkan BATANG → tool hitung SPASI</text>
+
+  <rect class="conc" x="386" y="110" width="288" height="46"/>
+  <circle class="barB" cx="412" cy="140" r="10"/>
+  <circle class="barB" cx="500" cy="140" r="10"/>
+  <circle class="barB" cx="588" cy="140" r="10"/>
+  <circle class="barB" cx="666" cy="140" r="10"/>
+  <line class="dim" x1="412" y1="172" x2="500" y2="172"/>
+  <line class="dim" x1="412" y1="166" x2="412" y2="178"/>
+  <line class="dim" x1="500" y1="166" x2="500" y2="178"/>
+  <text class="ts" x="456" y="192" text-anchor="middle">dihitung tool</text>
+  <text class="key" x="386" y="216">design.rebar_config = "2D25"</text>
+  <text class="ts" x="386" y="236">Dibaca &lt;jumlah&gt;D&lt;diameter&gt; — 2 batang D25</text>
+
+  <text class="ts" x="30" y="274">design.rebar_select_codes membatasi pilihan ke kode yang tersedia di lapangan (mis. hanya D22 dan D25).</text>
+  <text class="ts" x="30" y="292">Bila diisi, plot tulangan menjadi kategorikal berlabel kode — satu warna satu kode, bukan gradasi.</text>
+</svg>

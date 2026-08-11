@@ -119,10 +119,11 @@ maupun menghafal satu pun flag.
 
 Yang tersedia di formulir:
 
-* **Penjelasan pada setiap field.** Seluruh 58 field dan 11 bagian punya tooltip yang
+* **Penjelasan pada setiap field.** Seluruh 59 field dan 11 bagian punya tooltip yang
   ditulis untuk pembaca yang tidak akrab dengan FEM: apa yang diisi, satuannya, dan akibat
   memilih salah. Cakupannya dijaga test — field baru tanpa penjelasan akan menggagalkan
-  suite.
+  suite. Penjelasan versi panjang beserta ilustrasinya ada di
+  [Panduan lengkap `pilecap_config.json`](#panduan-lengkap-pilecap_configjson).
 * **Muat `pilecap_config.json` yang sudah ada.** Isi path-nya di kotak paling atas lalu
   tekan **Muat**; seluruh formulir terisi dan tetap dapat disunting. Kunci yang tidak
   dikenal formulir dilaporkan, tidak dibuang diam-diam.
@@ -325,6 +326,332 @@ Pada ketiga contoh residunya berada di kisaran 1e-14 sampai 1e-16.
 Internal **SI murni** (N, m, Pa). File input default **mm / kN / MPa**, dapat di-override
 lewat blok `units` di config. Konversi terjadi **hanya** di `io_utils.py`; tabel faktornya
 **hanya** di `config.py`.
+
+---
+
+## Panduan lengkap `pilecap_config.json`
+
+Seluruh masukan selain **geometri CSV** dan **reaksi pile** ada di satu berkas JSON ini.
+Bagian di bawah menjelaskan **setiap** field: apa artinya, ke mana efeknya, dan apa
+akibatnya bila salah.
+
+**Daftar isi:** [Gambaran model](#gambaran-model--siapa-menumpu-siapa) ·
+[Sistem koordinat](#sistem-koordinat--satu-titik-untuk-tiga-blok) ·
+[`project`](#project--identitas-run) · [`units`](#units--satuan-yang-anda-ketik) ·
+[`pilecap`](#pilecap--pelatnya) · [`pile`](#pile--tiang) · [`pier`](#pier--kolompilar) ·
+[`material`](#material--beton) · [`mesh`](#mesh--kehalusan-diskretisasi) ·
+[`analysis`](#analysis--pilihan-numerik) · [`design`](#design--umum) ·
+[Pemilihan tulangan](#design--pemilihan-tulangan) · [Sengkang](#design--sengkang) ·
+[Override CSV](#kapan-config-diabaikan--override-csv) ·
+[Ringkasan wajib/opsional](#ringkasan--wajib-opsional-dan-bawaan)
+
+Cara membaca kolom **Bawaan** — ketiganya **diperiksa langsung terhadap tool**, bukan
+disimpulkan dari kode:
+
+| Isi kolom | Artinya |
+|---|---|
+| `—` | **Wajib ada.** Tool berhenti dengan pesan jelas bila tidak ada — tidak pernah menebak. |
+| suatu nilai | Boleh dihilangkan; nilai itu yang dipakai. Umumnya pilihan numerik, bukan angka rekayasa. |
+| `null` | Fitur **mati** bila dikosongkan. Mengisinya adalah keputusan sadar Anda dan tercatat di manifest. |
+
+> **Punya bawaan ≠ boleh diabaikan.** Beberapa field berbawaan tetap menentukan hasil —
+> `design.strips_x` mengubah tabel angka desain, `pile.modeling` mengubah bentuk momen di
+> kepala tiang. Bawaan hanya berarti tool tidak berhenti; ia tidak berarti pilihannya tidak
+> penting.
+
+> Kunci yang tidak dikenal **diabaikan diam-diam**, kecuali di dalam blok `units` yang
+> menolaknya. Karena itu contoh bawaan memakai kunci `_catatan` sebagai komentar — JSON
+> tidak punya sintaks komentar.
+
+### Gambaran model — siapa menumpu siapa
+
+Ini yang paling sering membingungkan di awal, dan menentukan arti hampir semua field
+lainnya: **pile bukan tumpuan.**
+
+![Skema tumpuan dan beban](docs/img/skema-tumpuan-beban.svg)
+
+Reaksi pile `Pz` yang sudah Anda ketahui dari analisis struktur atas dimasukkan sebagai
+**beban ke atas** pada lingkaran kepala tiang, dan **pier**-lah yang dijepit. Konsekuensinya
+disengaja: karena bebannya sudah diketahui, keseimbangan dapat diperiksa **persis** setiap
+run — itulah cek VC-0.
+
+### Sistem koordinat — satu titik untuk tiga blok
+
+![Sistem koordinat](docs/img/sistem-koordinat.svg)
+
+`pilecap.origin`, `pile.grid_origin`, dan `pier.centerline` memakai **sistem koordinat yang
+sama**. Cara paling aman: biarkan ketiganya `[0, 0]` dan biarkan semuanya berpusat di tengah
+pilecap. Bila salah satu digeser tanpa yang lain, geometrinya tetap sah secara JSON tetapi
+menjadi model yang berbeda dari yang Anda maksud — periksa `mesh_plan.png` atau tombol
+**Perbarui pratinjau** di UI sebelum menganalisis.
+
+### `project` — identitas run
+
+Tidak memengaruhi satu pun angka, tetapi ikut tercetak di kop **setiap** gambar, di
+`calc_sheet.md`, dan di `run_manifest.json`. Itulah yang membuat hasil dapat ditelusuri
+kembali ke pekerjaan dan orangnya.
+
+| Field | Bawaan | Arti |
+|---|---|---|
+| `project.name` | kosong | Judul di setiap plot dan kepala laporan. Mis. `"Jembatan A - Pilecap P3"`. |
+| `project.engineer` | kosong | Penanggung jawab perhitungan. |
+| `project.date` | kosong | Tanggal **desain**, bukan tanggal run (waktu run dicatat otomatis dan terpisah). `YYYY-MM-DD` memudahkan pengurutan. |
+
+Tool **tidak menolak** blok ini bila kosong — ia bukan angka rekayasa. Tetapi laporan tanpa
+nama dan tanpa penanggung jawab kehilangan justru jejak yang membuatnya dapat diaudit, jadi
+perlakukan ketiganya sebagai wajib dalam praktik.
+
+### `units` — satuan yang Anda ketik
+
+Seluruh blok ini boleh dihilangkan; bawaannya **mm / kN / MPa**.
+
+| Field | Pilihan | Bawaan | Berlaku untuk |
+|---|---|---|---|
+| `units.length` | `mm`, `cm`, `m` | `mm` | Tebal, panjang, diameter, spasi, selimut — **termasuk CSV geometri**. |
+| `units.force` | `N`, `kN`, `MN` | `kN` | `Pz` di `pile_reactions.csv` dan berat jenis beton. |
+| `units.stress` | `Pa`, `kPa`, `MPa`, `GPa` | `MPa` | `f'c`, `E`, `fy`. 1 MPa = 1 N/mm² — satuan SNI 2847:2019. |
+
+> **Ini satu-satunya kesalahan yang tidak dapat dideteksi tool.** 1200 mm dan 1200 m
+> sama-sama angka yang sah. Pastikan pilihan di sini cocok dengan angka yang benar-benar
+> Anda ketik.
+
+### `pilecap` — pelatnya
+
+| Field | Satuan | Bawaan | Arti |
+|---|---|---|---|
+| `pilecap.thickness` | panjang | `—` | Tebal pelat. **Besaran paling berpengaruh di seluruh model:** kekakuan lentur sebanding tebal **pangkat tiga**, jadi tebal meleset 10% menggeser lendutan ~30%. Menentukan juga tinggi efektif `d` dan kapasitas geser. |
+| `pilecap.length_x` | panjang | `—` | Ukuran arah X. **Diabaikan** bila ada CSV poligon pilecap. |
+| `pilecap.length_y` | panjang | `—` | Ukuran arah Y. Sama, diabaikan bila ada CSV poligon. |
+| `pilecap.origin` | panjang | `—` | Koordinat **titik pusat**, bukan sudut. |
+
+### `pile` — tiang
+
+| Field | Satuan | Bawaan | Arti |
+|---|---|---|---|
+| `pile.diameter` | panjang | `—` | Diameter kepala tiang — luas lingkaran tempat `Pz` disebar. Diameter lebih kecil memusatkan beban dan menaikkan momen lokal. Selalu dibutuhkan, juga sebagai bawaan bila CSV koordinat pile tidak punya kolom diameter. |
+| `pile.n_col` | – | `—` | Jumlah pile arah X pada susunan grid. Total = kolom × baris. |
+| `pile.n_row` | – | `—` | Jumlah pile arah Y. |
+| `pile.spacing_x` | panjang | `—` | Jarak antar sumbu pile arah X. Praktik umum menuntut ≥ 3× diameter; tool menolak pile yang **tumpang tindih**, tetapi kecukupan jarak terhadap standar tetap keputusan Anda. |
+| `pile.spacing_y` | panjang | `—` | Jarak arah Y. Boleh berbeda dari X. |
+| `pile.grid_origin` | panjang | `—` | Titik pusat susunan pile; grid dibangun simetris terhadapnya. |
+| `pile.modeling` | – | `pressure` | `pressure` (disarankan) menyebar `Pz` merata pada seluruh lingkaran — mendekati kenyataan, momen halus. `nodal` menaruhnya sebagai gaya titik di node yang sama; total identik, momen di kepala tiang lebih runcing. Keduanya lulus VC-0. |
+
+Seluruh blok `n_col`/`n_row`/`spacing_*`/`grid_origin` **diabaikan** bila ada CSV koordinat
+pile — untuk susunan tidak teratur, pakai CSV.
+
+### `pier` — kolom/pilar
+
+Pier menjadi **tumpuan**: seluruh node di dalam daerahnya dijepit penuh 6 DOF.
+
+| Field | Satuan | Bawaan | Arti |
+|---|---|---|---|
+| `pier.shape` | – | `—` | `rectangular` (minta lebar X & Y) atau `circular` (minta satu diameter). Menentukan letak muka pier tempat momen desain dibaca. |
+| `pier.width_x` | panjang | `—` ᵃ | Ukuran searah X. **Harus ukuran sebenarnya**, bukan pembulatan ke atas: makin lebar, makin luas daerah jepit dan makin kecil momen di mukanya. |
+| `pier.width_y` | panjang | `—` ᵃ | Ukuran searah Y. |
+| `pier.diameter` | panjang | `—` ᵇ | Diameter pier bulat. |
+| `pier.centerline` | panjang | `—` | Koordinat sumbu pier. Untuk **lebih dari satu pier**, pakai CSV poligon pier. |
+| `pier.support` | – | `fixed` | Hanya jepit penuh 6 DOF di v1.0. Tumpuan pegas belum ada dan sengaja tidak ditawarkan agar tidak ada pilihan yang tampak ada tetapi tidak berfungsi (PRD Bagian 17 item 11). |
+| `pier.max_pile_overlap_fraction` | – | `null` | Lihat di bawah. |
+
+<sub>ᵃ hanya bila `shape` = `rectangular` — ᵇ hanya bila `shape` = `circular`</sub>
+
+#### `pier.max_pile_overlap_fraction` — mengizinkan pile menindih pier
+
+![Tumpang tindih pile dengan pier](docs/img/tumpang-tindih-pile-pier.svg)
+
+Kosong (bawaan) = pile **tidak boleh** menindih pier; run ditolak bila ternyata menindih.
+Diisi (mis. `0.15`) = Anda mengizinkan sampai fraksi itu — paling banyak 15% luas pile
+berada di dalam pier.
+
+Bagian yang berada di dalam footprint pier **tidak melenturkan pelat**: pier dimodelkan
+jepit sempurna, jadi gaya di sana tersalur langsung ke pier sebagai **aksi strut**, dan
+**tool tidak menghitung kapasitasnya** — itu wajib Anda cek terpisah. Uraian lengkap
+beserta batas bocoran mesh ada di
+[bagiannya sendiri](#pile-yang-tumpang-tindih-dengan-pier-piermax_pile_overlap_fraction).
+
+### `material` — beton
+
+Pelat dimodelkan **elastis linier**: satu `E` dan satu Poisson untuk seluruh pelat. Retak,
+rangkak, dan susut **tidak** dimodelkan.
+
+| Field | Satuan | Bawaan | Arti |
+|---|---|---|---|
+| `material.fc` | tegangan | `—` | Kuat tekan silinder umur 28 hari. Dipakai kapasitas lentur & geser SNI, dan menamai material pada ekspor Midas. **TIDAK** dipakai menghitung `E`. |
+| `material.E` | tegangan | `—` | Kekakuan beton. Menentukan **lendutan**, tetapi hampir tidak memengaruhi momen desain — tumpuannya statis tertentu terhadap beban yang sudah diketahui. Beton normal f'c 30: sekitar 25.000–27.000 MPa. |
+| `material.E_source` | – | `—` | **Wajib, run ditolak bila kosong.** Dari mana `E` berasal — satu-satunya jejak yang membuat angka itu dapat diperiksa orang lain. Mis. `"SNI 2847:2019 Ps. 19.2.2.1 untuk wc=2400"`, `"uji lab 2026-01-15"`, atau `"0,5 Ec untuk memperhitungkan retak"`. |
+| `material.poisson` | – | `—` | Lazimnya 0,15–0,20 untuk beton. Ikut menentukan seberapa besar momen satu arah membangkitkan momen arah tegak lurusnya; nyata, tetapi jauh lebih kecil daripada pengaruh tebal. |
+| `material.density` | kN/m³ | `null` | Lazimnya 24. **Hanya** dipakai bila `analysis.include_self_weight` menyala. |
+
+> Tool **tidak pernah** menghitung `E` dari `f'c`: rumusnya belum dikonfirmasi pasalnya, dan
+> angka tanpa sumber dilarang (PRD Bagian 1.3 poin 2). Bila Anda ingin memperhitungkan
+> penurunan kekakuan akibat retak, turunkan sendiri `E` dan tuliskan alasannya di
+> `E_source`.
+
+### `mesh` — kehalusan diskretisasi
+
+Pelat dipotong menjadi ribuan elemen segi empat. Hubungannya **tidak linier**: memperkecil
+ukuran jadi setengah membuat jumlah elemen **empat kali**.
+
+| Field | Satuan | Bawaan | Arti |
+|---|---|---|---|
+| `mesh.size_mode` | – | `uniform` | `uniform` = satu ukuran di seluruh pelat, paling mudah diprediksi. `graded` = memperhalus hanya di sekitar pile dan/atau pier, sehingga teliti dengan elemen lebih sedikit. |
+| `mesh.size_global` | panjang | `—` | Panjang sisi elemen. **Patokan: ≤ 1/6 diameter pile** — di bawah itu run ditolak (rule 7a). Terlalu besar membuat lingkaran pile tampak kotak; terlalu kecil hanya memperlama hitungan. |
+| `mesh.size_local_pile` | panjang | `null` | Ukuran di daerah kepala tiang pada mode `graded`. Harus ≤ ukuran global. |
+| `mesh.size_local_pier` | panjang | `null` | Ukuran di daerah pier pada mode `graded`. **Di sinilah momen desain dibaca**, jadi memperhalusnya langsung memperbaiki ketelitian angka yang Anda pakai. |
+| `mesh.algorithm` | – | `11` | Algoritma gmsh. 11 = Quasi-structured Quad, bagian dari kontrak numerik tool ini. |
+| `mesh.recombination_algorithm` | – | `3` | 3 = Blossom full-quad, yang memaksa hasil 100% segi empat. |
+| `mesh.recombine` | – | `true` | Harus menyala: `ShellMITC4` hanya menerima segi empat 4 titik. |
+| `mesh.require_all_quad` | – | `true` | **Biarkan menyala.** Mematikannya membuat run berlanjut dengan mesh yang tidak sepenuhnya dapat dianalisis — kesalahan yang tidak terlihat di gambar mana pun. |
+| `mesh.element_order` | – | `1` | Hanya orde 1 yang didukung; `ShellMITC4` memang elemen 4 titik. |
+
+Pada mode `graded`, **salah satu** dari `size_local_pile` / `size_local_pier` wajib diisi.
+
+### `analysis` — pilihan numerik
+
+| Field | Bawaan | Arti |
+|---|---|---|
+| `analysis.shell_element` | `ShellMITC4` | Elemen 4 titik MITC yang memperhitungkan **deformasi geser melintang** (pelat tebal Mindlin–Reissner). Bawaan karena pilecap umumnya tebal terhadap bentangnya. `ShellDKGQ` adalah elemen pelat **tipis** (Kirchhoff) yang mengabaikan geser melintang dan akan **meremehkan lendutan** pada pelat setebal ini; `ShellNLDKGQ` versinya dengan nonlinieritas geometri. Keduanya tidak diperlukan pada analisis elastis linier. |
+| `analysis.section` | `PlateFiber` | Satu material elastis terintegrasi pada tebal penuh — yang sesuai di sini. `LayeredShell` membagi tebal jadi beberapa lapis dan baru bermanfaat bila tiap lapis bermaterial berbeda; pada satu material hasilnya sama tetapi lebih lambat. |
+| `analysis.n_layers` | `10` | Jumlah lapis pada `LayeredShell` saja. Minimal 2. |
+| `analysis.include_self_weight` | `false` | Menambah berat pilecap sendiri sebagai beban merata ke bawah. |
+
+> **`include_self_weight` — hati-hati hitungan ganda.** Pada banyak alur kerja, `Pz` yang
+> keluar dari analisis struktur atas **sudah** memuat berat pilecap. Centang hanya bila Anda
+> yakin belum. Menyalakannya juga membuat Σ beban tidak lagi sama dengan Σ `Pz`
+> (PRD Bagian 17 item 6 masih terbuka).
+
+### `design` — umum
+
+| Field | Satuan | Bawaan | Arti |
+|---|---|---|---|
+| `design.code` | – | kosong | **Label yang dicetak, bukan sakelar.** Mengubah teksnya tidak mengubah rumus mana pun — perhitungan selalu mengikuti SNI 2847:2019 sebagaimana diterapkan `shell-kit`. |
+| `design.cover` | panjang | `—` | Tebal beton sampai sisi luar tulangan. Menentukan `d`, yang langsung menentukan kebutuhan tulangan: selimut lebih tebal → `d` lebih kecil → tulangan lebih banyak. SNI menuntut 75 mm untuk beton yang dicor langsung di atas tanah. |
+| `design.fy` | tegangan | `—` | Tegangan leleh baja. Berbanding **terbalik** dengan luas tulangan — salah mengisinya langsung menggeser seluruh hasil. |
+| `design.fy_source` | – | `—` | **Wajib, run ditolak bila kosong.** `shell-kit` punya `DEFAULT_FY = 420` tetapi tool ini tidak memakainya diam-diam. Mis. `"BjTS 420B, SNI 2052:2017"`. |
+| `design.phi_flexure` | – | `null` | Faktor reduksi lentur. Kosong = 0,90 bawaan SNI dari `shell-kit`; asalnya tetap dicetak di calc sheet. |
+| `design.phi_shear` | – | `null` | Faktor reduksi geser. Kosong = 0,75. Lebih kecil daripada `phi` lentur karena keruntuhan geser getas dan lebih sulit diprediksi. |
+| `design.as_min_surface_zone` | panjang | `null` | Kosong = murni SNI 2847:2019. Diisi (mis. `300`) = mengikuti ACI 350-06 Ps. 7.12.2.1 untuk elemen tebal. **Pada pilecap tebal ini mengubah hampir seluruh hasil lentur** — lihat [bagiannya](#designas_min_surface_zone--opsional-tetapi-berdampak-besar). |
+
+### `design` — pemilihan tulangan
+
+Dari `As` yang dibutuhkan, tool memilih batang yang benar-benar dapat dipasang. Anda
+menetapkan **satu** hal, tool menghitung sisanya.
+
+![Dua mode pemilihan tulangan](docs/img/mode-tulangan.svg)
+
+| Field | Satuan | Bawaan | Arti |
+|---|---|---|---|
+| `design.rebar_mode` | – | `—` | `spacing_fixed` = Anda tetapkan spasi, tool pilih diameter. `diameter_fixed` = Anda tetapkan batang, tool hitung spasi. |
+| `design.rebar_spacing` | panjang | `—` ᶜ | Jarak antar batang. Tool memilih diameter terkecil dari daftar standar yang masih memenuhi `As`. 150–200 mm lazim untuk pilecap. |
+| `design.rebar_config` | – | `—` ᵈ | Susunan batang, dibaca `<jumlah>D<diameter>`: `"2D25"` = dua batang D25 per titik pemasangan. Daftarnya datang langsung dari `shell-kit`. |
+| `design.rebar_select_codes` | – | `null` | Batasi pilihan ke kode tertentu, mis. bila di lapangan hanya tersedia D22 dan D25. Bila diisi, plot tulangan menjadi **kategorikal** berlabel kode. |
+| `design.strips_x` | – | `5` | Lihat di bawah. |
+| `design.strips_y` | – | `5` | Lihat di bawah. |
+| `design.moment_at` | – | `pier_face` | Lihat di bawah. |
+
+<sub>ᶜ hanya pada `spacing_fixed` — ᵈ hanya pada `diameter_fixed`</sub>
+
+#### Lajur momen: `strips_x`, `strips_y`, dan `moment_at`
+
+![Lajur momen desain](docs/img/lajur-momen.svg)
+
+Kedua field ini **bukan** soal orientasi lajur di ruang, melainkan **momen mana** yang
+dihitung di sana:
+
+* **`strips_x`** → jumlah lajur untuk `m_xx`, yang menentukan **tulangan arah X**.
+  Potongannya di kedua **muka pier arah X**; tinggi pilecap (arah Y) dibagi jadi `strips_x`
+  pita, tiap pita menghasilkan **satu** momen desain.
+* **`strips_y`** → simetris: `m_yy` → **tulangan arah Y**, potongan di muka pier arah Y,
+  lebar pilecap (arah X) yang dibagi.
+
+Pada `ex01` dengan 5 lajur × 2 sisi × 2 arah hasilnya **20 baris** — persis isi tabel
+`calc_sheet.md` bagian 7a dan `strip_moments_*.csv`.
+
+**Ke mana efeknya sampai** — ini yang sering membingungkan, karena `As` muncul di dua tempat
+dan hanya satu yang dipengaruhi:
+
+| Keluaran | Dipengaruhi `strips_x/y`? | Perannya |
+|---|---|---|
+| `strip_moments_*.csv`, calc sheet bagian 6 & 7a | **Ya** | **Inilah `As` yang dipakai** — momen desain resmi |
+| `rebar_design.csv`, `contour_As_*.png` | **Tidak** | Peta per elemen, murni **orientasi** sebaran; dihitung langsung dari medan elemen |
+
+Lebih banyak lajur = penulangan lebih mengikuti sebaran momen, tetapi gambar kerja lebih
+rumit. Lebih sedikit = lebih sederhana, tetapi tiap lajur merata-ratakan muka yang lebih
+panjang sehingga puncak lokal bisa teredam. **5 lajur per arah lazim.**
+
+`moment_at` menentukan **di titik mana** momen dibaca:
+
+| Nilai | Arti |
+|---|---|
+| `pier_face` (bawaan) | Di muka pier, sesuai praktik SNI. **Satu-satunya yang sah dipakai desain.** |
+| `peak` | Nilai terbesar di mana pun — pada model pelat selalu jatuh **tepat di tepi zona jepit**. **Singularitas numerik:** angkanya membesar terus setiap kali mesh diperhalus, jadi tidak pernah konvergen. Tool tetap menghitungnya dan menandainya `SINGULAR`, tetapi tanda itu bukan pengganti keputusan Anda. |
+| `both` | Mencetak keduanya berdampingan untuk perbandingan; baris `pier_face` tetap yang dipakai. |
+
+### `design` — sengkang
+
+Sengkang adalah tulangan **vertikal** yang menembus tebal pilecap untuk menahan geser,
+dipasang sebagai kisi dengan dua spasi. **Keduanya bersama** menentukan luas yang dipikul
+satu kaki sengkang, sehingga keduanya wajib.
+
+| Field | Satuan | Bawaan | Arti |
+|---|---|---|---|
+| `design.stirrup_spacing_long` | panjang | `—` | Jarak antar sengkang searah X. |
+| `design.stirrup_spacing_trans` | panjang | `—` | Jarak antar sengkang searah Y. Luas tributari satu kaki = hasil kali kedua spasi. |
+| `design.stirrup_select_diameters` | – | `null` | Batasi ke diameter yang tersedia di lapangan. Kosong = daftar bawaan `shell-kit` (D10–D25). Daerah yang butuh lebih besar daripada diameter terbesar yang diizinkan ditandai **TIDAK MEMADAI** di plot, bukan dibulatkan diam-diam. |
+
+Pada banyak pilecap tebal, geser terpenuhi oleh beton saja dan tool melaporkan "tanpa
+sengkang" di sebagian besar luasan — **itu hasil yang sah**, bukan kegagalan hitungan.
+
+### Kapan config diabaikan — override CSV
+
+Bila berkas CSV geometri terdeteksi di folder input, **blok JSON terkait diabaikan
+seluruhnya**:
+
+| CSV di folder input | Yang diabaikan dari JSON |
+|---|---|
+| `*pilecap*polygon*.csv` | `pilecap.length_x`, `length_y`, `origin` (tebal **tetap** dari JSON) |
+| `*pile*coord*.csv` | `pile.n_col`, `n_row`, `spacing_x`, `spacing_y`, `grid_origin` |
+| `*pier*polygon*.csv` | `pier.shape`, `width_x`, `width_y`, `diameter`, `centerline` |
+
+Setiap override diteriakkan sebagai **WARNING 5 baris** di log, dicatat di
+`run_manifest.json`, dan muncul sebagai baris PERINGATAN berwarna di kop setiap gambar —
+tidak pernah diam-diam. Pakai `--no-custom` untuk memaksa memakai parameter JSON.
+
+### Ringkasan — wajib, opsional, dan bawaan
+
+**Sembilan field ini opsional** (`null` = fitur mati):
+
+`pier.max_pile_overlap_fraction` · `material.density` · `mesh.size_local_pile` ·
+`mesh.size_local_pier` · `design.phi_flexure` · `design.phi_shear` ·
+`design.as_min_surface_zone` · `design.rebar_select_codes` ·
+`design.stirrup_select_diameters`
+
+**Punya bawaan** — boleh dihilangkan, tetapi tetap menentukan hasil: seluruh blok
+`project`, `units`, dan `analysis`; seluruh blok `mesh` **kecuali** `size_global`;
+`pile.modeling`, `pier.support`, `design.code`, `design.strips_x`, `design.strips_y`,
+`design.moment_at`.
+
+**Sisanya wajib** — run **ditolak** bila tidak ada:
+
+| Blok | Field wajib |
+|---|---|
+| `pilecap` | `thickness`, `length_x`, `length_y`, `origin` |
+| `pile` | `diameter`, `n_col`, `n_row`, `spacing_x`, `spacing_y`, `grid_origin` |
+| `pier` | `shape`, `centerline`, dan `width_x`+`width_y` **atau** `diameter` |
+| `material` | `fc`, `E`, `E_source`, `poisson` |
+| `mesh` | `size_global` |
+| `design` | `cover`, `fy`, `fy_source`, `rebar_mode`, `rebar_spacing`/`rebar_config`, `stirrup_spacing_long`, `stirrup_spacing_trans` |
+
+Empat di antaranya paling sering terlewat karena tidak punya bawaan yang masuk akal:
+`material.E`, `material.E_source`, `design.fy`, `design.fy_source` — lihat
+[Nilai yang WAJIB Anda tetapkan sendiri](#nilai-yang-wajib-anda-tetapkan-sendiri).
+
+> Penjelasan di bagian ini dan tooltip di `pilecap-ui` berasal dari daftar field yang sama
+> (`src/pilecap_fem/ui/schema.py`). Test `test_readme_mendokumentasikan_setiap_field`
+> menggagalkan suite bila ada field baru yang belum masuk ke sini — supaya keduanya tidak
+> menyimpang diam-diam.
+
+---
 
 ## Contoh
 

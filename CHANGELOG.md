@@ -4,6 +4,36 @@ Format mengikuti template PRD Bagian 16C.
 
 ## [Unreleased]
 
+### Added — panduan lengkap `pilecap_config.json` di README, dengan ilustrasi
+
+Seluruh **59 field** dari 11 blok kini dijelaskan di README: arti, satuan, bawaan, ke mana
+efeknya sampai, dan apa akibatnya bila salah. Lima ilustrasi SVG di `docs/img/` untuk konsep
+yang sulit dijelaskan dengan teks saja — skema tumpuan/beban (pile membebani, pier menumpu),
+sistem koordinat bersama, lajur momen `strips_x`/`strips_y`, dua mode pemilihan tulangan, dan
+anatomi tumpang tindih pile–pier.
+
+**Kolom "Bawaan" DIUKUR terhadap tool, bukan disimpulkan dari kode:** setiap kunci dihapus
+satu per satu dari `examples/ex01`, lalu dilihat apakah validator benar-benar menolaknya.
+Pengukuran itu membetulkan tujuh baris yang sudah sempat ditulis salah — `project.*` (3),
+`units.*` (3), dan `design.code` ternyata **punya bawaan**, bukan wajib seperti dugaan awal.
+Yang benar-benar ditolak bila tidak ada berjumlah **26 field** (pier persegi; 25 bila pier
+bulat), dan daftarnya kini ada di README apa adanya.
+
+**Dijaga test, bukan diharapkan.** Penjelasan di README dan tooltip di `pilecap-ui` ditulis
+untuk pembaca berbeda sehingga teksnya memang tidak sama — tetapi **cakupannya** tidak boleh
+berbeda. Tiga test baru di `tests/test_packaging.py`:
+
+* `test_readme_mendokumentasikan_setiap_field` — field baru di `ui/schema.py` yang lupa
+  didokumentasikan menggagalkan suite. Sekaligus mengunci jumlah field & bagian yang disebut
+  README, karena angka basi merusak kepercayaan pada dokumen selebihnya.
+* `test_readme_tidak_menyebut_field_yang_tidak_ada` — arah sebaliknya: field yang dihapus
+  dari schema tidak boleh tertinggal di dokumentasi.
+* `test_ilustrasi_readme_ada_berkasnya` — tautan gambar yang putus baru terlihat setelah
+  README dibuka di GitHub, yaitu setelah dirilis. Terlambat.
+
+Ketemu sambil menghitung: README menyebut "58 field" padahal sudah 59 sejak
+`pier.max_pile_overlap_fraction` ditambahkan di v0.9.0.
+
 ### Fixed — bocoran mesh pada tumpang tindih pile–pier tidak dibatasi, dan arahnya TIDAK AMAN
 
 v0.9.0 memisahkan komponen **strut** (geometri) dari **bocor mesh** (diskretisasi) dan

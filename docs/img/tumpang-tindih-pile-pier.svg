@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 330" width="720" height="330" role="img" aria-labelledby="judul">
+  <title id="judul">Tumpang tindih pile dengan pier: lensa, bulan sabit, dan bocoran mesh</title>
+  <style>
+    :root { color-scheme: light dark; }
+    .pier  { fill: #f87171; fill-opacity: .22; stroke: #b91c1c; stroke-width: 1.5; }
+    .cres  { fill: #38bdf8; fill-opacity: .28; stroke: #0369a1; stroke-width: 1.5; }
+    .lens  { fill: #a78bfa; fill-opacity: .55; stroke: #6d28d9; stroke-width: 1.5; }
+    .chord { stroke: #6d28d9; stroke-width: 2; }
+    .lead  { stroke: #64748b; stroke-width: 1; stroke-dasharray: 3 3; }
+    .t   { font: 13px sans-serif; fill: #334155; }
+    .tb  { font: 500 13px sans-serif; fill: #0f172a; }
+    .ts  { font: 11.5px sans-serif; fill: #64748b; }
+    .key { font: 12px monospace; fill: #0f172a; }
+    @media (prefers-color-scheme: dark) {
+      .t {fill:#cbd5e1;} .tb {fill:#f1f5f9;} .ts {fill:#94a3b8;} .key {fill:#f1f5f9;}
+      .pier {stroke:#f87171;} .cres {stroke:#38bdf8;} .lens {fill:#a78bfa; stroke:#c4b5fd;}
+      .chord {stroke:#c4b5fd;} .lead {stroke:#94a3b8;}
+    }
+  </style>
+
+  <text class="tb" x="30" y="30">Bila pile menindih pier — apa yang terjadi pada bebannya</text>
+
+  <rect class="pier" x="60" y="70" width="150" height="190"/>
+  <text class="ts" x="105" y="94">PIER (dijepit)</text>
+
+  <clipPath id="kiri"><rect x="60" y="70" width="150" height="190"/></clipPath>
+  <clipPath id="kanan"><rect x="210" y="40" width="260" height="260"/></clipPath>
+  <circle class="cres" cx="255" cy="165" r="70" clip-path="url(#kanan)"/>
+  <circle class="lens" cx="255" cy="165" r="70" clip-path="url(#kiri)"/>
+  <line class="chord" x1="210" y1="111" x2="210" y2="219"/>
+
+  <line class="lead" x1="192" y1="140" x2="150" y2="122"/>
+  <text class="tb" x="146" y="118" text-anchor="end">Lensa</text>
+  <text class="ts" x="146" y="136" text-anchor="end">di dalam pier</text>
+
+  <line class="lead" x1="300" y1="130" x2="360" y2="104"/>
+  <text class="tb" x="366" y="100">Bulan sabit</text>
+  <text class="ts" x="366" y="118">membebani pelat</text>
+
+  <line class="lead" x1="210" y1="240" x2="270" y2="272"/>
+  <text class="ts" x="276" y="276">chord — sumber bocoran mesh</text>
+
+  <text class="ts" x="255" y="256" text-anchor="middle">pile</text>
+
+  <g>
+    <rect x="470" y="66" width="18" height="18" class="lens"/>
+    <text class="tb" x="498" y="80">Strut — GEOMETRI</text>
+    <text class="ts" x="498" y="98">f × Pz, tidak melenturkan pelat.</text>
+    <text class="ts" x="498" y="114">Tersalur langsung ke pier.</text>
+    <text class="ts" x="498" y="130">Kapasitasnya TIDAK dihitung tool.</text>
+
+    <rect x="470" y="152" width="18" height="18" fill="#fbbf24" fill-opacity=".5" stroke="#b45309"/>
+    <text class="tb" x="498" y="166">Bocor mesh — DISKRETISASI</text>
+    <text class="ts" x="498" y="184">Beban elemen bulan sabit yang</text>
+    <text class="ts" x="498" y="200">mendarat di node jepit di chord.</text>
+    <text class="ts" x="498" y="216">Mengecil bila mesh diperhalus.</text>
+    <text class="ts" x="498" y="232">Arahnya TIDAK aman — dibatasi.</text>
+
+    <rect x="470" y="254" width="18" height="18" class="cres"/>
+    <text class="tb" x="498" y="268">Ke pelat</text>
+    <text class="ts" x="498" y="286">Sisanya — inilah yang menghasilkan</text>
+    <text class="ts" x="498" y="302">momen dan tulangan.</text>
+  </g>
+
+  <text class="key" x="30" y="306">pier.max_pile_overlap_fraction</text>
+  <text class="ts" x="30" y="324">Kosong = tolak (bawaan). Diisi = izinkan sampai fraksi itu, dan Anda menerima konsekuensi strut di atas.</text>
+</svg>

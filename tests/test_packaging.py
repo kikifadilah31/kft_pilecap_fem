@@ -432,3 +432,79 @@ def test_modul_ui_yang_dapat_salah_diam_diam_tidak_mengimpor_streamlit():
     for name in ("schema.py", "argv.py"):
         source = (REPO / "src" / "pilecap_fem" / "ui" / name).read_text(encoding="utf-8")
         assert "import streamlit" not in source, f"{name} mengimpor streamlit"
+
+
+# ---------------------------------------------------------------------------
+# Dokumentasi config: README vs ui/schema.py
+# ---------------------------------------------------------------------------
+
+
+def _schema_field_keys() -> list[str]:
+    from pilecap_fem.ui import schema
+
+    return [f.key for s in schema.SECTIONS for f in s.fields]
+
+
+def test_readme_mendokumentasikan_setiap_field():
+    """README dan tooltip UI menjelaskan daftar field yang SAMA -- dijaga, bukan diharapkan.
+
+    Keduanya ditulis untuk pembaca berbeda (README lengkap dengan ilustrasi, tooltip ringkas
+    di formulir), jadi teksnya memang tidak sama. Yang tidak boleh berbeda adalah
+    CAKUPANNYA: field baru di `ui/schema.py` yang lupa didokumentasikan di README akan
+    menyimpang diam-diam, dan pembaca README tidak punya cara mengetahuinya.
+    """
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    keys = _schema_field_keys()
+    hilang = [key for key in keys if key not in readme]
+    assert not hilang, (
+        f"{len(hilang)} field ada di ui/schema.py tetapi tidak disebut di README.md: "
+        f"{hilang}\n"
+        "  Tambahkan ke bagian 'Panduan lengkap pilecap_config.json'."
+    )
+
+    # README menyebut jumlahnya secara eksplisit; angka yang basi adalah kesalahan kecil
+    # yang justru merusak kepercayaan pada dokumen selebihnya.
+    from pilecap_fem.ui import schema
+
+    assert f"{len(keys)} field" in readme, (
+        f"README tidak lagi menyebut jumlah field yang benar ({len(keys)})"
+    )
+    assert f"{len(schema.SECTIONS)} bagian" in readme, (
+        f"README tidak lagi menyebut jumlah bagian yang benar ({len(schema.SECTIONS)})"
+    )
+
+
+def test_readme_tidak_menyebut_field_yang_tidak_ada():
+    """Arah sebaliknya: field yang DIHAPUS dari schema tidak boleh tertinggal di README.
+
+    Tanpa ini, dokumentasi tetap menjanjikan field yang sudah tidak diterima tool -- jenis
+    kesalahan yang baru ketahuan saat pembaca mencobanya dan run-nya gagal.
+    """
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    dikenal = set(_schema_field_keys())
+    blok = {k.split(".", 1)[0] for k in dikenal}
+
+    disebut = {m for m in re.findall(r"`([a-z_]+\.[a-z_]+)`", readme) if m.split(".", 1)[0] in blok}
+    asing = sorted(disebut - dikenal)
+    assert not asing, (
+        f"README menyebut field yang tidak ada di ui/schema.py: {asing}\n"
+        "  Perbaiki namanya, atau hapus bila field-nya memang sudah tidak ada."
+    )
+
+
+def test_ilustrasi_readme_ada_berkasnya():
+    """Gambar yang ditautkan README harus benar-benar ada dan berupa SVG yang sah.
+
+    Tautan gambar yang putus baru terlihat setelah README dibuka di GitHub, yaitu setelah
+    dirilis -- terlambat.
+    """
+    import xml.etree.ElementTree as ET
+
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    tautan = re.findall(r"!\[[^\]]*\]\((docs/img/[^)]+)\)", readme)
+    assert tautan, "bagian panduan config kehilangan seluruh ilustrasinya"
+
+    for rel in tautan:
+        path = REPO / rel
+        assert path.is_file(), f"README menautkan {rel} yang tidak ada"
+        ET.parse(path)

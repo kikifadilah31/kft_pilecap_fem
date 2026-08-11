@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 430" width="720" height="430" role="img" aria-labelledby="judul">
+  <title id="judul">Sistem koordinat bersama pilecap, pile, dan pier</title>
+  <style>
+    :root { color-scheme: light dark; }
+    .bg   { fill: none; }
+    .cap  { fill: #93c5fd; fill-opacity: .16; stroke: #1d4ed8; stroke-width: 2; }
+    .pile { fill: #38bdf8; fill-opacity: .28; stroke: #0369a1; stroke-width: 1.5; }
+    .pier { fill: #f87171; fill-opacity: .22; stroke: #b91c1c; stroke-width: 1.5; }
+    .ax   { stroke: #64748b; stroke-width: 1.2; }
+    .dim  { stroke: #64748b; stroke-width: 1; stroke-dasharray: 4 3; }
+    .t    { font: 13px sans-serif; fill: #334155; }
+    .tb   { font: 500 13px sans-serif; fill: #0f172a; }
+    .ts   { font: 11.5px sans-serif; fill: #64748b; }
+    .key  { font: 12px monospace; fill: #0f172a; }
+    @media (prefers-color-scheme: dark) {
+      .t  { fill: #cbd5e1; }
+      .tb { fill: #f1f5f9; }
+      .ts { fill: #94a3b8; }
+      .key{ fill: #f1f5f9; }
+      .ax, .dim { stroke: #94a3b8; }
+      .cap  { stroke: #60a5fa; }
+      .pile { stroke: #38bdf8; }
+      .pier { stroke: #f87171; }
+    }
+  </style>
+
+  <rect class="bg" x="0" y="0" width="720" height="430"/>
+
+  <rect class="cap" x="140" y="70" width="300" height="300"/>
+  <rect class="pier" x="253" y="183" width="74" height="74"/>
+  <circle class="pile" cx="215" cy="145" r="25"/>
+  <circle class="pile" cx="365" cy="145" r="25"/>
+  <circle class="pile" cx="215" cy="295" r="25"/>
+  <circle class="pile" cx="365" cy="295" r="25"/>
+
+  <line class="ax" x1="100" y1="220" x2="480" y2="220"/>
+  <line class="ax" x1="290" y1="410" x2="290" y2="40"/>
+  <path d="M474 216 L482 220 L474 224 Z" fill="#64748b"/>
+  <path d="M286 46 L290 38 L294 46 Z" fill="#64748b"/>
+  <text class="ts" x="486" y="224">X</text>
+  <text class="ts" x="296" y="46">Y</text>
+  <circle cx="290" cy="220" r="3.5" fill="#0f172a"/>
+  <text class="ts" x="298" y="238">(0, 0)</text>
+
+  <line class="dim" x1="140" y1="392" x2="440" y2="392"/>
+  <text class="ts" x="290" y="408" text-anchor="middle">pilecap.length_x</text>
+  <line class="dim" x1="118" y1="70" x2="118" y2="370"/>
+  <text class="ts" x="112" y="224" text-anchor="end">length_y</text>
+
+  <line class="dim" x1="215" y1="145" x2="365" y2="145"/>
+  <text class="ts" x="290" y="139" text-anchor="middle">pile.spacing_x</text>
+  <line class="dim" x1="365" y1="145" x2="365" y2="295"/>
+  <text class="ts" x="373" y="224">spacing_y</text>
+
+  <g>
+    <line class="dim" x1="290" y1="220" x2="560" y2="120"/>
+    <circle cx="290" cy="220" r="2.5" fill="#64748b"/>
+    <text class="tb" x="566" y="116">Satu titik, tiga field</text>
+    <text class="key" x="566" y="136">pilecap.origin</text>
+    <text class="key" x="566" y="154">pile.grid_origin</text>
+    <text class="key" x="566" y="172">pier.centerline</text>
+    <text class="ts" x="566" y="194">Ketiganya memakai</text>
+    <text class="ts" x="566" y="210">koordinat yang SAMA.</text>
+    <text class="ts" x="566" y="226">[0,0] artinya semua</text>
+    <text class="ts" x="566" y="242">berpusat di tengah.</text>
+  </g>
+
+  <g>
+    <rect class="pier" x="566" y="286" width="16" height="16"/>
+    <text class="t" x="592" y="299">pier — DIJEPIT</text>
+    <circle class="pile" cx="574" cy="326" r="8"/>
+    <text class="t" x="592" y="331">pile — DIBEBANI</text>
+    <rect class="cap" x="566" y="350" width="16" height="16"/>
+    <text class="t" x="592" y="363">pelat pilecap</text>
+  </g>
+</svg>
