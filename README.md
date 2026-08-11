@@ -24,7 +24,7 @@ dipasang dari wheel rilis) diambil lewat HTTPS biasa.
 **PC tanpa git — pasang dari wheel rilis, disematkan ke versi tertentu:**
 
 ```bash
-uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.7.1/pilecap_fem-0.7.1-py3-none-any.whl
+uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.9.0/pilecap_fem-0.9.0-py3-none-any.whl
 ```
 
 **PC yang sudah punya git — jalankan langsung dari sumber, tanpa memasang apa pun:**
@@ -45,14 +45,45 @@ Lima hal yang perlu diketahui:
   menyebutkan persoalannya dan perintah yang benar — bukan error DLL yang membingungkan.
 - **Jalur wheel selalu tersemat ke satu versi** — nomor versinya ada di URL sendiri, jadi
   tidak perlu (dan tidak bisa) "selalu ambil terbaru" lewat jalur ini. Untuk versi lain,
-  ganti `v0.7.1` dan nama berkasnya menjadi versi yang dituju di
-  [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases).
+  ganti `v0.9.0` dan nama berkasnya menjadi versi yang dituju di
+  [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases) — lihat
+  juga "Upgrade ke versi terbaru" di bawah.
 - **`--from` wajib** pada `uvx` karena nama paket (`pilecap-fem`) berbeda dari nama
   command yang dijalankan.
-- **Sematkan tag versi** (`@v0.7.1`) pada jalur git untuk pekerjaan yang hasilnya akan
+- **Sematkan tag versi** (`@v0.9.0`) pada jalur git untuk pekerjaan yang hasilnya akan
   diperiksa kemudian. `run_manifest.json` merekam `tool_version`; dengan tag, versi itu
   dapat ditarik kembali persis. Tanpa tag, instalasi selalu mengambil `main` terbaru.
 - **Unduhan pertama ~60 MB** (gmsh saja 40 MB), lalu di-cache `uv`.
+
+### Upgrade ke versi terbaru
+
+Cek versi yang terpasang:
+
+```bash
+pilecap-run --version
+```
+
+**PC tanpa git (jalur wheel):** setiap rilis punya URL wheel sendiri (lihat langkah di atas
+"Jalur wheel selalu tersemat ke satu versi") — upgrade berarti memasang ulang dari URL rilis
+yang lebih baru, dengan `--force` karena nama tool-nya (`pilecap-fem`) sudah terpasang:
+
+```bash
+uv tool install --python 3.12 --force https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.9.0/pilecap_fem-0.9.0-py3-none-any.whl
+```
+
+Ganti `v0.9.0` dan nama berkasnya sesuai versi yang dituju di
+[halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases). Tanpa
+`--force`, `uv` menolak memasang di atas tool dengan nama yang sama.
+
+**PC yang sudah punya git (jalur `uvx`):** setiap pemanggilan tanpa tag versi (`@vX.Y.Z`)
+sudah otomatis mengambil `main` terbaru — tidak ada langkah upgrade terpisah. Bila perintah
+Anda menyematkan tag (mis. `@v0.8.0`), ganti tagnya ke versi yang dituju.
+
+**Jalur pengembangan (clone git):**
+
+```bash
+git pull && uv sync --dev
+```
 
 ### Mencoba tanpa menyiapkan data sendiri
 
