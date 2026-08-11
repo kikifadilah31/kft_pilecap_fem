@@ -24,11 +24,14 @@ from __future__ import annotations
 import textwrap
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Final
 
 import matplotlib
 import numpy as np
+from matplotlib.font_manager import FontProperties
+from matplotlib.textpath import TextPath
 
 from pilecap_fem import config, io_utils
 from pilecap_fem.geometry_builder import GeometryModel
@@ -143,9 +146,20 @@ _LINE_FACTOR: Final[float] = 1.45
 _SEP_IN: Final[float] = 0.07
 
 #: Lebar rata-rata satu karakter DejaVu Sans (font bawaan matplotlib) dalam em, untuk
-#: teks prosa campuran. Sengaja konservatif: perkiraan yang meleset ke arah LEBIH banyak
-#: baris menghasilkan kop yang sedikit lapang, bukan kop yang terpotong.
-_CHAR_EM: Final[float] = 0.52
+#: teks prosa campuran. Perkiraan yang meleset ke arah LEBIH banyak baris menghasilkan kop
+#: yang sedikit lapang; yang meleset ke arah sebaliknya menghasilkan teks yang KELUAR dari
+#: garis tepi panel.
+#:
+#: DIUKUR dengan `TextPath` pada kalimat peringatan sungguhan (151 karakter, 7,5 pt):
+#: normal **0,5283** em/karakter, bold **0,5970**. Nilai lama 0,52 dipakai untuk KEDUANYA
+#: dan berada di bawah keduanya, sehingga baris peringatan -- yang digambar bold -- melewati
+#: tepi panel sampai ~13%. Kedua angka di bawah sedikit di atas hasil ukur masing-masing.
+_CHAR_EM: Final[float] = 0.53
+_CHAR_EM_BOLD: Final[float] = 0.60
+
+#: Berapa kali anggaran karakter boleh dikecilkan sebelum menyerah. Tiga sudah cukup: tiap
+#: putaran mengecilkannya sebanding kelebihannya, jadi ia mengerucut, bukan merayap.
+_WRAP_MAX_PASS: Final[int] = 3
 
 _TRUNCATION_NOTE: Final[str] = "(catatan selengkapnya di calc_sheet.md)"
 
@@ -176,19 +190,46 @@ def _line_height_in(fontsize: float) -> float:
     return fontsize * _LINE_FACTOR / 72.0
 
 
-def _wrap(text: str, width_in: float, fontsize: float) -> list[str]:
-    """Bungkus teks ke lebar kolom kop.
+@lru_cache(maxsize=512)
+def _text_width_in(text: str, fontsize: float, bold: bool) -> float:
+    """Lebar teks TERUKUR [inci], bukan diperkirakan dari jumlah karakter."""
+    prop = FontProperties(family="DejaVu Sans", weight="bold" if bold else "normal", size=fontsize)
+    return float(TextPath((0.0, 0.0), text, prop=prop).get_extents().width) / 72.0
+
+
+def _wrap(text: str, width_in: float, fontsize: float, *, bold: bool = False) -> list[str]:
+    """Bungkus teks ke lebar kolom kop, lalu PASTIKAN hasilnya benar-benar muat.
 
     Anggaran karakter DITURUNKAN dari lebar panel, bukan konstanta. Nilai lama
     `textwrap.fill(override, width=62)` hanya benar untuk satu lebar figur, dan diam-diam
     salah pada pratinjau UI yang lebarnya 7 inci.
 
+    Anggaran itu tetap hanya PERKIRAAN, dan perkiraan lebar rata-rata karakter gagal pada
+    teks yang komposisinya tidak biasa: baris peringatan penuh huruf kapital terukur 0,637
+    em/karakter, jauh di atas 0,528 untuk prosa campuran. Karena itu hasilnya diukur dan
+    anggarannya dikecilkan sampai benar-benar muat -- perkiraan hanya menentukan titik
+    awal, bukan hasil akhirnya.
+
+    `bold` WAJIB sesuai dengan yang benar-benar digambar: huruf tebal DejaVu Sans ~13%
+    lebih lebar.
+
     `break_long_words=False` melindungi nama berkas seperti `custom_pile_coords.csv` dari
     terpotong di tengah -- nama berkas yang terpenggal pada baris peringatan override
     justru menyesatkan.
     """
-    budget = max(20, int(width_in * 72.0 / (_CHAR_EM * fontsize)))
-    return textwrap.wrap(text, width=budget, break_long_words=False, break_on_hyphens=False) or [""]
+    em = _CHAR_EM_BOLD if bold else _CHAR_EM
+    budget = max(20, int(width_in * 72.0 / (em * fontsize)))
+
+    for _ in range(_WRAP_MAX_PASS):
+        baris = textwrap.wrap(
+            text, width=budget, break_long_words=False, break_on_hyphens=False
+        ) or [""]
+        lebar = max((_text_width_in(b, fontsize, bold) for b in baris if b), default=0.0)
+        if lebar <= width_in or budget <= 20:
+            return baris
+        # Kecilkan sesuai kelebihannya, plus sedikit, supaya tidak berputar-putar.
+        budget = max(20, min(budget - 1, int(budget * width_in / lebar)))
+    return baris
 
 
 def _panel_width_in(fig_width_in: float) -> float:
@@ -209,8 +250,11 @@ def _layout_lines(block: TitleBlock, panel_width_in: float) -> list[_PanelLine]:
     text_w = max(1.0, panel_width_in - 2.0 * _PANEL_PAD_IN)
     lines: list[_PanelLine] = []
 
+    # `bold=` di setiap pemanggilan HARUS cocok dengan `fontweight` di `_draw_title_block`
+    # (kind project/label/warning digambar tebal). Keduanya berjauhan di berkas ini, jadi
+    # ketidakcocokannya dijaga test, bukan kewaspadaan.
     if block.project:
-        for part in _wrap(block.project, text_w, _FS_PROJECT):
+        for part in _wrap(block.project, text_w, _FS_PROJECT, bold=True):
             lines.append(_PanelLine(part, _FS_PROJECT, "project"))
     meta = " · ".join(p for p in (block.engineer, block.date) if p)
     if meta:
@@ -224,7 +268,7 @@ def _layout_lines(block: TitleBlock, panel_width_in: float) -> list[_PanelLine]:
             lines.append(_PanelLine("", 0.0, "sep"))
         lines.append(_PanelLine(label, _FS_LABEL, "label"))
         for item in items:
-            for part in _wrap(item, text_w, _FS_BODY):
+            for part in _wrap(item, text_w, _FS_BODY, bold=(kind == "warning")):
                 lines.append(_PanelLine(part, _FS_BODY, kind))
 
     section("ASUMSI DESAIN", block.assumptions, "body")

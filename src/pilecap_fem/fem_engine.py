@@ -26,6 +26,8 @@ Seluruh modul bekerja murni SI (N, m, Pa).
 
 from __future__ import annotations
 
+import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -553,6 +555,108 @@ def make_load_strategy(modeling: str) -> PileLoadStrategy:
 
 
 # ---------------------------------------------------------------------------
+# Guard bocoran mesh (KNOWN_LIMITATIONS #10)
+# ---------------------------------------------------------------------------
+
+
+def leak_traces(
+    mesh: MeshModel, geom: GeometryModel, *, load_strategy: PileLoadStrategy | None = None
+) -> tuple[PileLoadTrace, ...]:
+    """Jejak beban dengan `Pz = 1 N` per pile -- menghasilkan FRAKSI, bukan gaya.
+
+    Bocoran sebanding tekanan, dan tekanan sebanding `Pz`, sehingga fraksinya tidak
+    bergantung besar `Pz` sama sekali. Karena itu ia dapat diukur **saat mesh**, sebelum
+    satu pun kombinasi dibaca -- yang berarti mesh yang terlalu kasar ditolak lebih awal,
+    bukan setelah solver berjalan.
+    """
+    strategy = load_strategy or PilePressureLoad()
+    _, traces = strategy.apply(
+        mesh,
+        geom,
+        {p.pile_id: 1.0 for p in geom.piles},
+        fixed_nodes=fixed_support_nodes(mesh, geom),
+    )
+    return traces
+
+
+def _h_efektif(mesh: MeshModel, trace: PileLoadTrace) -> float:
+    """Ukuran elemen yang BENAR-BENAR berlaku di cakram pile [m].
+
+    Diambil dari luas elemen mesh, bukan dari `mesh.size_*` di config: yang menentukan
+    besarnya bocoran adalah elemen yang sungguh terbentuk, dan pada mode graded keduanya
+    bisa berbeda jauh.
+    """
+    return math.sqrt(trace.a_disk_mesh / trace.n_elements) if trace.n_elements else float("nan")
+
+
+def check_mesh_leak(
+    mesh: MeshModel, geom: GeometryModel, traces: Sequence[PileLoadTrace]
+) -> tuple[str, ...]:
+    """Batasi bocoran mesh; kembalikan peringatan, atau lempar `AnalysisError`.
+
+    Diperiksa **per pile**, bukan agregat: bocoran berdampak lokal, tepat di tempat momen
+    lajur pile itu dihitung, sehingga rata-rata lintas pile akan menyamarkannya.
+
+    Arah galatnya yang membuat ini perlu dibatasi, bukan sekadar dilaporkan: beban yang
+    mendarat di node jepit TIDAK melenturkan pelat, sehingga momen -- dan tulangan --
+    menjadi lebih kecil daripada seharusnya.
+    """
+    melewati: list[tuple[str, float, float]] = []  # (pile_id, bocor, h_saran)
+    for trace in traces:
+        if trace.a_lens <= 0.0 or trace.pz == 0.0:
+            continue
+        bocor = trace.pz_bocor_mesh / trace.pz
+        if bocor <= config.OVERLAP_LEAK_WARN:
+            continue
+
+        h_now = _h_efektif(mesh, trace)
+        # Penskalaan linear (bocoran ~ h). DIUKUR eksponennya 0,76-0,93, jadi angka ini
+        # BATAS BAWAH -- disebut apa adanya di pesannya, bukan disajikan sebagai jaminan.
+        h_saran = h_now * config.OVERLAP_LEAK_WARN / bocor
+
+        if bocor > config.OVERLAP_LEAK_ERROR:
+            raise AnalysisError(
+                f"BOCORAN MESH MELEBIHI BATAS ({config.OVERLAP_LEAK_ERROR:.0%}) -- pile "
+                f"{trace.pile_id}: {bocor:.2%} dari Pz mendarat di node JEPIT karena "
+                f"kehalusan mesh (di luar {trace.overlap_fraction:.2%} yang memang berada "
+                "di dalam footprint pier).\n"
+                f"  Akibatnya pelat menerima {bocor:.2%} LEBIH KECIL daripada seharusnya, "
+                "sehingga momen dan tulangan yang dihitung ikut mengecil -- arah galat "
+                "yang TIDAK aman.\n"
+                f"  Ukuran elemen di cakram pile sekarang ~{h_now * 1e3:.0f} mm; perkecil "
+                f"ke <= {h_saran * 1e3:.0f} mm (perkiraan penskalaan linear, BATAS BAWAH: "
+                "peluruhan terukur lebih lambat pada irisan yang terpotong dua sisi). "
+                "Jalankan ulang -- guard ini mengukurnya lagi.\n"
+                "  Batas ini diturunkan dari pengukuran (lihat komentar "
+                "`config.OVERLAP_LEAK_ERROR`), bukan ditebak."
+            )
+        melewati.append((trace.pile_id, bocor, h_saran))
+
+    if not melewati:
+        return ()
+
+    # SATU baris untuk seluruh pile, bukan satu per pile. Peringatan ini ikut ke kop SETIAP
+    # gambar; empat baris prosa per pile membuat kop mendominasi gambarnya sendiri, dan pada
+    # pilecap dengan banyak pile overlap ia menjadi tidak terbaca sama sekali. Rinciannya
+    # tetap lengkap per pile di `calc_sheet.md` bagian 3a dan di log.
+    return (
+        "BOCORAN MESH {rentang} pada {pile} (> {ambang:.0%}): pelat menerima sebesar itu "
+        "LEBIH KECIL daripada seharusnya, sehingga momen & tulangan ikut mengecil -- arah "
+        "galat TIDAK aman. Perkecil elemen di cakram pile ke <= {h:.0f} mm. Rincian per "
+        "pile di calc_sheet.md bagian 3a.".format(
+            rentang=(
+                f"{min(b for _, b, _ in melewati):.2%}-{max(b for _, b, _ in melewati):.2%}"
+                if len(melewati) > 1
+                else f"{melewati[0][1]:.2%}"
+            ),
+            pile=", ".join(pid for pid, _, _ in melewati),
+            ambang=config.OVERLAP_LEAK_WARN,
+            h=min(h for _, _, h in melewati) * 1e3,
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Pembangunan & analisis model
 # ---------------------------------------------------------------------------
 
@@ -698,6 +802,14 @@ def analyze_combo(
                 "daripada ukuran elemen, sehingga mesher menyatukan node keduanya.\n"
                 "  Perbaiki geometrinya (perbesar celah), atau perkecil `mesh.size_global`."
             )
+    # Batasi bocoran mesh SEBELUM solver berjalan: hasil yang bocorannya berlebih
+    # un-konservatif, jadi tidak ada gunanya menghitungnya sampai selesai.
+    peringatan_bocor: tuple[str, ...] = ()
+    if geom is not None and geom.overlaps:
+        peringatan_bocor = check_mesh_leak(mesh, geom, traces)
+        for baris in peringatan_bocor:
+            _log.warning("%s", baris)
+
     self_weight_total = 0.0
     if options.include_self_weight:
         self_weight = _self_weight_nodal(mesh, material)
@@ -762,6 +874,7 @@ def analyze_combo(
         load_traces=traces,
         applied_nodal_fz=nodal_fz,
         self_weight_total=self_weight_total,
+        warnings=peringatan_bocor,
     )
 
 

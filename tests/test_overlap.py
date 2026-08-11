@@ -71,6 +71,39 @@ def _geom(*, x_pile: float = 0.9) -> GeometryModel:
     )
 
 
+#: Irisan yang terpotong DUA sisi: pusat pile di luar muka-x pier DAN di bawah muka-y-nya.
+#: Similaritas dari model nyata pemilik proyek (r=900 mm, 500/450 mm) diskalakan ke r=400,
+#: sehingga `f`-nya identik 14,66%.
+_SUDUT_SKALA = R_PILE / 0.9
+_SUDUT_PUSAT = (1.2 + 0.500 * _SUDUT_SKALA, 0.6 - 0.450 * _SUDUT_SKALA)
+
+
+def _geom_sudut() -> GeometryModel:
+    """Pile yang menindih SUDUT pier -- bentuk irisan yang tidak dicakup ex04 maupun `_geom`.
+
+    Perlu diuji tersendiri karena bocoran mesh bergantung panjang chord, bukan luas irisan:
+    irisan yang terpotong dua sisi bocor jauh lebih besar pada kehalusan mesh yang sama
+    (DIUKUR 2,3x pada D/h=24, lihat komentar `config.OVERLAP_LEAK_WARN`).
+    """
+    resolution = GeometryResolution(
+        pilecap=EntityResolution(source="json_standard"),
+        pile=EntityResolution(source="json_grid"),
+        pier=EntityResolution(source="json_standard"),
+    )
+    piles = (Pile(pile_id="P1", x=_SUDUT_PUSAT[0], y=_SUDUT_PUSAT[1], diameter=2 * R_PILE),)
+    piers = (
+        Pier(pier_id="PIER1", shape="rectangular", centerline=(0.0, 0.0), width_x=2.4, width_y=1.2),
+    )
+    return GeometryModel(
+        pilecap=polygon_from_rect(5.6, 5.6, (0.0, 0.0)),
+        thickness=1.2,
+        piles=piles,
+        piers=piers,
+        resolution=resolution,
+        overlaps=geometry_builder.compute_pile_pier_overlaps(piles, piers),
+    )
+
+
 def _cfg(size: float) -> dict:
     """Config SI minimal. `include_self_weight` MATI supaya neraca hanya memuat `Pz`."""
     return {
@@ -118,8 +151,15 @@ def _jalankan(size: float) -> tuple[mesh_model.MeshModel, GeometryModel, fem_eng
 
 @pytest.fixture(scope="module")
 def run_kasar():
-    """Satu run pada h = D/6 (mesh terkasar yang diizinkan) dipakai beberapa test."""
-    return _jalankan(2 * R_PILE / 6)
+    """Satu run pada h = D/8 dipakai beberapa test.
+
+    BUKAN D/6 (mesh terkasar yang diizinkan rule 7a), meski itu pilihan yang tampak paling
+    alami: pada D/6 bocorannya TERUKUR 4,87%, hanya 2,6% di bawah `OVERLAP_LEAK_ERROR` = 5%.
+    Fixture yang duduk di tepi ambang akan meledak sewaktu-waktu karena pergeseran node
+    antar run gmsh, dan kegagalan acak melatih orang mengabaikan test. D/8 memberi jarak
+    ~20% (bocoran terukur 4,03%) tanpa mengubah satu pun yang diuji test-test ini.
+    """
+    return _jalankan(2 * R_PILE / 8)
 
 
 # ---------------------------------------------------------------------------
@@ -153,9 +193,9 @@ def test_beban_mencakup_elemen_lens(run_kasar):
     mesh, geom, _ = run_kasar
     (tekanan,) = fem_engine.pile_pressures(mesh, geom, {"P1": PZ})
     assert tekanan.lens_group_names, "grup lensa harus ikut ke dalam himpunan beban"
-    # Toleransi 2% adalah faceting cakram pada h = D/6 (mesh terkasar yang diizinkan),
-    # bukan kelonggaran: yang dijaga di sini adalah `a_disk` = cakram PENUH, bukan bulan
-    # sabitnya saja -- keduanya terpaut 7,2%, jauh di luar toleransi ini.
+    # Toleransi 2% adalah faceting cakram pada mesh kasar, bukan kelonggaran: yang dijaga
+    # di sini adalah `a_disk` = cakram PENUH, bukan bulan sabitnya saja -- keduanya terpaut
+    # 7,2%, jauh di luar toleransi ini.
     assert tekanan.a_disk == pytest.approx(math.pi * R_PILE**2, rel=2e-2)
     assert tekanan.a_disk > math.pi * R_PILE**2 * (1 - F_ANALITIS / 2)
     assert tekanan.pressure == pytest.approx(PZ / tekanan.a_disk, rel=1e-12)
@@ -190,9 +230,18 @@ def test_vc0_tetap_lulus_dan_sigma_reaksi_sama_dengan_sigma_pz(run_kasar):
 
 @pytest.fixture(scope="module")
 def studi_kehalusan():
-    """Satu studi kehalusan D/h = 6, 12, 24 dipakai dua test (mesh D/24 mahal).
+    """Studi kehalusan D/h = 6, 12, 24, memakai `leak_traces` -- TANPA menjalankan solver.
 
-    Nilai TERUKUR, dicatat supaya pergeserannya kelak terlihat sebagai perubahan nyata:
+    Dua alasan, keduanya penting:
+
+    1. Studi ini hanya butuh jejak beban, bukan hasil analisis. Melewati solver membuatnya
+       jauh lebih murah.
+    2. Ia sengaja menyertakan mesh KASAR, yang bocorannya justru dekat ambang
+       `OVERLAP_LEAK_ERROR`. Lewat `analyze_combo`, guard itu akan menghentikannya --
+       padahal mengukur perilaku di ujung kasar itulah maksud test ini. Jalur ini mengukur
+       besaran yang sama tanpa memicu guard-nya.
+
+    Nilai TERUKUR (mode uniform), dicatat supaya pergeserannya kelak terlihat:
 
     | D/h | `f_mesh` | bocor mesh | ke pelat |
     |-----|---------:|-----------:|---------:|
@@ -202,7 +251,8 @@ def studi_kehalusan():
 
     `f_analitis` = 7,2147%.
     """
-    return [_jalankan(2 * R_PILE / p)[2].load_traces[0] for p in (6, 12, 24)]
+    geom = _geom()
+    return [fem_engine.leak_traces(_mesh(geom, 2 * R_PILE / p), geom)[0] for p in (6, 12, 24)]
 
 
 def test_komponen_strut_tidak_bergantung_kehalusan_mesh(studi_kehalusan):
@@ -237,6 +287,106 @@ def test_bocor_mesh_mengecil_orde_h(studi_kehalusan):
 
 
 # ---------------------------------------------------------------------------
+# Overlap SUDUT + guard bocoran mesh
+# ---------------------------------------------------------------------------
+
+
+def test_overlap_sudut_bocor_lebih_besar_daripada_muka():
+    """Bentuk irisan menentukan bocoran, bukan luasnya -- alasan `D/h` bukan prediktor.
+
+    Irisan yang terpotong DUA sisi punya chord lebih panjang, sehingga lebih banyak elemen
+    bulan sabit bersentuhan dengan node jepit. Kalau suatu saat guard-nya diganti proksi
+    geometri, test ini yang menunjukkan mengapa itu salah.
+    """
+    h = 2 * R_PILE / 12
+    muka = _geom()
+    sudut = _geom_sudut()
+
+    bocor_muka = fem_engine.leak_traces(_mesh(muka, h), muka)[0]
+    bocor_sudut = fem_engine.leak_traces(_mesh(sudut, h), sudut)[0]
+
+    # Luas irisannya jauh berbeda, tetapi yang diuji di sini bocorannya.
+    assert bocor_sudut.overlap_fraction > bocor_muka.overlap_fraction
+    assert bocor_sudut.pz_bocor_mesh / bocor_sudut.pz > bocor_muka.pz_bocor_mesh / bocor_muka.pz
+
+
+def test_leak_traces_tidak_bergantung_besar_pz():
+    """Fraksi bocoran murni geometri+mesh -- itu yang membuatnya dapat diukur SAAT MESH.
+
+    Bila ia bergantung `Pz`, guard di `pilecap-mesh` (yang tidak pernah membaca
+    `pile_reactions.csv`) tidak akan mungkin ada.
+    """
+    geom = _geom()
+    mesh = _mesh(geom, 2 * R_PILE / 8)
+    satuan = fem_engine.leak_traces(mesh, geom)[0]
+
+    (besar,) = fem_engine.PilePressureLoad().apply(
+        mesh, geom, {"P1": PZ}, fixed_nodes=fem_engine.fixed_support_nodes(mesh, geom)
+    )[1]
+    assert satuan.pz_bocor_mesh / satuan.pz == pytest.approx(
+        besar.pz_bocor_mesh / besar.pz, rel=1e-12
+    )
+
+
+def test_guard_menolak_bocoran_di_atas_ambang_error():
+    """Mesh terkasar pada overlap SUDUT melewati `OVERLAP_LEAK_ERROR` -- harus ditolak.
+
+    Inilah kasus yang memicu guard ini: model nyata dengan pile menindih sudut pier pada
+    mesh terkasar yang diizinkan rule 7a menghasilkan pelat yang menerima ~6% lebih kecil
+    daripada seharusnya, tanpa satu pun tanda sebelum v0.9.1.
+    """
+    geom = _geom_sudut()
+    mesh = _mesh(geom, 2 * R_PILE / 6)
+    traces = fem_engine.leak_traces(mesh, geom)
+    assert traces[0].pz_bocor_mesh / traces[0].pz > config.OVERLAP_LEAK_ERROR
+
+    with pytest.raises(AnalysisError, match="BOCORAN MESH MELEBIHI BATAS") as exc:
+        fem_engine.check_mesh_leak(mesh, geom, traces)
+
+    pesan = str(exc.value)
+    # Pesan wajib memuat KETIGA hal, bukan sekadar "terlalu kasar".
+    assert "%" in pesan, "harus menyebut angka bocorannya"
+    assert "TIDAK aman" in pesan, "harus menyebut ARAH galatnya"
+    assert "mm" in pesan, "harus menyebut ukuran elemen yang dibutuhkan"
+    assert all(ord(c) < 128 for c in pesan), "pesan ikut ke log cp1252"
+
+
+def test_guard_memperingatkan_di_antara_kedua_ambang():
+    """Di antara WARN dan ERROR: jalan terus, tetapi peringatannya WAJIB muncul."""
+    geom = _geom()
+    mesh = _mesh(geom, 2 * R_PILE / 8)
+    traces = fem_engine.leak_traces(mesh, geom)
+    bocor = traces[0].pz_bocor_mesh / traces[0].pz
+    assert config.OVERLAP_LEAK_WARN < bocor < config.OVERLAP_LEAK_ERROR, (
+        f"prasyarat test tidak lagi berlaku: bocoran D/h=8 = {bocor:.4%}"
+    )
+
+    (peringatan,) = fem_engine.check_mesh_leak(mesh, geom, traces)
+    assert "BOCORAN MESH" in peringatan
+    assert "TIDAK aman" in peringatan
+
+
+def test_guard_diam_bila_bocoran_kecil():
+    """Mesh halus -> tidak ada peringatan sama sekali. Guard tidak boleh berisik sia-sia."""
+    geom = _geom()
+    mesh = _mesh(geom, 2 * R_PILE / 32)
+    assert fem_engine.check_mesh_leak(mesh, geom, fem_engine.leak_traces(mesh, geom)) == ()
+
+
+def test_guard_tidak_aktif_tanpa_overlap(run_kasar):
+    """Geometri tanpa overlap tidak boleh menyentuh jalur ini sama sekali.
+
+    Gerbang yang sama dengan golden ex01-ex03: tanpa tumpang tindih, tidak ada `a_lens`,
+    sehingga tidak ada yang diperiksa dan tidak ada yang dapat berubah.
+    """
+    mesh, geom, _ = run_kasar
+    tanpa = dataclasses.replace(geom, piers=(), overlaps=())
+    traces = fem_engine.leak_traces(mesh, tanpa)
+    assert all(t.a_lens == 0.0 for t in traces)
+    assert fem_engine.check_mesh_leak(mesh, tanpa, traces) == ()
+
+
+# ---------------------------------------------------------------------------
 # Jaring pengaman: beban di node jepit tanpa overlap terdaftar
 # ---------------------------------------------------------------------------
 
@@ -249,7 +399,7 @@ def test_beban_pada_node_jepit_tanpa_overlap_terdaftar_raise(run_kasar):
     residunya nol dan run dilaporkan LULUS.
     """
     mesh, geom, _ = run_kasar
-    cfg = _cfg(2 * R_PILE / 6)
+    cfg = _cfg(2 * R_PILE / 8)
     # Mesh-nya TETAP punya grup lensa (node terbagi), hanya catatan geometrinya dikosongkan
     # -- persis keadaan yang dihasilkan celah lebih kecil daripada satu elemen.
     with pytest.raises(AnalysisError, match="mendarat pada node"):

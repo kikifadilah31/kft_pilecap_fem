@@ -70,6 +70,7 @@ def _overlap_block(equilibrium: dict[str, Any]) -> str:
             f"strut -- geometri [{unit_f}]",
             f"bocor mesh -- diskretisasi [{unit_f}]",
             f"ke pelat [{unit_f}]",
+            "KEKURANGAN beban pelat",
         ],
         [
             [
@@ -78,6 +79,9 @@ def _overlap_block(equilibrium: dict[str, Any]) -> str:
                 f"{io_utils.to_display(r['pz_strut_N'], 'force'):,.2f}",
                 f"{io_utils.to_display(r['pz_bocor_mesh_N'], 'force'):,.2f}",
                 f"{io_utils.to_display(r['pz_ke_pelat_N'], 'force'):,.2f}",
+                # Kolom yang menyatakan ARAHNYA. Tanpa ini pembaca melihat tiga angka yang
+                # semuanya terlihat netral, padahal salah satunya membuat desain lebih ringan.
+                f"{(r['pz_bocor_mesh_N'] / r['Pz_N'] if r['Pz_N'] else 0.0):.2%}",
             ]
             for r in rows
         ],
@@ -97,6 +101,13 @@ Kolom **bocor mesh** adalah komponen DISKRETISASI: beban elemen di tepi footprin
 ikut mendarat pada node jepit. Besarnya sebanding `L x h / (2 A_pile)` sehingga **mengecil
 bila mesh diperhalus** -- angka ini milik kehalusan mesh, bukan milik geometri. Karena itu
 keduanya disajikan terpisah; menjumlahkannya akan menyamarkan yang mana yang mana.
+
+Kolom **KEKURANGAN beban pelat** menyatakan arahnya: sebesar itulah pelat menerima beban
+LEBIH KECIL daripada seharusnya, sehingga momen dan tulangan yang dihitung ikut mengecil.
+**Arah galat ini tidak aman**, dan karena itu besarnya dibatasi -- di atas
+`config.OVERLAP_LEAK_WARN` muncul peringatan, di atas `config.OVERLAP_LEAK_ERROR` run
+ditolak. Kedua batas diturunkan dari pengukuran, bukan tebakan. Berbeda dari kolom
+**strut**, yang memang fisis dan tidak akan hilang seberapa pun mesh diperhalus.
 
 `Sigma reaksi` tetap sama dengan `Sigma Pz` -- tidak ada beban yang hilang dari neraca. Yang
 berbeda adalah berapa banyak yang benar-benar dirasakan PELAT (lihat KNOWN_LIMITATIONS #10).

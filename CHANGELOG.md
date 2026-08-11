@@ -2,6 +2,173 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [Unreleased]
+
+### Fixed — bocoran mesh pada tumpang tindih pile–pier tidak dibatasi, dan arahnya TIDAK AMAN
+
+v0.9.0 memisahkan komponen **strut** (geometri) dari **bocor mesh** (diskretisasi) dan
+melaporkan keduanya. Yang tidak dinyatakan — dan tidak dibatasi — adalah **arah galatnya**:
+beban yang mendarat di node jepit tidak melenturkan pelat, sehingga momen dan tulangan yang
+dihitung menjadi **lebih kecil daripada seharusnya**. Mesh yang lebih kasar menghasilkan
+desain yang lebih ringan.
+
+Ditemukan dari model nyata pemilik proyek: pile D1800 menindih **sudut** pier sebesar 14,66%.
+Pada `size_global` 300 mm (D/h = 6, mesh terkasar yang diizinkan rule 7a), pelat menerima
+**5,7–7,0 poin persen lebih kecil** daripada seharusnya — tanpa satu pun tanda. Peringatan
+yang ada hanya berbunyi "SENSITIF terhadap kehalusan mesh": kualitatif, tanpa angka, tanpa
+ukuran mesh yang dibutuhkan.
+
+Sekarang bocoran **diukur dan dibatasi**, dua tingkat per pile:
+
+| Bocoran | Yang terjadi |
+|---------|--------------|
+| ≤ `OVERLAP_LEAK_WARN` (2%) | jalan tanpa komentar |
+| 2–5% | jalan, **peringatan** memuat angka, arah galat, dan ukuran elemen yang dibutuhkan |
+| > `OVERLAP_LEAK_ERROR` (5%) | **`AnalysisError`** |
+
+Diperiksa sudah di `pilecap-mesh`, sebelum satu pun kombinasi dibaca: fraksi bocoran tidak
+bergantung besar `Pz` sama sekali (`fem_engine.leak_traces` memakai `Pz = 1 N`), jadi tidak
+perlu menunggu analisis — dan `pilecap-mesh` memang tidak pernah membaca `pile_reactions.csv`.
+
+**Ambangnya DIUKUR.** Dua geometri × lima kehalusan, `pz_bocor_mesh / Pz`:
+
+| D/h | MUKA (`f`=7,21%) | SUDUT (`f`=14,65%) |
+|-----|-----------------:|-------------------:|
+| 6 | 4,603% | 5,855% |
+| 8 | 4,033% | 5,301% |
+| 12 | 3,320% | 4,175% |
+| 24 | 1,363% | 3,199% |
+| 48 | 0,767% | 1,225% |
+
+Geometri ujinya divalidasi terhadap kasus nyata: MUKA pada D/h=8 memberi 4,033% vs ex04
+terkirim yang terukur 4,04%; SUDUT pada D/h=6 memberi 5,855% vs model nyata 5,81%.
+
+### Changed — rencana "rule 7a lebih ketat untuk pile overlap" DIBATALKAN oleh pengukuran
+
+Rancangan awalnya memakai rasio `D/h` sebagai saringan awal. Tabel di atas membantahnya pada
+dua titik sekaligus:
+
+1. **`D/h` bukan prediktor bocoran.** Yang menentukan adalah panjang chord, bukan luas
+   irisan: overlap **sudut** (terpotong dua sisi) bocor **2,3× lebih besar** daripada overlap
+   **muka** pada `D/h` yang sama. Satu ambang `D/h` tidak dapat membatasi keduanya.
+2. **Ambang yang masuk akal justru menolak contoh yang sah.** `D/h ≥ 12` akan menolak ex04,
+   yang dikirim pada `D/h = 8` dengan bocoran 4,03% — di bawah batas ERROR.
+
+Dan saringan awalnya tidak menghemat apa pun: guard yang sebenarnya sudah berjalan sebelum
+solver, bahkan sebelum kombinasi dibaca. Proksi yang tidak akurat DAN tidak menghemat adalah
+proksi yang tidak perlu ada, jadi ia tidak dibuat. `MIN_ELEM_PER_PILE_DIAMETER` tetap 6 untuk
+semua pile.
+
+### Fixed — pesan rule 14 bertentangan dengan kalimat berikutnya
+
+Penolakan tumpang tindih berbunyi *"Node tidak bisa sekaligus dijepit (pier) dan dibebani
+(pile)"*, lalu kalimat setelahnya menjelaskan cara melakukan persis itu lewat
+`pier.max_pile_overlap_fraction`. Kalimat pertama tertinggal dari sebelum v0.9.0. Diganti
+dengan alasan yang sebenarnya: bagian di dalam footprint pier tidak melenturkan pelat, dan
+tool tidak menghitung kapasitas strut-nya.
+
+### Fixed — teks kop keluar dari garis tepi panelnya sendiri
+
+Ketahuan saat memeriksa gambar hasil guard baru. Baris PERINGATAN digambar **bold**, tetapi
+dibungkus memakai anggaran lebar huruf biasa. DIUKUR dengan `TextPath`: bold DejaVu Sans
+0,5970 em/karakter vs normal 0,5283, sedangkan konstantanya 0,52 — **di bawah keduanya**.
+Akibatnya baris peringatan melewati tepi panel sampai ~13%: justru baris yang paling perlu
+terbaca. Bug ini sudah ada sejak kop diperkenalkan di v0.8.0.
+
+Diperbaiki di dua lapis, karena satu lapis saja masih meleset:
+
+1. Anggaran terpisah untuk teks tebal (0,60) dan biasa (0,53), masing-masing sedikit di atas
+   hasil ukur.
+2. Anggaran itu tetap hanya **perkiraan**, dan perkiraan lebar rata-rata gagal pada teks yang
+   komposisinya tidak biasa — peringatan penuh huruf kapital terukur 0,637 em/karakter. Karena
+   itu hasil pembungkusan sekarang **diukur** dan anggarannya dikecilkan sampai benar-benar
+   muat. Perkiraan hanya menentukan titik awal, bukan hasil akhir.
+
+`test_baris_kop_muat_di_dalam_garis_tepi_panel` mengukur setiap baris dengan `TextPath`,
+bukan menghitung karakter — sehingga ketidakcocokan antara `bold=` di pembungkus dan
+`fontweight` di penggambar tertangkap, bukan diandalkan pada kewaspadaan.
+
+### Changed — peringatan bocoran diringkas jadi satu baris
+
+Versi pertamanya menulis empat baris prosa **per pile**. Pada ex04 itu berarti 11 baris
+peringatan di kop setiap gambar — kop mendominasi gambarnya sendiri, dan pada pilecap dengan
+banyak pile overlap ia menjadi tidak terbaca sama sekali. Sekarang satu baris untuk seluruh
+pile (rentang bocoran, daftar pile, arah galat, ukuran elemen yang dibutuhkan); rinciannya
+tetap lengkap per pile di `calc_sheet.md` bagian 3a dan di log. Pesan penolakan tetap panjang
+— ia menghentikan run, jadi detailnya memang perlu.
+
+### Added — cakupan test overlap SUDUT
+
+`ex04` hanya mencakup overlap **muka**. Model nyata menunjukkan overlap **sudut** berperilaku
+berbeda, dan itu tidak teruji sama sekali. `tests/test_overlap.py` bertambah geometri sudut
+(similaritas model nyata, `f` identik 14,66%) beserta test yang menuntut bocorannya memang
+lebih besar daripada overlap muka — supaya alasan menolak proksi `D/h` tetap terjaga.
+
+Fixture `run_kasar` dipindah dari D/h=6 ke D/h=8: pada D/h=6 bocorannya 4,87%, hanya 2,6% di
+bawah ambang ERROR, dan fixture yang duduk di tepi ambang akan gagal sewaktu-waktu karena
+pergeseran node antar run gmsh. Studi kehalusan kini memakai `leak_traces` tanpa solver —
+lebih murah, dan tidak terhalang guard yang justru sedang ia ukur perilakunya.
+
+### Added — VC-6 mencakup ex04: jalur tumpang tindih tervalidasi silang
+
+Model pembanding Midas Civil untuk `ex04` disediakan pemilik proyek (2026-08-11), sehingga
+release gate VC-6 naik dari 3 menjadi **4 contoh × 2 kombinasi**. Tidak ada perubahan kode
+produksi — yang bertambah adalah bukti.
+
+Ini bukan sekadar contoh keempat. `ex04` satu-satunya kasus yang pile-nya menindih pier,
+sehingga ia menguji tiga hal yang tidak disentuh ex01–ex03, masing-masing terhadap
+implementasi yang sepenuhnya independen:
+
+1. **Himpunan tumpuan termasuk node lensa.** Node reaksi Midas **sama persis** dengan
+   `fem_engine.fixed_support_nodes` — 479 node, nol selisih di kedua arah. Bila node
+   `LENS_*` tertinggal bebas di Midas, `test_vc6_reaksi_tumpuan_cocok_dengan_midas` gagal
+   pada asersi indeks, bukan diam-diam lolos dengan angka berbeda.
+2. **Seluruh cakram pile dibebani, termasuk bagian di dalam pier.** `Σ FZ` Midas cocok
+   dengan `Σ Pz` sampai ~4e-12 relatif, padahal sebagian tekanannya bekerja pada elemen
+   lensa — membuktikan `*PRESSURE` pada MCT memang memuatnya.
+3. **Respons pelatnya.** Elemen lensa dijepit **sekaligus** dibebani; resultan per elemen
+   tetap cocok pada RMS ≤ 0,134%, korelasi ≥ 0,99994.
+
+Terukur (gate lama tidak diubah — marginnya masih 3–7×):
+
+| Jalur | Besaran | Terburuk ex01–03 | ex04 | Gate |
+|-------|---------|-----------------:|-----:|-----:|
+| 1 | Momen | 0,144% | 0,134% | 1,0% |
+| 1 | Geser | 0,265% | 0,114% | 1,5% |
+| 1 | Momen puncak | 0,515% | 0,378% | 2,0% |
+| 2 | Lendutan `uz` | 0,216% | **0,258%** | 1,0% |
+| 3 | Reaksi `Rz` | 0,539% | 0,088% | 1,5% |
+
+**Yang dinyatakan apa adanya, bukan ditambal:**
+
+- **Lendutan ex04 kini yang terburuk (0,258%), dan itu batas alat ukur, bukan
+  ketidaksesuaian.** Pilecap 1.500 mm dengan pier dinding 2.400 × 1.200 sangat kaku —
+  lendutan maksimumnya hanya 0,110 mm, sehingga resolusi ekspor Midas 1 µm setara **0,908%
+  dari skala**, jauh lebih besar daripada selisih terukur. Jalur lendutan karena itu **bukan
+  jalur yang memvalidasi ex04**; yang mengikat adalah Jalur 1 dan 3.
+- **Kesesuaian ini tidak membuktikan idealisasi jepit-sempurna itu benar secara fisik.**
+  Kedua program memakai idealisasi yang sama, jadi perbandingannya tidak dapat menilai
+  asumsinya. Kapasitas strut tetap wajib dicek terpisah (`KNOWN_LIMITATIONS` #10).
+
+### Fixed — SUMBER.md §5.2 menyebut batas resolusi lendutan terlalu sempit
+
+Pengukuran ulang per kombinasi (pemicunya penambahan ex04) menemukan bahwa **ex03 juga
+dibatasi resolusi ekspor** — tipis, 0,052% resolusi vs 0,045% selisih terukur — padahal
+dokumen sebelumnya hanya menyebut ex01 dan menyiratkan ex02 & ex03 bebas. Hanya **ex02**
+yang benar-benar bebas. Angka lendutan maksimum ex01 yang tercatat (0,226 mm) juga hanya
+mencakup satu kombinasi dari dua.
+
+Tidak ada gate yang berubah — yang salah adalah **klaim tentang seberapa kuat bukti Jalur 2**,
+dan itu jenis kesalahan yang paling perlu dikoreksi. §5.2 kini memuat tabel per kombinasi
+untuk keempat contoh beserta catatan koreksinya.
+
+`pilecap_config.json` dan `pile_reactions.csv` pada paket VC-6 ex04 **diperiksa byte-identik**
+dengan `examples/ex04_pile_overlap_pier/` — model Midas-nya berasal dari contoh yang dikirim
+ke pengguna, bukan varian yang disetel agar cocok. `SUMBER.md` bertambah §1.1 (apa yang
+ex04 uji dan apa yang tidak) dan §7 (tabel angka terukur keempat contoh).
+
+`tests/data/vc6/` bertambah ~6 MB.
+
 ## [0.9.0] — 2026-08-11 — Pile yang tumpang tindih dengan pier, dan satu cacat senyap yang ditutup
 
 Berawal dari satu pertanyaan: *apakah gaya aksial pile tetap diteruskan ke shell bila

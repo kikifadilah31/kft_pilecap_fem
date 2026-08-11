@@ -312,6 +312,25 @@ def prepare_model(
     )
     mesh = mesh_model_mod.build_mesh_model(raw)
 
+    # Bocoran mesh diperiksa DI SINI, bukan hanya saat analisis: fraksinya tidak bergantung
+    # besar `Pz` sama sekali, sehingga mesh yang terlalu kasar dapat ditolak sebelum satu pun
+    # kombinasi dibaca -- termasuk pada `pilecap-mesh`, yang memang tidak pernah membacanya.
+    if geom.overlaps:
+        peringatan_bocor = fem_engine.check_mesh_leak(
+            mesh,
+            geom,
+            fem_engine.leak_traces(
+                mesh,
+                geom,
+                load_strategy=fem_engine.make_load_strategy(
+                    (loaded.si.get("pile") or {}).get("modeling", "pressure")
+                ),
+            ),
+        )
+        for baris in peringatan_bocor:
+            _log.warning("%s", baris)
+        geometry_warnings = list(geometry_warnings) + list(peringatan_bocor)
+
     material, fc = _material_if_available(loaded.si, required=require_material)
 
     return PreparedModel(

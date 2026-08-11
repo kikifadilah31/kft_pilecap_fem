@@ -381,6 +381,45 @@ def test_tinggi_kop_tumbuh_mengikuti_jumlah_baris():
     assert renderer._reserve_bottom_in(renderer.TitleBlock(), 12.0) == 0.0
 
 
+def test_baris_kop_muat_di_dalam_garis_tepi_panel():
+    """Teks kop tidak boleh melewati garis tepi panelnya sendiri.
+
+    DIUKUR dengan `TextPath`, bukan dikira-kira dari jumlah karakter: pembungkusnya bekerja
+    pada anggaran karakter, dan anggaran itu hanya berguna bila hasilnya benar-benar muat.
+
+    Kasus yang pernah gagal: baris PERINGATAN digambar **bold**, tetapi dibungkus memakai
+    anggaran huruf biasa. Huruf tebal DejaVu Sans 13% lebih lebar, sehingga peringatan
+    keluar dari garis tepi -- persis baris yang paling perlu terbaca.
+    """
+    from matplotlib.font_manager import FontProperties
+    from matplotlib.textpath import TextPath
+
+    lebar_in = renderer._panel_width_in(12.0)
+    block = renderer.TitleBlock(
+        project="EX04 - Pile tumpang tindih dengan pier (pier dinding 2400x1200)",
+        assumptions=("f'c 30 MPa · fy 420 MPa · Tebal 1,500 mm · selimut 75 mm",),
+        warnings=(
+            "BOCORAN MESH 4.04%-4.08% pada P2, P5 (> 2%): pelat menerima sebesar itu LEBIH "
+            "KECIL daripada seharusnya, sehingga momen & tulangan ikut mengecil -- arah "
+            "galat TIDAK aman. Perkecil elemen di cakram pile ke <= 38 mm.",
+        ),
+    )
+    maks_in = lebar_in - 2.0 * renderer._PANEL_PAD_IN
+
+    for baris in renderer._layout_lines(block, lebar_in):
+        if not baris.text:
+            continue
+        tebal = baris.kind in ("project", "label", "warning")
+        fp = FontProperties(
+            family="DejaVu Sans", weight="bold" if tebal else "normal", size=baris.fontsize
+        )
+        lebar_pt = TextPath((0, 0), baris.text, prop=fp).get_extents().width
+        assert lebar_pt / 72.0 <= maks_in, (
+            f"baris {baris.kind!r} selebar {lebar_pt / 72.0:.3f} in melewati kolom "
+            f"{maks_in:.3f} in: {baris.text!r}"
+        )
+
+
 def test_kop_yang_kelebihan_dipangkas_dengan_pengumuman():
     """Dipangkas DENGAN pengumuman, tidak pernah diam-diam (sikap Core 3)."""
     padat = renderer.TitleBlock(notes=tuple(f"catatan panjang nomor {i}" for i in range(80)))

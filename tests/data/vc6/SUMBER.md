@@ -4,18 +4,42 @@ Berkas di folder ini adalah **bukti** untuk `VC-6` (`tests/test_validation_cases
 validasi silang `pilecap-fem` terhadap program elemen hingga mapan. VC-6 adalah *release
 gate*: rilis diblokir bila ia gagal (PRD Bagian 1.3 poin 1).
 
-Data disediakan pemilik proyek pada 2026-08-10 dan menutup `PRD Bagian 17 item 8`, yang
-sebelumnya TERBUKA karena model pembanding belum tersedia.
+Data disediakan pemilik proyek pada 2026-08-10 (ex01–ex03) dan 2026-08-11 (ex04), dan
+menutup `PRD Bagian 17 item 8`, yang sebelumnya TERBUKA karena model pembanding belum
+tersedia.
 
 ---
 
 ## 1. Asal
 
-Ketiga contoh bawaan (`examples/ex01…ex03`) dianalisis ulang di **Midas Civil**
+Keempat contoh bawaan (`examples/ex01…ex04`) dianalisis ulang di **Midas Civil**
 (solver `MEC V2.0.0`). Model Midas-nya **diimpor dari `00_Model/model.mct`** yang ditulis
 `pilecap_fem.exporters.mct` — bukan dimodelkan ulang dengan tangan. Konsekuensinya penting
 dan disengaja: penomoran node dan elemen **identik 1:1** dengan milik kita, sehingga
 perbandingan per-elemen dan per-node bermakna tanpa pemetaan apa pun.
+
+### 1.1 ex04 menguji jalur tumpang tindih pile–pier (v0.9.0)
+
+`ex04` ditambahkan setelah v0.9.0 dan **bukan sekadar contoh keempat**: ia satu-satunya
+kasus yang pile-nya menindih pier, sehingga ia menguji tiga hal yang tidak disentuh
+ex01–ex03 — masing-masing terhadap implementasi yang sepenuhnya independen:
+
+1. **Himpunan tumpuan termasuk node lensa.** `*CONSTRAINT` pada MCT ditulis dari
+   `fem_engine.fixed_support_nodes`, yang menjepit node `PIER_*` **ditambah** node
+   `LENS_*`. Terukur: himpunan node reaksi Midas **sama persis** dengan milik kami —
+   479 node, tanpa satu pun selisih di kedua arah. Bila lensa tertinggal bebas di Midas,
+   angkanya akan berbeda dan seluruh perbandingan menjadi tidak sahih.
+2. **Seluruh cakram pile dibebani, termasuk bagian di dalam pier.** `Σ FZ` Midas sama
+   dengan `Σ Pz` masukan sampai ~9 angka berarti (§ Jalur 3), padahal sebagian tekanan itu
+   bekerja pada elemen lensa. Ini membuktikan `*PRESSURE` pada MCT memang memuat elemen
+   lensa.
+3. **Respons pelatnya sendiri.** Elemen lensa dijepit **sekaligus** dibebani — keadaan yang
+   tidak lazim dan sengaja dipilih (KNOWN_LIMITATIONS #10). Resultan per elemen tetap cocok
+   dengan Midas pada RMS ≤ 0,134%.
+
+Yang **tidak** dibuktikan ex04: bahwa idealisasi jepit-sempurna itu benar secara fisik.
+Kedua program memakai idealisasi yang sama, jadi kesesuaiannya tidak dapat menilai
+asumsinya. Kapasitas strut tetap wajib dicek terpisah oleh engineer.
 
 ## 2. LARANGAN: mesh tidak boleh diregenerasi
 
@@ -36,8 +60,8 @@ kehilangan maknanya tanpa satu pun tanda kegagalan.
 | Formulasi elemen | `PARAM, QUAD4STRUC, HYB` → QUAD4 hibrida |
 | Sumbu pelaporan resultan | `PARAM, ELEMRSLTCORD, MATERIAL` → **sumbu material (lokal) elemen** |
 
-Tiga baris `PARAM` di atas dikutip dari `…_model_Static Load.mec` dan **identik pada ketiga
-contoh**. Berkas `.mec` sendiri (0,8–2,9 MB) tidak disalin ke sini karena isinya sebagian
+Tiga baris `PARAM` di atas dikutip dari `…_model_Static Load.mec` dan **identik pada keempat
+contoh** (ex04 diperiksa ulang saat penambahannya). Berkas `.mec` sendiri (0,8–2,9 MB) tidak disalin ke sini karena isinya sebagian
 besar menduplikasi `nodes.csv`/`elements.csv`; sha256-nya tercatat di tabel §6 agar tetap
 dapat diverifikasi terhadap arsip pemilik proyek.
 
@@ -48,9 +72,10 @@ dapat diverifikasi terhadap arsip pemilik proyek.
 Konvensi geser melintang Midas **berlawanan** dengan konvensi PRD Bagian 7.1. Pembacanya
 karena itu mengalikan `Vxx`/`Vyy` dengan `−1`.
 
-Bukti keseragamannya — diukur pada **seluruh** elemen, ketiga contoh × dua kombinasi:
+Bukti keseragamannya — diukur pada **seluruh** elemen, ex01–ex03 × dua kombinasi:
 rasio `−q_midas / q_kita` **tidak menyimpang tandanya pada satu pun** dari ~5.500 elemen;
-median 1,0008–1,0019, sebaran p1–p99 dalam ±3,5%.
+median 1,0008–1,0019, sebaran p1–p99 dalam ±3,5%. ex04 mengikuti konvensi yang sama dan
+lulus gate geser dengan RMS ≤ 0,114%.
 
 Yang membuat kesimpulan ini kuat: pembalikan tanda tetap muncul pada `midas_force_global.csv`,
 yang **tidak melewati rotasi apa pun**. Jadi ini bukan artefak sumbu lokal maupun artefak
@@ -80,7 +105,7 @@ rotasi `postproc_engine` cocok dengan rumus Midas.
 | `midas_force_global.csv` | resultan elemen, sumbu **global** | Jalur 1 (pembanding utama) |
 | `midas_force_local.csv` | resultan elemen, sumbu **lokal** | cek-silang rotasi saja |
 | `midas_reaction.csv` | reaksi tumpuan per node + blok TOTAL | Jalur 3 |
-| `midas_displacement.csv` | lendutan per node (`DX…RZ`) | Jalur 2 — ketiga contoh |
+| `midas_displacement.csv` | lendutan per node (`DX…RZ`) | Jalur 2 — keempat contoh |
 | `midas_solver.log` | `MAXIMUM TRANSLATION` per subcase | Jalur 2 |
 | `midas_solver.out` | urutan subcase, konfirmasi run sukses | acuan urutan |
 
@@ -121,14 +146,39 @@ lendutan menggagalkan test, bukan diam-diam dibandingkan sebagai besaran yang sa
 
 ### 5.2 Batas ketelitian ekspor lendutan
 
-`midas_displacement.csv` menulis 6 desimal dalam **meter**, jadi resolusinya 1 µm. Pada ex01
-lendutan maksimumnya hanya 0,226 mm, sehingga resolusi itu setara **0,44% dari skala** —
-lebih besar daripada selisih yang benar-benar terukur (0,216%).
+`midas_displacement.csv` menulis 6 desimal dalam **meter**, jadi resolusinya 1 µm. Pada
+pilecap kaku, angka itu besar dibandingkan lendutannya sendiri. Diukur **per kombinasi** —
+bukan lintas kombinasi, karena batasnya berlaku pada tiap ekspor sendiri-sendiri:
 
-Artinya kesesuaian lendutan ex01 sudah berada **di bawah batas yang dapat dibedakan oleh
-ekspornya sendiri**. Lulusnya VC-6 pada jalur ini tidak boleh dibaca sebagai bukti ketelitian
-0,2%; yang terbukti hanyalah "tidak berbeda sejauh yang dapat diukur". Untuk ex02
-(lendutan 2,6 mm) resolusi ini turun ke 0,038% dan batasan tersebut tidak lagi mengikat.
+| Contoh | Kombinasi | `uz` maks | 1 µm setara | RMS terukur | Mengikat? |
+|--------|-----------|----------:|------------:|------------:|-----------|
+| `ex01` | 1.2D+1.6L | 0,2253 mm | 0,444% | 0,216% | **ya** |
+| `ex01` | 1.2D+1.0W | 0,3147 mm | 0,318% | 0,158% | **ya** |
+| `ex02` | 1.2D+1.6L | 2,6401 mm | 0,038% | 0,043% | tidak |
+| `ex02` | 1.2D+1.0W | 3,8285 mm | 0,026% | 0,038% | tidak |
+| `ex03` | 1.2D+1.6L | 1,9286 mm | 0,052% | 0,045% | **ya (tipis)** |
+| `ex03` | 1.2D+1.0W | 2,2331 mm | 0,045% | 0,042% | **ya (tipis)** |
+| `ex04` | 1.2D+1.6L | **0,1101 mm** | **0,908%** | 0,258% | **ya, paling kuat** |
+| `ex04` | 1.2D+1.0W | 0,1705 mm | 0,586% | 0,181% | **ya** |
+
+"Mengikat" berarti resolusi ekspornya **lebih besar** daripada selisih yang terukur —
+sehingga lulusnya test tidak dapat dibaca sebagai bukti ketelitian sebesar selisih itu; yang
+terbukti hanyalah **"tidak berbeda sejauh yang dapat diukur"**.
+
+> **Koreksi terhadap versi sebelumnya dokumen ini.** Sampai v0.9.0 bagian ini hanya menyebut
+> ex01 sebagai yang terbatas resolusi, dan menyiratkan ex02 & ex03 bebas dari batasan itu.
+> Pengukuran ulang saat ex04 ditambahkan menunjukkan **ex03 juga mengikat**, meski tipis
+> (0,052% vs 0,045%). Hanya **ex02** yang benar-benar bebas. Angka lendutan maksimum ex01 di
+> versi lama (0,226 mm) juga hanya mencakup satu kombinasi.
+
+ex04 adalah yang paling terbatas: pilecap 1.500 mm dengan pier dinding 2.400 × 1.200 sangat
+kaku, sehingga lendutannya hanya 0,110 mm. **Jalur lendutan karena itu bukan jalur yang
+memvalidasi ex04**; yang mengikat untuk ex04 adalah Jalur 1 (resultan elemen) dan Jalur 3
+(reaksi), yang keduanya tidak dibatasi resolusi ekspor.
+
+Konsekuensi praktis untuk keempat contoh: **Jalur 2 adalah jalur terlemah dalam paket ini**.
+Ia tetap berharga karena menangkap kesalahan besar (tanda terbalik, skala salah, model
+berbeda), tetapi bukan ia yang membuktikan ketelitian — itu tugas Jalur 1 dan 3.
 
 ## 6. Daftar berkas & sha256
 
@@ -185,4 +235,47 @@ Dihitung terhadap berkas sumber di arsip pemilik proyek pada saat penyalinan
 | `pile_reactions.csv` | 619 | `a4bc5ffef53bccacd182ef0053a374f9e91275756159320ee0ab0ff0aa8e57b6` |
 | `pilecap_config.json` | 2,270 | `12d4d272d033ff393ee7a98ca1d9733f9cfece0035971555722fa2d14ac2bb88` |
 | *(tidak disalin)* `…Static Load.mec` | 2,253,070 | `7a1694cf78edf1ceb3adb7ab87f925f83e6897a39bb124cfd183d6ba85afa91a` |
+
+### `ex04/`
+
+`pilecap_config.json` dan `pile_reactions.csv` di sini **byte-identik** dengan
+`examples/ex04_pile_overlap_pier/` — diperiksa, bukan diasumsikan. Model Midas-nya karena
+itu memang berasal dari contoh yang dikirim ke pengguna, bukan dari varian yang disetel
+khusus agar cocok.
+
+| Berkas | Byte | sha256 |
+|--------|-----:|--------|
+| `elements.csv` | 259,470 | `c222b0684bbe2c7b720a70e55d3164b6f4d03fe3889905c8dbc4724eed383b2e` |
+| `geometry.json` | 1,919 | `cb0f478f185764959056d53d9e27a023b10e57f9c638c5b5a8862057477bbcac` |
+| `midas_displacement.csv` | 299,346 | `1f32dcfb025772b134fe07fc37291ebde776521c70a1ace477acbc1bfa6bde47` |
+| `midas_force_global.csv` | 2,735,671 | `299da1ad8b21daf98bdb000aa8a95e705707d683500cbd67d62b6ca14a165f76` |
+| `midas_force_local.csv` | 2,746,474 | `71d8c131a98f6e2834940c4761e51fcb4e7f072a998fdd13b85eea37fddc3222` |
+| `midas_reaction.csv` | 31,559 | `70bcec50aed148ec338397bdcb05a33d3256222c2cc9bd84929a81505bb226c5` |
+| `midas_solver.log` | 1,485 | `2636ad3f3862cda747be46c77df82a5a5d658c92a600f0ab7c0b4932a311f190` |
+| `midas_solver.out` | 3,964 | `7755eefa6e624e2f6a3736eaafadffd858cc4837b272dee4edb24150e81846c2` |
+| `nodes.csv` | 139,352 | `7c7f1fc4d82c152c07d027624f69356a6b924ef7ce03cff2c4676b80ed9f6711` |
+| `pile_reactions.csv` | 306 | `af352779c53dcd956fc8cc1716133e82b60ce4133fc4a273fa8938a09cfc6597` |
+| `pilecap_config.json` | 2,137 | `896e9e38af1a341c234cad85ebd1de2e126885955ee8cbc4725bf7d8651ca224` |
+| *(tidak disalin)* `…Static Load.mec` | 1,454,252 | `7654d4c385527feed9c0c53aafba5752ce364855c3547f2ebadd219b0b7ded81` |
+
+## 7. Angka terukur VC-6
+
+Diukur ulang saat ex04 ditambahkan (4 contoh × 2 kombinasi). Kolom "gate" adalah batas di
+`tests/test_validation_cases.py`; marginnya sengaja 3–7×, dan **tidak boleh dilonggarkan
+tanpa mengukur ulang keempatnya**.
+
+| Jalur | Besaran | Terburuk ex01–03 | Terburuk ex04 | Gate |
+|-------|---------|-----------------:|--------------:|-----:|
+| 1 | Momen `m_xx`/`m_yy`/`m_xy` | 0,144% | 0,134% | 1,0% |
+| 1 | Geser `q_x`/`q_y` | 0,265% | 0,114% | 1,5% |
+| 1 | Momen **puncak** | 0,515% | 0,378% | 2,0% |
+| 2 | Lendutan `uz` per node | 0,216% | **0,258%** | 1,0% |
+| 3 | Reaksi `Rz` per node | 0,539% | 0,088% | 1,5% |
+| 3 | `Σ FZ` vs `Σ Pz` | ~6e-9 | ~4e-12 | 1e-4 |
+| — | Rotasi lokal→global | 2e-6 | 1,3e-6 | 1e-4 |
+
+Korelasi minimum pada seluruh jalur ex04: 0,999942 (`m_xy`), gate 0,999.
+
+Lendutan ex04 yang menjadi terburuk **bukan** tanda ketidaksesuaian: ia dibatasi resolusi
+ekspor 1 µm yang setara 0,91% pada contoh sekaku itu (§5.2).
 

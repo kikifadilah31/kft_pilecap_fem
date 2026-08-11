@@ -574,6 +574,19 @@ KNOWN_LIMITATIONS: Final[str] = """\
     diperhalus 4x. Keduanya dilaporkan **terpisah** supaya terlihat mana yang geometri dan
     mana yang kehalusan mesh. Memperhalus mesh mengecilkan komponen diskretisasinya.
 
+    **ARAH GALATNYA TIDAK AMAN.** Komponen diskretisasi membuat pelat menerima beban lebih
+    KECIL daripada seharusnya -- momen mengecil, sehingga tulangan yang dihitung lebih
+    sedikit. Mesh yang lebih kasar menghasilkan desain yang lebih ringan, bukan lebih berat.
+    Karena itu sejak v0.9.1 besarnya **dibatasi**, bukan sekadar dilaporkan: di atas
+    `OVERLAP_LEAK_WARN` muncul peringatan, di atas `OVERLAP_LEAK_ERROR` run ditolak. Batas
+    itu diturunkan dari tabel pengukuran di dekat kedua konstanta tersebut.
+
+    Bocoran juga bergantung **bentuk** irisannya, bukan hanya luasnya: irisan yang terpotong
+    dua sisi (pile menindih SUDUT pier) punya chord lebih panjang, sehingga bocor lebih besar
+    daripada irisan satu muka pada kehalusan mesh yang sama -- terukur 2,3x pada D/h=24.
+    Itulah sebabnya rasio `D/h` tidak dipakai sebagai penduga, dan yang diukur adalah
+    bocoran yang sebenarnya.
+
     Ini sensitivitas terhadap **ukuran elemen**, BUKAN terhadap jitter mesh antar run.
     Batas 0,02% pada #9 tetap berlaku: DIUKUR pada 8 run ex04 dengan ukuran elemen yang
     sama, sebaran besaran desainnya hanya **0,0001%** -- lebih kecil daripada contoh tanpa
@@ -608,9 +621,59 @@ PARTIAL_OVERLAP_WARNING: Final[str] = (
     "PILE TUMPANG TINDIH DENGAN PIER ({detail}). Bagian di dalam footprint pier TIDAK "
     "melenturkan pelat (aksi strut) dan HARUS dicek terpisah sebagai tumpu/strut -- tool "
     "tidak menghitung kapasitasnya. Diizinkan lewat `pier.max_pile_overlap_fraction` = "
-    "{limit:.3f}, yaitu keputusan Anda, bukan hasil hitungan tool. Angka desain untuk "
-    "geometri ini SENSITIF terhadap kehalusan mesh (KNOWN_LIMITATIONS #10)."
+    "{limit:.3f}, yaitu keputusan Anda, bukan hasil hitungan tool. Mesh yang terlalu kasar "
+    "membuat pelat menerima beban LEBIH KECIL daripada seharusnya -- momen mengecil, "
+    "tulangan berkurang, jadi arah galatnya TIDAK aman (KNOWN_LIMITATIONS #10)."
 )
+
+# ---------------------------------------------------------------------------
+# Bocoran mesh pada tumpang tindih pile-pier (v0.9.1)
+# ---------------------------------------------------------------------------
+#
+# Beban konsisten elemen bulan sabit yang bersentuhan dengan potongan pile pada muka pier
+# sebagian mendarat di node JEPIT. Gaya pada DOF terjepit menghasilkan perpindahan nol,
+# sehingga pelat menerima beban LEBIH KECIL daripada seharusnya. Itu artefak diskretisasi
+# yang mengecil bersama `h` -- tetapi arahnya UN-KONSERVATIF: momen mengecil, tulangan
+# berkurang. Karena itu ia dibatasi, bukan sekadar dilaporkan.
+#
+# DIUKUR (v0.9.1) pada dua geometri, `pz_bocor_mesh / Pz`, mode graded:
+#
+#   | D/h | MUKA (f=7,21%) | SUDUT (f=14,65%) |
+#   |-----|---------------:|-----------------:|
+#   |   6 |         4,603% |           5,855% |
+#   |   8 |         4,033% |           5,301% |
+#   |  12 |         3,320% |           4,175% |
+#   |  24 |         1,363% |           3,199% |
+#   |  48 |         0,767% |           1,225% |
+#
+# MUKA  = pusat pile 300 mm di luar SATU muka pier (relasi ex04; D/h=8 di sini 4,033%
+#         cocok dengan ex04 terkirim yang terukur 4,04%).
+# SUDUT = irisan terpotong DUA sisi sekaligus (similaritas model nyata pemilik proyek;
+#         D/h=6 di sini 5,855% cocok dengan model itu yang terukur 5,81%).
+#
+# Dua pelajaran dari tabel itu, keduanya menentukan rancangan guard-nya:
+#
+# 1. **Overlap SUDUT selalu bocor lebih besar** daripada MUKA pada D/h yang sama -- chord-nya
+#    lebih panjang. Pada D/h=24 selisihnya 2,3x. Karena itu `D/h` BUKAN prediktor bocoran,
+#    dan guard-nya mengukur bocoran yang sebenarnya, bukan rasio D/h.
+# 2. **Peluruhannya tidak rata.** Terhadap `h` eksponennya 0,76 (SUDUT) sampai 0,93 (MUKA),
+#    dan per langkah sangat bervariasi (SUDUT 24->48 turun 2,6x, tetapi 12->24 hanya 1,3x)
+#    karena bergantung pada node mana yang kebetulan jatuh di chord. Saran ukuran mesh yang
+#    diturunkan dari penskalaan linear karena itu adalah BATAS BAWAH, bukan jaminan.
+
+#: Di atas ini bocoran dilaporkan sebagai WARNING. Dipilih dari tabel: 2% tercapai pada
+#: D/h >= 24 untuk overlap muka, dan butuh D/h >= 48 untuk overlap sudut.
+OVERLAP_LEAK_WARN: Final[float] = 0.02
+
+#: Di atas ini run DITOLAK. Dipilih dari tabel: 5% memotong tepat di antara mesh terkasar
+#: yang diizinkan untuk kedua geometri -- MUKA pada D/h=6 (4,603%) lolos dengan peringatan,
+#: SUDUT pada D/h=6 (5,855%) ditolak. Itu memang kasus yang memicu guard ini.
+#:
+#: CATATAN: contoh bawaan ex04 dikirim pada D/h=8 dengan bocoran 4,03% -- di atas WARN,
+#: di bawah ERROR. Itu disengaja dan dinyatakan apa adanya: memperhalus mesh ex04 akan
+#: mengubah golden-nya DAN membatalkan model pembanding Midas ex04, sedangkan angkanya
+#: sendiri masih di dalam batas yang dapat dipertanggungjawabkan.
+OVERLAP_LEAK_ERROR: Final[float] = 0.05
 
 #: Item PRD Bagian 17 yang masih terbuka. Ditampilkan di laporan agar checker tahu
 #: cek mana yang BELUM dilakukan tool (PRD Bagian 1.3 poin 5 & 6).

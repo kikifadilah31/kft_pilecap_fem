@@ -690,8 +690,10 @@ def validate_geometry(
                 raise GeometryError(
                     f"Area pier {pier.pier_id} tumpang tindih dengan pile {pile.pile_id} "
                     f"seluas {overlap:.6f} m^2 ({fraction:.1%} dari luas pile).\n"
-                    "  Node tidak bisa sekaligus dijepit (pier) dan dibebani (pile) "
-                    "(PRD Bagian 5.3 rule 14).\n"
+                    "  Bagian cakram yang berada di dalam footprint pier TIDAK melenturkan "
+                    "pelat: pier diidealkan jepit sempurna, sehingga beban di sana langsung "
+                    "masuk ke reaksi (aksi strut). Tool TIDAK menghitung kapasitas strut "
+                    "itu (PRD Bagian 5.3 rule 14).\n"
                     "  Bila ini memang dimaksudkan, isi `pier.max_pile_overlap_fraction` "
                     "di config -- itu keputusan pemodelan Anda, dan konsekuensinya "
                     "dijelaskan di KNOWN_LIMITATIONS #10."

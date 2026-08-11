@@ -362,6 +362,26 @@ Keduanya tampil terpisah di `equilibrium_check.json` dan `calc_sheet.md` bagian 
 digabung menjadi satu angka akan menyamar sebagai parameter geometri padahal separuhnya
 parameter meshing.
 
+**Bocoran mesh dibatasi, bukan sekadar dilaporkan — karena arahnya tidak aman.** Beban yang
+mendarat di node jepit tidak melenturkan pelat, sehingga momen dan tulangan yang dihitung
+ikut mengecil: mesh yang lebih kasar menghasilkan desain yang lebih ringan. Sejak v0.9.1
+besarnya diukur dan dibatasi:
+
+| Bocoran | Yang terjadi |
+|---------|--------------|
+| ≤ 2% | jalan tanpa komentar |
+| 2–5% | jalan, tetapi **peringatan** menyebut angkanya dan ukuran elemen yang dibutuhkan |
+| > 5% | **run ditolak** |
+
+Pemeriksaannya terjadi sudah di `pilecap-mesh`, sebelum satu pun kombinasi dibaca — fraksi
+bocoran tidak bergantung besar `Pz`, jadi tidak perlu menunggu analisis. Kedua batas
+diturunkan dari pengukuran (tabel di komentar `config.OVERLAP_LEAK_WARN`), bukan tebakan.
+
+Yang menentukan besarnya bukan luas irisan melainkan **bentuknya**: pile yang menindih
+**sudut** pier punya chord lebih panjang, sehingga bocor sampai 2,3× lebih besar daripada
+yang menindih satu **muka** pada kehalusan mesh yang sama. Karena itu rasio `D/h` tidak
+dipakai sebagai penduga.
+
 **Yang perlu Anda putuskan sendiri:** tool **tidak menghitung kapasitas strut**. Bagian
 `pz_strut` wajib dicek terpisah sebagai tumpu/strut. Mengisi
 `pier.max_pile_overlap_fraction` adalah pernyataan bahwa Anda menerima itu — nilainya
@@ -473,28 +493,40 @@ terbuka.
 
 ## Divalidasi silang terhadap Midas Civil (VC-6)
 
-Sejak v0.8.0 `VC-6` berjalan sebagai **release gate**: ketiga contoh bawaan dimodelkan
+Sejak v0.8.0 `VC-6` berjalan sebagai **release gate**: setiap contoh bawaan dimodelkan
 ulang di Midas Civil — diimpor dari `model.mct` yang ditulis tool ini sendiri, sehingga
 penomoran node & elemennya identik 1:1 — lalu hasilnya dibandingkan elemen demi elemen.
+Sejak v0.9.0 cakupannya **keempat** contoh, termasuk `ex04` yang pile-nya menindih pier.
 
-Kesesuaian yang terukur (RMS terhadap nilai puncak, 3 contoh × 2 kombinasi):
+Kesesuaian yang terukur (RMS terhadap nilai puncak, 4 contoh × 2 kombinasi):
 
 | Besaran | RMS terburuk | Korelasi minimum |
 |---------|-------------:|-----------------:|
 | Momen `m_xx`, `m_yy`, `m_xy` | 0,144% | 0,99991 |
 | Geser `q_x`, `q_y` | 0,265% | 0,99993 |
-| Lendutan per node `uz` | 0,216% | 0,999986 |
+| Lendutan per node `uz` | 0,258% | 0,999971 |
 | Reaksi tumpuan `Rz` | 0,539% | 0,999596 |
 | Momen **puncak** (penentu tulangan) | 0,515% | — |
 
-Dua hal yang perlu dibaca jujur:
+`ex04` menguji apa yang tidak disentuh tiga lainnya — **jalur tumpang tindih pile–pier**.
+Yang terbukti di sana, masing-masing terhadap implementasi independen: himpunan node jepit
+Midas **sama persis** dengan milik tool ini (479 node, termasuk node lensa — nol selisih di
+kedua arah), `Σ FZ` cocok dengan `Σ Pz` sampai ~9 angka berarti meski sebagian tekanan
+bekerja pada elemen lensa, dan resultan per elemennya tetap cocok pada RMS ≤ 0,134%.
+
+Tiga hal yang perlu dibaca jujur:
 
 - **Konvensi tanda geser Midas berlawanan** dengan konvensi tool ini, dan itu
   direkonsiliasi secara eksplisit — bukan disembunyikan. Buktinya seragam: tidak ada satu
   pun dari ~5.500 elemen yang menyimpang.
-- **Lendutan ex01 dibatasi resolusi ekspor Midas** (1 µm = 0,44% dari skala), yang lebih
-  besar daripada selisih terukur. Untuk contoh itu yang terbukti hanyalah "tidak berbeda
-  sejauh yang dapat diukur".
+- **Jalur lendutan adalah yang terlemah**, karena ekspor Midas hanya 6 desimal dalam meter
+  (resolusi 1 µm). Pada pilecap kaku itu besar: ex01 0,44%, ex03 0,052%, **ex04 0,91%** dari
+  skala — seluruhnya lebih besar daripada selisih terukur, sehingga yang terbukti hanyalah
+  "tidak berbeda sejauh yang dapat diukur". Hanya ex02 yang bebas dari batasan ini. Yang
+  membuktikan ketelitian adalah jalur resultan elemen dan reaksi.
+- **Kesesuaian ex04 tidak membuktikan bahwa idealisasi jepit-sempurna itu benar.** Kedua
+  program memakai idealisasi yang sama, jadi perbandingannya tidak dapat menilai asumsinya.
+  Kapasitas strut tetap wajib dicek terpisah.
 
 Sebagai efek samping, `Σ FZ` reaksi Midas sama dengan `Σ Pz` masukan sampai ~9 angka
 berarti — ini memvalidasi **ekspor `model.mct`** secara end-to-end, satu-satunya cek yang

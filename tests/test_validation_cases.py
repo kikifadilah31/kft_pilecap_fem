@@ -8,9 +8,13 @@ TIDAK BOLEH dipakai sebelum diverifikasi ke sumbernya. Karena PRD Bagian 17 item
 terbuka, kedua case itu di-`skip` dengan alasan eksplisit -- BUKAN diisi angka tebakan.
 
 **VC-6 kini berjalan** (PRD Bagian 17 item 8 TERTUTUP sejak 2026-08-10): model pembanding
-Midas Civil untuk ketiga contoh bawaan tersedia di `tests/data/vc6/`. Ia membandingkan
+Midas Civil untuk keempat contoh bawaan tersedia di `tests/data/vc6/`. Ia membandingkan
 resultan elemen, lendutan per node, dan reaksi tumpuan; provenance beserta rekonsiliasi
 konvensinya ada di `tests/data/vc6/SUMBER.md`.
+
+`ex04` (v0.9.0) menambahkan cakupan yang tidak dimiliki tiga lainnya: pile yang menindih
+pier, sehingga node lensa dijepit SEKALIGUS dibebani. Ia menguji `*CONSTRAINT` dan
+`*PRESSURE` pada ekspor MCT terhadap Midas -- lihat SUMBER.md Bagian 1.1.
 
 Kalibrasi tanda (`config.MOMENT_SIGN_FACTOR`, `config.SHEAR_SIGN_FACTOR`) TIDAK
 bergantung pada koefisien buku: VC-3 memakai pelat satu arah bertumpuan sederhana, yang
@@ -523,20 +527,23 @@ def test_opensees_state_dibersihkan_antar_kombinasi(ex01_model):
 # mengubah angka gate mana pun di bawah.
 
 VC6_DATA = Path(__file__).resolve().parent / "data" / "vc6"
-VC6_KASUS = ("ex01", "ex02", "ex03")
+VC6_KASUS = ("ex01", "ex02", "ex03", "ex04")
 #: (nama tampilan, slug Midas). Urutannya sama dengan urutan subcase di `.log`/`.out`.
 VC6_KOMBINASI = (("1.2D+1.6L", "1_2D_1_6L"), ("1.2D+1.0W", "1_2D_1_0W"))
 
-#: Gate. Angka di kolom "terukur" pada rencana v0.8.0 memberi margin 3-7x terhadap nilai
-#: terburuk yang benar-benar diamati; jangan dilonggarkan tanpa mengukur ulang ketiganya.
+#: Gate. Memberi margin 3-7x terhadap nilai terburuk yang benar-benar diamati; jangan
+#: dilonggarkan tanpa mengukur ulang KEEMPAT kasus. Tabel lengkapnya di SUMBER.md Bagian 7.
 VC6_KORELASI_MIN = 0.999
-VC6_RMS_MOMEN = 0.010  # terburuk terukur 0,144%
-VC6_RMS_GESER = 0.015  # terburuk terukur 0,265%
-VC6_PUNCAK_MOMEN = 0.020  # terburuk terukur 0,515%
-VC6_RMS_LENDUTAN = 0.010  # terburuk terukur 0,216% (ex01 dibatasi resolusi ekspor)
-VC6_RMS_REAKSI = 0.015  # terburuk terukur 0,539%
-VC6_TOTAL_REAKSI = 1e-4  # terburuk terukur ~6e-9
-VC6_ROTASI = 1e-4  # terburuk terukur 2e-6
+VC6_RMS_MOMEN = 0.010  # terburuk terukur 0,144% (ex04: 0,134%)
+VC6_RMS_GESER = 0.015  # terburuk terukur 0,265% (ex04: 0,114%)
+VC6_PUNCAK_MOMEN = 0.020  # terburuk terukur 0,515% (ex04: 0,378%)
+#: Terburuk terukur 0,258% -- itu ex04, dan angkanya DIBATASI RESOLUSI EKSPOR, bukan tanda
+#: ketidaksesuaian: lendutan ex04 hanya 0,110 mm sehingga 1 um setara 0,908%. Batas itu
+#: mengikat pada ex01, ex03, dan ex04; hanya ex02 yang bebas darinya (SUMBER.md 5.2).
+VC6_RMS_LENDUTAN = 0.010
+VC6_RMS_REAKSI = 0.015  # terburuk terukur 0,539% (ex04: 0,088%)
+VC6_TOTAL_REAKSI = 1e-4  # terburuk terukur ~6e-9 (ex04: ~4e-12)
+VC6_ROTASI = 1e-4  # terburuk terukur 2e-6 (ex04: 1,3e-6)
 
 
 def _vc6_jalankan(kasus: str, combo: str):
@@ -572,7 +579,7 @@ def _vc6_jalankan(kasus: str, combo: str):
 
 @pytest.fixture(scope="module")
 def vc6_hasil() -> dict[tuple[str, str], tuple]:
-    """Enam analisis (3 kasus x 2 kombinasi) dijalankan sekali; terukur ~5,6 detik total.
+    """Delapan analisis (4 kasus x 2 kombinasi) dijalankan sekali; terukur ~8 detik total.
 
     Secepat itu justru KARENA mesh dimuat dari CSV -- gmsh tidak pernah dijalankan.
     """
@@ -691,7 +698,7 @@ def test_vc6_rotasi_lokal_ke_global_cocok_dengan_midas(kasus: str, combo: str, s
 @pytest.mark.parametrize("kasus", VC6_KASUS)
 @pytest.mark.parametrize(("combo", "slug"), VC6_KOMBINASI)
 def test_vc6_lendutan_per_node_cocok_dengan_midas(vc6_hasil, kasus: str, combo: str, slug: str):
-    """Lendutan vertikal per node vs Midas, KETIGA contoh.
+    """Lendutan vertikal per node vs Midas, KEEMPAT contoh.
 
     Ekspor ex03 semula salah -- isinya reaksi, bukan lendutan -- sehingga jalur ini sempat
     hanya mencakup ex01 & ex02. Pemilik proyek memperbaikinya; riwayat itu tetap tercatat di
@@ -721,7 +728,7 @@ def test_vc6_lendutan_per_node_cocok_dengan_midas(vc6_hasil, kasus: str, combo: 
 def test_vc6_lendutan_maksimum_cocok_dengan_log_midas(vc6_hasil, kasus: str):
     """`MAXIMUM TRANSLATION` di `.log` solver Midas vs lendutan maksimum kami.
 
-    Tersedia untuk KETIGA kasus, termasuk ex03 yang ekspor per-node-nya tidak ada.
+    Tersedia untuk KEEMPAT kasus, tidak bergantung pada ekspor per-node.
     """
     acuan = validation_helpers.midas_max_translation(VC6_DATA / kasus / "midas_solver.log")
     assert len(acuan) == len(VC6_KOMBINASI), (
@@ -739,7 +746,13 @@ def test_vc6_lendutan_maksimum_cocok_dengan_log_midas(vc6_hasil, kasus: str):
 @pytest.mark.parametrize("kasus", VC6_KASUS)
 @pytest.mark.parametrize(("combo", "slug"), VC6_KOMBINASI)
 def test_vc6_reaksi_tumpuan_cocok_dengan_midas(vc6_hasil, kasus: str, combo: str, slug: str):
-    """Reaksi vertikal per node jepit vs Midas, pada ketiga kasus."""
+    """Reaksi vertikal per node jepit vs Midas, pada keempat kasus.
+
+    Untuk ex04 test ini sekaligus menguji `fem_engine.fixed_support_nodes`: asersi
+    kesamaan indeks di bawah menuntut himpunan node jepit Midas SAMA PERSIS dengan milik
+    kami, dan himpunan itu memuat node `LENS_*`. Bila lensa tertinggal bebas di salah satu
+    sisi, test gagal di asersi indeks -- bukan diam-diam lolos dengan angka yang berbeda.
+    """
     mesh, mentah, _, _ = vc6_hasil[(kasus, combo)]
     jenis, tabel = validation_helpers.midas_nodal(VC6_DATA / kasus / "midas_reaction.csv", slug)
     assert jenis == "reaction"
