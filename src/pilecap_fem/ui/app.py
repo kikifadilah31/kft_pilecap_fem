@@ -330,6 +330,20 @@ with st.form("masukan", border=False):
             st.markdown(f"### {section.title}")
             if section.help:
                 st.caption(section.help)
+            if section.illustration:
+                # `st.image` menerima STRING SVG, jadi berkasnya cukup dibaca -- tidak
+                # perlu rasterisasi dan tidak ada dependency tambahan. Kegagalan membaca
+                # tidak boleh menjatuhkan formulir: ilustrasi itu alat bantu, sedangkan
+                # yang sedang dikerjakan user adalah masukan analisisnya.
+                try:
+                    st.image(
+                        (config.illustrations_dir() / section.illustration).read_text(
+                            encoding="utf-8"
+                        ),
+                        width="stretch",
+                    )
+                except OSError as exc:  # pragma: no cover -- instalasi tidak lengkap
+                    st.caption(f":material/broken_image: Ilustrasi tidak dapat dimuat ({exc}).")
             if sumber_override:
                 st.caption(
                     f":material/rule: Diabaikan — di-override `{sumber_override}`. "

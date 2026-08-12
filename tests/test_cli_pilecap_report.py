@@ -79,12 +79,14 @@ def test_seluruh_berkas_model_terbentuk(reported: Path):
 
 
 def test_seluruh_berkas_kombinasi_terbentuk(reported: Path):
+    # `strip_moments_*.csv` SENGAJA tidak ada di sini: `ex01` memakai
+    # `design.rebar_basis = "element"` (bawaan), dan pada mode itu jalur lajur tidak
+    # dijalankan sama sekali. Keberadaannya diuji pada mode lajur -- lihat
+    # `test_mode_lajur_menghasilkan_strip_moments`.
     for combo_dir in reported.glob("Combo_*"):
         for name in (
             config.FILE_CALC_SHEET,
             "element_resultants.csv",
-            "strip_moments_x.csv",
-            "strip_moments_y.csv",
             "shear_checks.csv",
             "reactions.csv",
             "equilibrium_check.json",
@@ -103,8 +105,45 @@ def test_folder_envelope_lengkap(reported: Path):
     envelope_dir = reported / config.ENVELOPE_SUBDIR
     assert (envelope_dir / "envelope_values.csv").is_file()
     assert (envelope_dir / "envelope_summary.md").is_file()
+    assert (envelope_dir / config.FILE_REBAR_ENVELOPE).is_file()
+
+    # 2 x field gaya (maks & min) + 12 plot tulangan: 4 As, 4 batang terpilih,
+    # 2 Av/s, 2 diameter sengkang.
     plots = list(envelope_dir.glob("envelope_*.png"))
-    assert len(plots) == 2 * len(config.CONTOUR_FIELDS)
+    assert len(plots) == 2 * len(config.CONTOUR_FIELDS) + 12
+
+
+def test_envelope_memuat_plot_tulangan(reported: Path):
+    """Tanpa plot envelope, desain lintas kombinasi hanya bisa dibaca dengan mata.
+
+    Pengguna harus membandingkan satu set kontur per kombinasi -- persis pekerjaan yang
+    envelope ada untuk menghilangkannya.
+    """
+    envelope_dir = reported / config.ENVELOPE_SUBDIR
+    for berkas, _ in config.REBAR_FACES.values():
+        assert (envelope_dir / berkas.replace("contour_", "envelope_")).is_file()
+    for _, avs, dia, _ in config.SHEAR_REBAR_FIELDS.values():
+        assert (envelope_dir / avs.replace("contour_", "envelope_")).is_file()
+        assert (envelope_dir / dia.replace("contour_", "envelope_")).is_file()
+
+
+def test_envelope_lajur_hanya_pada_mode_lajur(reported: Path, reported_lajur: Path):
+    """`strip_design_envelope.csv` menjawab "apa yang saya pasang di lajur ini".
+
+    Pada mode elemen lajur tidak dihitung sama sekali, sehingga berkasnya tidak boleh ada
+    -- berkas kosong atau berisi angka lama sama menyesatkannya.
+    """
+    import csv
+
+    assert not (reported / config.ENVELOPE_SUBDIR / config.FILE_STRIP_ENVELOPE).exists()
+
+    path = reported_lajur / config.ENVELOPE_SUBDIR / config.FILE_STRIP_ENVELOPE
+    assert path.is_file()
+    with open(path, encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    # 5 lajur x 2 sisi muka pier x 2 arah, masing-masing dengan kombinasi penentunya.
+    assert len(rows) == 20
+    assert all(r["governing_combo"] for r in rows)
 
 
 def test_summary_terbentuk(reported: Path):
@@ -285,12 +324,18 @@ def test_geometry_json_round_trip(reported: Path):
     assert kembali.resolution.pilecap.source == geom.resolution.pilecap.source
 
 
-def test_report_dapat_dijalankan_ulang_tanpa_analisis_ulang(reported: Path):
-    """Mengganti jumlah lajur tidak boleh menuntut analisis FEM diulang."""
-    _report(reported, "--strips-x", "3", "--strips-y", "3")
+def test_report_dapat_dijalankan_ulang_tanpa_analisis_ulang(reported_lajur: Path):
+    """Mengganti jumlah lajur tidak boleh menuntut analisis FEM diulang.
+
+    Memakai fixture mode LAJUR: pada mode elemen jumlah lajur tidak dibaca sama sekali,
+    sehingga di sana test ini tidak menguji apa pun.
+    """
+    _report(reported_lajur, "--strips-x", "3", "--strips-y", "3")
     import csv
 
-    with open(reported / "Combo_1_2D_1_6L" / "strip_moments_x.csv", encoding="utf-8") as handle:
+    with open(
+        reported_lajur / "Combo_1_2D_1_6L" / "strip_moments_x.csv", encoding="utf-8"
+    ) as handle:
         rows = list(csv.DictReader(handle))
     # 3 lajur x 2 sisi muka pier x 1 pier
     assert len(rows) == 6
@@ -432,3 +477,86 @@ def test_pilecap_run_meneruskan_argumen_laporan(tmp_path: Path):
     )
     run_dir = cli_pilecap_run.run(args, "pilecap-run (test)")
     assert not (run_dir / config.ENVELOPE_SUBDIR).exists()
+
+
+# ---------------------------------------------------------------------------
+# design.rebar_basis -- mode elemen (bawaan) vs mode lajur
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def reported_lajur(tmp_path_factory):
+    """Run `ex01` yang dipaksa ke mode LAJUR, untuk menguji cabang yang satunya."""
+    import json
+
+    workdir = tmp_path_factory.mktemp("report_lajur")
+    target = workdir / "ex01"
+    shutil.copytree(EXAMPLES / "ex01_standard_4pile", target)
+    cfg_path = target / "pilecap_config.json"
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    cfg["design"]["rebar_basis"] = "strip"
+    cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+    run_dir = _analyze(target, workdir / "output")
+    _report(run_dir)
+    return run_dir
+
+
+def test_mode_elemen_tidak_menghasilkan_keluaran_lajur(reported: Path):
+    """Mode elemen memutus jalur lajur, bukan sekadar menyembunyikan tabelnya.
+
+    Berkas yang tetap ditulis akan terbaca sebagai angka desain oleh siapa pun yang
+    membuka folder hasil -- padahal pada mode ini ia bukan, dan tidak pernah dipakai.
+    """
+    for combo_dir in reported.glob("Combo_*"):
+        assert not (combo_dir / "strip_moments_x.csv").exists()
+        assert not (combo_dir / "strip_moments_y.csv").exists()
+
+        teks = (combo_dir / config.FILE_CALC_SHEET).read_text(encoding="utf-8")
+        assert "dari nilai per ELEMEN" in teks
+        assert "dari momen LAJUR" not in teks
+        # Angka desain mode ini bergantung kehalusan mesh; ukurannya WAJIB tercetak
+        # bersama angkanya, kalau tidak hasilnya tidak dapat direproduksi.
+        assert "`mesh.size_global`" in teks
+
+
+def test_mode_lajur_menghasilkan_strip_moments(reported_lajur: Path):
+    """Mode lajur mempertahankan seluruh perilaku lama, apa adanya."""
+    for combo_dir in reported_lajur.glob("Combo_*"):
+        for name in ("strip_moments_x.csv", "strip_moments_y.csv"):
+            path = combo_dir / name
+            assert path.is_file(), f"{combo_dir.name}/{name} tidak dibuat"
+            assert path.stat().st_size > 0
+
+        teks = (combo_dir / config.FILE_CALC_SHEET).read_text(encoding="utf-8")
+        assert "dari momen LAJUR di muka pier" in teks
+        assert "dari nilai per ELEMEN" not in teks
+
+
+def test_summary_menyatakan_basis_yang_dipakai(reported: Path, reported_lajur: Path):
+    """Tidak ada berkas hasil yang boleh beredar tanpa menyebut metodenya.
+
+    Kedua mode menghasilkan angka yang berbeda dari model yang sama, jadi angka tanpa
+    keterangan metode tidak dapat dibandingkan maupun diperiksa ulang.
+    """
+    elemen = (reported / config.FILE_SUMMARY).read_text(encoding="utf-8")
+    lajur = (reported_lajur / config.FILE_SUMMARY).read_text(encoding="utf-8")
+
+    assert "`element`" in elemen and "nilai per elemen" in elemen
+    assert "`strip`" in lajur and "integrasi lajur" in lajur
+    # Kolom telusur berbeda karena yang ditelusuri memang berbeda.
+    assert "lokasi [" in elemen
+    assert "| lajur |" in lajur or "lajur" in lajur
+
+
+def test_mode_elemen_melaporkan_lokasi_puncak(reported: Path):
+    """Tanpa koordinat, puncak di sudut pier (singularitas) tidak dapat dibedakan.
+
+    Inilah satu-satunya cara membaca angka maksimum mode elemen secara bertanggung
+    jawab -- dan justru itu yang hilang bila hanya angkanya yang dicetak.
+    """
+    teks = (reported / config.FILE_SUMMARY).read_text(encoding="utf-8")
+    assert "elem " in teks, "baris governing tidak menyebut elemen asalnya"
+    # Muka yang dikuasai As_min: SELURUH elemen seri, jadi koordinat mana pun tidak
+    # istimewa dan menyajikannya seolah bermakna akan menyesatkan.
+    assert "seluruh elemen seri" in teks

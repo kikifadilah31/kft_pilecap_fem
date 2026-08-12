@@ -434,6 +434,7 @@ def validate_design(cfg: dict) -> None:
             "checker dapat menelusuri asal angka fy (PRD Bagian 9.4 bagian 1)."
         )
 
+    _validate_rebar_basis(design)
     _validate_rebar_mode(design)
     _validate_stirrups(design)
 
@@ -469,6 +470,37 @@ def validate_design(cfg: dict) -> None:
 #: Mode pemilihan batang tulangan lentur. Menentukan MANA yang jadi masukan dan mana yang
 #: dihitung -- keduanya sah, tetapi tidak boleh ambigu.
 REBAR_MODES: tuple[str, str] = ("spacing_fixed", "diameter_fixed")
+
+
+def _validate_rebar_basis(design: dict) -> None:
+    """`design.rebar_basis` -- dari mana angka desain diambil.
+
+    Sumbu yang BERBEDA dari `rebar_mode` (spasi vs diameter) dan `moment_at` (di mana
+    potongan diambil). Menumpuk ketiganya jadi satu field akan melahirkan kombinasi yang
+    tidak punya arti.
+    """
+    basis = design.get("rebar_basis", config.REBAR_BASIS_DEFAULT)
+    if basis not in config.REBAR_BASES:
+        raise InputError(
+            f"`design.rebar_basis` = {basis!r} tidak dikenal. "
+            f"Pilihan: {list(config.REBAR_BASES)}.\n"
+            '    "element" -> angka desain dari nilai tiap ELEMEN apa adanya\n'
+            '    "strip"   -> angka desain dari integrasi LAJUR di muka pier'
+        )
+
+    # Field lajur yang terisi pada mode `element` TIDAK menggagalkan run -- config yang
+    # sama harus bisa dipakai bolak-balik antar mode tanpa disunting. Tetapi ia juga tidak
+    # boleh diabaikan diam-diam: user yang menyetel `strips_x` berhak tahu bahwa setelan
+    # itu tidak berpengaruh apa pun pada angka yang keluar.
+    if basis == "element":
+        terisi = [k for k in ("strips_x", "strips_y", "moment_at") if design.get(k) is not None]
+        if terisi:
+            _log.warning(
+                "`design.rebar_basis` = 'element', sehingga %s TIDAK dibaca sama sekali. "
+                "Angka desain diambil langsung dari nilai tiap elemen; hitungan lajur tidak "
+                "dijalankan. Setel `rebar_basis` ke 'strip' bila yang Anda maksud sebaliknya.",
+                ", ".join(f"`design.{k}`" for k in terisi),
+            )
 
 
 def _known_config_codes() -> list[str]:

@@ -23,6 +23,7 @@ import argparse
 import json
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -226,9 +227,35 @@ def run(args: argparse.Namespace, command: str) -> Path:
 
     cfg = (manifest.get("parameters") or {}).get("config_si") or {}
     design = cfg.get("design") or {}
+    # Berlaku untuk SELURUH kombinasi sekaligus, termasuk envelope -- satu setelan, bukan
+    # per kombinasi. Mencampurnya membuat envelope membandingkan besaran yang dihitung
+    # dengan cara berbeda, sehingga angka governing-nya kehilangan arti.
+    rebar_basis = str(design.get("rebar_basis") or config.REBAR_BASIS_DEFAULT)
     strips_x = args.strips_x or int(design.get("strips_x", 5))
     strips_y = args.strips_y or int(design.get("strips_y", 5))
     moment_at = args.moment_at or str(design.get("moment_at", "pier_face"))
+
+    # Flag lajur yang diberikan eksplisit di CLI tetapi tidak dibaca adalah no-op senyap:
+    # user menunggu hasil yang berubah, dan tidak ada apa pun yang memberitahunya bahwa
+    # perintahnya tidak berpengaruh.
+    if rebar_basis == "element":
+        diabaikan = [
+            nama
+            for nama, nilai in (
+                ("--strips-x", args.strips_x),
+                ("--strips-y", args.strips_y),
+                ("--moment-at", args.moment_at),
+            )
+            if nilai is not None
+        ]
+        if diabaikan:
+            _log.warning(
+                "%s DIABAIKAN: run ini memakai `design.rebar_basis` = 'element', yang "
+                "mengambil angka desain langsung dari nilai tiap elemen tanpa hitungan "
+                "lajur. Setel `rebar_basis` ke 'strip' di config bila yang Anda maksud "
+                "sebaliknya.",
+                ", ".join(diabaikan),
+            )
     cover_m = float(design.get("cover") or 0.0)
     mesh_size = float(((cfg.get("mesh") or {}).get("size_global")) or 0.1)
 
@@ -298,6 +325,7 @@ def run(args: argparse.Namespace, command: str) -> Path:
             mesh=mesh,
             manifest=manifest,
             cfg=cfg,
+            rebar_basis=rebar_basis,
             strips_x=strips_x,
             strips_y=strips_y,
             moment_at=moment_at,
@@ -322,6 +350,10 @@ def run(args: argparse.Namespace, command: str) -> Path:
             mesh,
             results_by_combo,
             designs_by_combo,
+            strip_design_by_combo,
+            capacity_inputs=capacity_inputs,
+            rebar_basis=rebar_basis,
+            no_rebar_plots=args.no_rebar_plots,
             style=style,
             block=base_block,
         )
@@ -342,7 +374,12 @@ def run(args: argparse.Namespace, command: str) -> Path:
         deep_ratio=deep_ratio,
         warnings=warnings + list(manifest.get("warnings") or []),
         envelope=envelope,
-        rebar_governing=capacity_engine.governing_strip_design(strip_design_by_combo),
+        rebar_basis=rebar_basis,
+        rebar_governing=(
+            capacity_engine.governing_strip_design(strip_design_by_combo)
+            if rebar_basis == "strip"
+            else capacity_engine.governing_element_design(designs_by_combo, mesh)
+        ),
         capacity_inputs=capacity_inputs,
     )
 
@@ -401,28 +438,50 @@ def _render_rebar_plots(
     pz_by_pile: dict[str, float],
     style: renderer.PlotStyle,
     block: renderer.TitleBlock,
+    rebar_basis: str = "strip",
+    rename: Callable[[str], str] | None = None,
+    title_prefix: str = "",
 ) -> None:
     """Delapan plot tulangan per kombinasi: 4 As + 4 seleksi + 4 geser.
 
-    Peta per elemen ini adalah alat BACA, bukan angka desain: puncaknya jatuh di
-    singularitas tepi zona jepit pier. Angka desain tetap berasal dari lajur di muka pier
-    (lentur) dan penampang `d` dari muka pier (geser) -- dinyatakan di caption tiap plot
-    agar tidak ada gambar yang beredar tanpa peringatan itu.
+    Caption plot LENTUR mengikuti `rebar_basis`, dan itu bukan kehalusan: gambar inilah
+    yang dicetak dan ditempel ke laporan. Pada mode `strip` peta ini alat baca, sedangkan
+    pada mode `element` ia justru sumber angka desainnya -- caption yang salah satu arah
+    akan beredar sebagai pernyataan yang keliru pada setiap lembar.
+
+    Caption plot GESER tidak bergantung mode: geser satu arah selalu didesain pada
+    penampang `d` dari muka pier, bukan per elemen.
     """
     peringatan = (
-        "Peta orientasi — nilai desain diambil dari lajur muka pier, bukan dari nilai "
-        "puncak elemen."
+        (
+            "Inilah sumber angka desain (rebar_basis = element). Puncak di tepi zona "
+            "jepit pier bersifat SINGULAR dan bergantung kehalusan mesh."
+        )
+        if rebar_basis == "element"
+        else (
+            "Peta orientasi — nilai desain diambil dari lajur muka pier, bukan dari nilai "
+            "puncak elemen."
+        )
     )
+
+    # Nama berkas diganti lewat `rename` agar fungsi ini dapat dipakai ulang apa adanya
+    # untuk envelope (`contour_*` -> `envelope_*`), memakai pola penggantian yang sama
+    # dengan plot envelope gaya. Tanpa itu, envelope butuh salinan seluruh blok ini.
+    nama = rename or (lambda n: n)
+    # Judul WAJIB menyebut "Envelope" pada plot envelope. Kop memang sudah menyatakannya,
+    # tetapi judullah yang dibaca pertama pada gambar yang dicetak dan ditempel ke
+    # laporan -- plot gaya sudah melakukannya, dan plot tulangan tidak boleh berbeda.
+    judul_plot = (lambda t: f"{title_prefix}{t}") if title_prefix else (lambda t: t)
 
     for (direction, face), (filename, title) in config.REBAR_FACES.items():
         design = designs[(direction, face)]
         renderer.render_contour(
-            combo_dir / filename,
+            combo_dir / nama(filename),
             geom,
             mesh,
             capacity_engine.as_design_array(design),
             quantity="steel_area",
-            title=title,
+            title=judul_plot(title),
             # `As` tidak bertanda: skala diverging yang dipusatkan di nol akan membuang
             # separuh rentang warna untuk nilai yang tidak pernah muncul.
             diverging=False,
@@ -438,12 +497,12 @@ def _render_rebar_plots(
         judul = f"{selection.kind.capitalize()} tulangan arah {direction.upper()} — muka {face}"
         if selection.is_categorical:
             renderer.render_categorical(
-                combo_dir / stem,
+                combo_dir / nama(stem),
                 geom,
                 mesh,
                 _category_index(selection),
                 labels=selection.labels,
-                title=judul,
+                title=judul_plot(judul),
                 combo=combo,
                 pz_by_pile=pz_by_pile,
                 style=style,
@@ -451,12 +510,12 @@ def _render_rebar_plots(
             )
         else:
             renderer.render_contour(
-                combo_dir / stem,
+                combo_dir / nama(stem),
                 geom,
                 mesh,
                 selection.values,
                 quantity=selection.quantity,
-                title=judul,
+                title=judul_plot(judul),
                 diverging=False,
                 combo=combo,
                 pz_by_pile=pz_by_pile,
@@ -472,12 +531,12 @@ def _render_rebar_plots(
             f"{smap.n_av_min_only:,} elemen hanya terkena Av,min."
         )
         renderer.render_contour(
-            combo_dir / avs_file,
+            combo_dir / nama(avs_file),
             geom,
             mesh,
             smap.av_per_s,
             quantity="shear_steel_ratio",
-            title=f"Av/s sengkang {label}",
+            title=judul_plot(f"Av/s sengkang {label}"),
             diverging=False,
             combo=combo,
             pz_by_pile=pz_by_pile,
@@ -491,12 +550,12 @@ def _render_rebar_plots(
         # sembarang pada gradasi `YlOrRd` yang kontinu, dengan colorbar berlabel angka
         # interpolasi alih-alih D10..D25.
         renderer.render_categorical(
-            combo_dir / dia_file,
+            combo_dir / nama(dia_file),
             geom,
             mesh,
             _diameter_index(smap.stirrup_diameter, smap.labels),
             labels=smap.labels,
-            title=f"Diameter sengkang {label}",
+            title=judul_plot(f"Diameter sengkang {label}"),
             combo=combo,
             pz_by_pile=pz_by_pile,
             style=style,
@@ -543,6 +602,7 @@ def _report_one_combo(
     mesh: mesh_model.MeshModel,
     manifest: dict[str, Any],
     cfg: dict[str, Any],
+    rebar_basis: str,
     strips_x: int,
     strips_y: int,
     moment_at: str,
@@ -600,17 +660,23 @@ def _report_one_combo(
         )
 
     # --- momen lajur & geser ------------------------------------------------
-    strip_rows = postproc_engine.design_moment_sections(
-        results,
-        mesh,
-        geom,
-        n_strips_x=strips_x,
-        n_strips_y=strips_y,
-        mesh_size=mesh_size,
-        moment_at=moment_at,
-    )
-    reporter.write_strip_moments_csv(combo_dir / "strip_moments_x.csv", strip_rows, "x")
-    reporter.write_strip_moments_csv(combo_dir / "strip_moments_y.csv", strip_rows, "y")
+    #
+    # Pada `rebar_basis = "element"` seluruh jalur lajur DILEWATI, bukan sekadar tabelnya
+    # disembunyikan: itulah arti "murni nilai elemen". `strip_moments_*.csv` pun tidak
+    # ditulis, supaya tidak ada berkas yang tampak seperti angka desain padahal bukan.
+    strip_rows: list[dict[str, Any]] = []
+    if rebar_basis == "strip":
+        strip_rows = postproc_engine.design_moment_sections(
+            results,
+            mesh,
+            geom,
+            n_strips_x=strips_x,
+            n_strips_y=strips_y,
+            mesh_size=mesh_size,
+            moment_at=moment_at,
+        )
+        reporter.write_strip_moments_csv(combo_dir / "strip_moments_x.csv", strip_rows, "x")
+        reporter.write_strip_moments_csv(combo_dir / "strip_moments_y.csv", strip_rows, "y")
 
     shear_checks = postproc_engine.shear_demand(results, mesh, geom, pz_by_pile, cover_m=cover_m)
     reporter.write_shear_checks_csv(combo_dir / "shear_checks.csv", shear_checks)
@@ -621,7 +687,9 @@ def _report_one_combo(
         capacity_inputs,
     )
     designs_by_combo[combo] = designs
-    strip_design = capacity_engine.strip_flexure_design(strip_rows, capacity_inputs)
+    strip_design = (
+        capacity_engine.strip_flexure_design(strip_rows, capacity_inputs) if strip_rows else []
+    )
     strip_design_by_combo[combo] = strip_design
     shear_capacities = capacity_engine.one_way_shear_from_checks(shear_checks, capacity_inputs)
 
@@ -704,6 +772,8 @@ def _report_one_combo(
         run_name=run_dir.name,
         command=command,
         dependencies=manifest.get("dependencies") or {},
+        rebar_basis=rebar_basis,
+        mesh_size_m=mesh_size,
     )
 
     summary_row = next(
@@ -729,7 +799,11 @@ def _write_envelope(
     mesh: mesh_model.MeshModel,
     results_by_combo: dict[str, postproc_engine.ElementResults],
     designs_by_combo: dict[str, dict[tuple[str, str], capacity_engine.FlexureDesign]],
+    strip_design_by_combo: dict[str, list[dict[str, Any]]],
     *,
+    capacity_inputs: capacity_engine.CapacityInputs,
+    rebar_basis: str,
+    no_rebar_plots: bool,
     style: renderer.PlotStyle,
     block: renderer.TitleBlock,
 ) -> postproc_engine.Envelope:
@@ -765,14 +839,108 @@ def _write_envelope(
             )
             plots.append(name)
 
+    if not no_rebar_plots:
+        plots += _render_envelope_rebar_plots(
+            envelope_dir,
+            geom,
+            mesh,
+            envelope=envelope,
+            capacity_inputs=capacity_inputs,
+            style=style,
+            block=block,
+            rebar_basis=rebar_basis,
+        )
+
     reporter.write_rebar_envelope_csv(
         envelope_dir / config.FILE_REBAR_ENVELOPE, designs_by_combo, mesh
     )
+    if rebar_basis == "strip" and strip_design_by_combo:
+        reporter.write_strip_envelope_csv(
+            envelope_dir / config.FILE_STRIP_ENVELOPE,
+            capacity_engine.envelope_strip_design(strip_design_by_combo),
+        )
     reporter.write_envelope_csv(envelope_dir / "envelope_values.csv", envelope, mesh)
     reporter.write_envelope_summary(
         envelope_dir / "envelope_summary.md", envelope, mesh, plots=plots
     )
     return envelope
+
+
+def _render_envelope_rebar_plots(
+    envelope_dir: Path,
+    geom: GeometryModel,
+    mesh: mesh_model.MeshModel,
+    *,
+    envelope: postproc_engine.Envelope,
+    capacity_inputs: capacity_engine.CapacityInputs,
+    style: renderer.PlotStyle,
+    block: renderer.TitleBlock,
+    rebar_basis: str,
+) -> list[str]:
+    """Dua belas plot tulangan envelope: 4 `As` + 4 batang + 2 `Av/s` + 2 sengkang.
+
+    Dibangun dari envelope GAYA, lalu didesain sekali -- bukan dari maksimum `As` antar
+    kombinasi. Alasannya ada di `Envelope.face_moment`.
+
+    Memakai ulang `_render_rebar_plots` apa adanya lewat `rename`; menyalin blok plotnya
+    akan melahirkan dua jalur gambar yang dapat menyimpang diam-diam.
+    """
+    designs = {
+        (direction, face): capacity_engine.flexure_design(
+            envelope.face_moment(direction, face),
+            capacity_inputs,
+            direction=direction,
+            face=face,
+        )
+        for direction, face in config.REBAR_FACES
+    }
+    selections = {
+        key: capacity_engine.select_flexure_bars(design, capacity_inputs)
+        for key, design in designs.items()
+    }
+    shear_maps = {
+        direction: capacity_engine.shear_rebar_map(
+            envelope.abs_shear(direction), capacity_inputs, direction=direction
+        )
+        for direction in config.SHEAR_REBAR_FIELDS
+    }
+
+    _render_rebar_plots(
+        envelope_dir,
+        geom,
+        mesh,
+        designs=designs,
+        selections=selections,
+        shear_maps=shear_maps,
+        # Kosong: baris kedua judul akan berbunyi "Kombinasi ENVELOPE", padahal envelope
+        # justru BUKAN satu kombinasi. Keterangannya masuk sebagai catatan di kop.
+        combo="",
+        pz_by_pile={},
+        style=style,
+        block=block.with_notes(
+            "ENVELOPE seluruh kombinasi. BUKAN kondisi keseimbangan tunggal: tiap elemen "
+            "dapat berasal dari kombinasi yang berbeda."
+        ),
+        rebar_basis=rebar_basis,
+        rename=lambda name: name.replace("contour_", "envelope_"),
+        title_prefix="Envelope — ",
+    )
+
+    nama_plot = [
+        n.replace("contour_", "envelope_")
+        for n in (
+            [f for f, _ in config.REBAR_FACES.values()]
+            + [
+                f.replace("contour_As_", f"contour_{s.kind}_")
+                for f, s in zip(
+                    (f for f, _ in config.REBAR_FACES.values()), selections.values(), strict=True
+                )
+            ]
+            + [avs for _, avs, _, _ in config.SHEAR_REBAR_FIELDS.values()]
+            + [dia for _, _, dia, _ in config.SHEAR_REBAR_FIELDS.values()]
+        )
+    ]
+    return nama_plot
 
 
 def entry_point(argv: list[str] | None = None) -> int:

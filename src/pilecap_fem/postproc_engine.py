@@ -636,6 +636,34 @@ class Envelope:
         indices = envelope.max_combo_index if which == "max" else envelope.min_combo_index
         return [self.combo_name(i) for i in indices]
 
+    def face_moment(self, direction: str, face: str) -> np.ndarray:
+        """Momen envelope untuk satu muka [N.m/m], siap masuk `flexure_design`.
+
+        Muka BAWAH lahir dari momen positif, jadi ia memakai `max_values`; muka ATAS dari
+        momen negatif, jadi `min_values`. Pemisahan tandanya diselesaikan
+        `capacity_engine._face_moments` seperti pada kombinasi biasa -- di sini hanya
+        dipilih sisi envelope yang benar.
+
+        Mendesain dari momen envelope, BUKAN mengambil maksimum `As` antar kombinasi:
+        hasilnya satu desain yang konsisten (`As`, `d_eff`, dan diameter lahir bersama
+        dari satu momen), dan pemilihan batang hanya sah dilakukan sekali di akhir --
+        pada mode `rebar_select_codes`, `RebarSelection.values` adalah INDEKS kategori,
+        sehingga maksimum indeks antar kombinasi tidak punya arti.
+        """
+        field = config.REBAR_MOMENT_FIELD[direction]
+        envelope = self.fields[field]
+        return envelope.max_values if face == "bawah" else envelope.min_values
+
+    def abs_shear(self, direction: str) -> np.ndarray:
+        """Geser envelope per arah [N/m], sudah |.|.
+
+        `Av/s` tidak bertanda, sehingga yang menentukan adalah magnitudo terbesar --
+        dari sisi maks MAUPUN sisi min. Memakai salah satunya saja akan melewatkan
+        elemen yang gesernya besar ke arah sebaliknya.
+        """
+        envelope = self.fields["q_x" if direction == "x" else "q_y"]
+        return np.maximum(np.abs(envelope.max_values), np.abs(envelope.min_values))
+
 
 def build_envelope(
     results_by_combo: dict[str, ElementResults],

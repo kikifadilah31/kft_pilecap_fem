@@ -300,6 +300,53 @@ def test_governing_memilih_kombinasi_terbesar():
     assert governing[0]["combo"] == "K2"
 
 
+def test_envelope_lajur_menyimpan_kedua_muka():
+    """Satu lajur dapat menuntut tulangan BAWAH dan ATAS dari kombinasi berbeda.
+
+    Tanda momen satu lajur berbalik antar kombinasi; mengunci satu muka per lajur akan
+    menghilangkan salah satunya tanpa jejak. Dibangun dari data sintetis karena kondisi
+    ini tidak dijamin muncul pada contoh bawaan mana pun.
+    """
+    by_combo = {
+        "K1": ce.strip_flexure_design([_strip_row(M_total_Nm=1_200_000.0)], INPUTS),
+        "K2": ce.strip_flexure_design([_strip_row(M_total_Nm=-900_000.0)], INPUTS),
+    }
+    envelope = ce.envelope_strip_design(by_combo)
+
+    muka = {r["face"]: r for r in envelope}
+    assert set(muka) == {"bawah", "atas"}, "salah satu muka hilang dari envelope"
+    assert muka["bawah"]["combo"] == "K1"
+    assert muka["atas"]["combo"] == "K2"
+
+    # Yang lama menciutkan seluruh lajur jadi satu baris per arah x muka; keduanya
+    # memang menjawab pertanyaan berbeda dan harus tetap dapat dibedakan.
+    assert len(ce.governing_strip_design(by_combo)) == len(envelope)
+
+
+def test_envelope_lajur_memisahkan_lajur_yang_berbeda():
+    """Kunci envelope mencakup nomor lajur -- bukan hanya arah x muka."""
+    by_combo = {
+        "K1": ce.strip_flexure_design(
+            [_strip_row(strip=1), _strip_row(strip=2, M_total_Nm=2_000_000.0)], INPUTS
+        )
+    }
+    envelope = ce.envelope_strip_design(by_combo)
+    assert {r["strip"] for r in envelope} == {1, 2}
+    assert len(ce.governing_strip_design(by_combo)) == 1, "governing memang menciutkan"
+
+
+def test_envelope_lajur_mengabaikan_nilai_singular():
+    by_combo = {
+        "K1": ce.strip_flexure_design([_strip_row()], INPUTS),
+        "K2": ce.strip_flexure_design(
+            [_strip_row(M_total_Nm=9_000_000.0, lokasi="peak", singular=True)], INPUTS
+        ),
+    }
+    envelope = ce.envelope_strip_design(by_combo)
+    assert all(not r.get("singular") for r in envelope)
+    assert all(r["combo"] == "K1" for r in envelope)
+
+
 # ---------------------------------------------------------------------------
 # Masukan wajib -- tidak ada default diam-diam
 # ---------------------------------------------------------------------------
@@ -553,3 +600,118 @@ def test_provenance_mencatat_mode_dan_grid_sengkang():
 
     codes = dataclasses.replace(INPUTS, rebar_select_codes=("16", "2D25"))
     assert ce.provenance_block(codes)["rebar_select_codes"] == ["16", "2D25"]
+
+
+# ---------------------------------------------------------------------------
+# governing_element_design -- ringkasan mode `rebar_basis = "element"`
+# ---------------------------------------------------------------------------
+
+
+def _mesh_dummy(n: int):
+    """Mesh minimal: `governing_element_design` hanya butuh tag, centroid, dan group."""
+    import types
+
+    return types.SimpleNamespace(
+        elem_tags=np.arange(1, n + 1),
+        elem_centroid=np.column_stack([np.linspace(0.0, 1.0, n), np.zeros(n)]),
+        elem_group=np.zeros(n, dtype=np.int64),
+        group_names=("CAP",),
+    )
+
+
+def _designs(moments_knm: np.ndarray) -> dict[tuple[str, str], ce.FlexureDesign]:
+    si = moments_knm * 1e3
+    return ce.design_all_faces({"x": si, "y": si}, INPUTS)
+
+
+def test_governing_elemen_memilih_kombinasi_dan_elemen_terbesar():
+    by_combo = {
+        "K1": _designs(np.array([100.0, 300.0, 50.0])),
+        "K2": _designs(np.array([900.0, 200.0, 50.0])),
+    }
+    rows = {
+        (r["direction"], r["face"]): r
+        for r in ce.governing_element_design(by_combo, _mesh_dummy(3))
+    }
+
+    bawah = rows[("x", "bawah")]
+    assert bawah["combo"] == "K2"
+    assert bawah["elem_tag"] == 1, "elemen dengan momen terbesar, bukan indeks pertama"
+    assert bawah["Mu_per_m_Nm"] == pytest.approx(900e3)
+
+
+def test_governing_elemen_membawa_lokasi():
+    """Tanpa koordinat, puncak di sudut pier tidak dapat dibedakan dari kebutuhan nyata."""
+    rows = ce.governing_element_design({"K1": _designs(np.array([100.0, 800.0]))}, _mesh_dummy(2))
+    bawah = next(r for r in rows if r["face"] == "bawah")
+
+    assert bawah["elem_tag"] == 2
+    assert bawah["centroid_x_m"] == pytest.approx(1.0)
+    assert "centroid_y_m" in bawah and "group" in bawah
+    assert not bawah["as_min_governs"]
+
+
+def test_governing_elemen_menandai_muka_yang_dikuasai_as_min():
+    """Bila maksimumnya = `As_min`, SELURUH elemen seri dan koordinatnya tidak istimewa.
+
+    Menyajikan elemen pertama yang kebetulan ditemui seolah lokasi puncak akan
+    menyesatkan -- dan itu terjadi pada muka atas hampir setiap pilecap tebal.
+    """
+    # Momen positif kecil: muka ATAS tidak menerima momen sama sekali.
+    rows = ce.governing_element_design({"K1": _designs(np.array([10.0, 20.0]))}, _mesh_dummy(2))
+    atas = next(r for r in rows if r["face"] == "atas")
+
+    assert atas["as_min_governs"] is True
+    assert atas["As_design_m2_per_m"] == pytest.approx(atas["As_min_m2_per_m"])
+
+
+def test_governing_elemen_menolak_masukan_kosong():
+    with pytest.raises(ValueError, match="kosong"):
+        ce.governing_element_design({}, _mesh_dummy(1))
+
+
+# ---------------------------------------------------------------------------
+# Envelope tulangan -- asumsi yang membenarkan "desain dari momen envelope"
+# ---------------------------------------------------------------------------
+
+
+def test_envelope_as_sama_dengan_maksimum_antar_kombinasi():
+    """Mendesain dari momen envelope harus sama dengan maksimum `As` antar kombinasi.
+
+    Inilah yang membenarkan seluruh pendekatan envelope tulangan: `As` monoton tak-turun
+    terhadap `|Mu|`, sehingga maksimumnya jatuh pada momen maksimum. Kalau peralihan
+    ukuran batang membuatnya TIDAK monoton di suatu titik, test ini memunculkannya --
+    bukan menyembunyikannya di balik angka yang terlihat wajar.
+
+    Diuji pada rentang momen yang melintasi beberapa peralihan diameter, karena di
+    situlah satu-satunya tempat asumsi ini bisa patah.
+    """
+    a = np.array([100.0, 900.0, 250.0, 40.0, 1_500.0]) * 1e3  # N.m/m
+    b = np.array([800.0, 300.0, 250.0, 700.0, 200.0]) * 1e3
+
+    per_kombinasi = [
+        ce.as_design_array(ce.flexure_design(m, INPUTS, direction="x", face="bawah"))
+        for m in (a, b)
+    ]
+    maksimum = np.maximum(*per_kombinasi)
+
+    # Envelope momen: maksimum per elemen, persis `Envelope.face_moment(...)`.
+    dari_envelope = ce.as_design_array(
+        ce.flexure_design(np.maximum(a, b), INPUTS, direction="x", face="bawah")
+    )
+
+    np.testing.assert_allclose(dari_envelope, maksimum, rtol=1e-12)
+
+
+def test_envelope_muka_atas_memakai_momen_paling_negatif():
+    """Muka ATAS lahir dari momen negatif, jadi envelope-nya MINIMUM, bukan maksimum."""
+    a = np.array([-900.0, 100.0]) * 1e3
+    b = np.array([-200.0, 50.0]) * 1e3
+
+    per_kombinasi = [
+        ce.as_design_array(ce.flexure_design(m, INPUTS, direction="x", face="atas")) for m in (a, b)
+    ]
+    dari_envelope = ce.as_design_array(
+        ce.flexure_design(np.minimum(a, b), INPUTS, direction="x", face="atas")
+    )
+    np.testing.assert_allclose(dari_envelope, np.maximum(*per_kombinasi), rtol=1e-12)

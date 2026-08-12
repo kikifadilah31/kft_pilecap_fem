@@ -4,6 +4,134 @@ Format mengikuti template PRD Bagian 16C.
 
 ## [Unreleased]
 
+### Changed — PERUBAHAN BAWAAN: angka desain tulangan kini dari nilai per ELEMEN
+
+Field baru **`design.rebar_basis`**, bawaan **`"element"`**. Metode hitung angka desain
+menjadi pilihan, dan bawaannya berubah dari perilaku sebelumnya:
+
+| Nilai | Angka desain dari | Setara |
+|---|---|---|
+| `"element"` **(bawaan baru)** | momen tiap elemen apa adanya | algoritma asli `shell-kit` |
+| `"strip"` | integrasi lajur di muka pier | perilaku v0.9.x, metode penampang kritis |
+
+**Berlaku untuk seluruh kombinasi sekaligus, termasuk envelope** — satu setelan, bukan per
+kombinasi. Mencampurnya membuat envelope membandingkan besaran yang dihitung dengan cara
+berbeda, sehingga angka governing-nya kehilangan arti.
+
+**Untuk kembali ke perilaku lama:** setel `"design": {"rebar_basis": "strip"}`. Config lama
+tanpa field ini akan **berpindah mode** — karena itu basis yang dipakai kini **selalu
+tercetak** di `calc_sheet.md` dan `SUMMARY.md`; tidak ada berkas hasil yang beredar tanpa
+menyatakan metodenya.
+
+Pada mode `element`, jalur lajur **tidak dijalankan sama sekali** — `strip_moments_*.csv`
+tidak ditulis, dan `strips_x`/`strips_y`/`moment_at` tidak dibaca (tool memperingatkan bila
+terisi). Itulah arti "murni nilai elemen"; berkas yang tetap ditulis akan terbaca sebagai
+angka desain oleh siapa pun yang membuka folder hasil.
+
+**Yang mendorong perubahan ini.** Menelusuri pertanyaan pemilik proyek menemukan bahwa
+metode lajur punya kelemahan yang tidak pernah dinyatakan: hasilnya bergantung
+`strips_x`/`strips_y`, angka yang **tidak diwajibkan pasal mana pun**. DIUKUR pada `ex01`,
+muka pier arah X — momen lajur tengah 536,9 kNm versus lajur tepi 141,4 kNm (**3,8×**),
+sehingga memakai 1 lajur alih-alih 5 mengencerkan puncak dari 556,2 menjadi 283,4 kN·m/m
+(**1,96×**) — un-konservatif tepat di lokasi paling kritis. Dan `grep strips_x
+validators.py` **kosong**: tidak ada satu pun penjaga bahwa lajur cukup sempit terhadap
+lebar cap.
+
+Pada mode `element` keputusan pembagian zona berpindah ke engineer: tool memberi peta,
+engineer menentukan band saat mendetail.
+
+**Konsekuensi yang dinyatakan, bukan disembunyikan.** Nilai puncak per elemen di tepi zona
+jepit pier adalah **singularitas** dan tidak konvergen — DIUKUR naik ~16% ketika mesh
+300 → 150 mm. Arahnya **konservatif** (tulangan bertambah), berbeda sifat dari bocoran mesh
+yang un-konservatif. Tetapi angka desain karena itu bergantung `mesh.size_global`, sehingga
+ukuran mesh **ikut tercetak bersama angkanya** di calc sheet.
+
+Ringkasan mode `element` mengikuti pola `shell-kit`: kontur adalah deliverable, tabel
+maksimum per arah×muka adalah ringkasannya — **lengkap dengan lokasi puncaknya**. Tanpa
+koordinat, puncak di sudut pier (artefak tumpuan) tidak dapat dibedakan dari puncak di
+tempat lain (kebutuhan nyata). Muka yang maksimumnya jatuh tepat di `As_min` ditandai
+`_seluruh elemen seri_`, bukan diberi koordinat elemen pertama yang kebetulan ditemui —
+menyajikannya seolah bermakna akan menyesatkan justru pada muka yang paling sering terjadi
+di pilecap tebal.
+
+Contoh bawaan menyatakan modenya masing-masing: `ex01`, `ex02`, `ex04` memakai `element`;
+**`ex03` memakai `strip`** supaya kedua jalur benar-benar terjalankan contoh bawaan dan test.
+
+**Golden TIDAK diregenerasi**, menyimpang dari rencana. Rencananya menambahkan
+`element_design` ke snapshot golden dengan alasan "jalur desain default wajib masuk gerbang
+regresi". Diperiksa lagi: golden sudah menggating `probes` (nilai medan per elemen — masukan
+jalur ini) **dan** `strip_design`, yang menjalankan `flexure_design` → `shell-kit` yang sama
+persis. `design_all_faces` hanyalah loop tipis di atas fungsi itu, sehingga tambahannya
+marginal — sementara regenerasi golden selalu berisiko menghapus bukti bahwa angka tool
+tidak berubah. Jalur baru digating unit test yang tersasar
+(`test_governing_elemen_*`, `test_mode_elemen_*`) alih-alih dengan menyentuh golden.
+
+### Added — envelope tulangan: 12 plot + `strip_design_envelope.csv`
+
+`Envelope/` sebelumnya hanya memuat envelope **gaya** (10 plot momen & geser). Tulangan
+hanya punya `rebar_design_envelope.csv` — CSV tanpa satu pun gambar, dan envelope geser
+tidak ada sama sekali. Sekarang lengkap: **4 `As` + 4 batang terpilih + 2 `Av/s` + 2
+diameter sengkang**, setara isi folder `Envelope_Rebar` `shell-kit`.
+
+**Dibangun dari envelope GAYA, bukan dari maksimum `As` antar kombinasi.** Momen envelope
+per muka (`max_values` untuk bawah, `min_values` untuk atas) dan `|q|` envelope per arah
+dimasukkan ke `flexure_design`/`shear_rebar_map`/`select_flexure_bars` yang sama persis
+dengan kombinasi biasa. Dua alasan:
+
+1. Hasilnya **satu desain yang konsisten** — `As`, `d_eff`, dan diameter lahir bersama
+   dari satu momen. Mengambil maksimum `As` antar kombinasi memasangkan `As` dari satu
+   kombinasi dengan `d` dari kombinasi lain.
+2. **Pemilihan batang hanya sah dilakukan sekali di akhir.** Pada `rebar_select_codes`,
+   `RebarSelection.values` adalah **indeks kategori**; maksimum indeks antar kombinasi
+   tidak punya arti apa pun.
+
+Angkanya tetap sama karena `As` monoton tak-turun terhadap `|Mu|` — asumsi itu **diuji**
+(`test_envelope_as_sama_dengan_maksimum_antar_kombinasi`), bukan diandaikan, pada rentang
+momen yang melintasi beberapa peralihan diameter karena hanya di situ ia bisa patah.
+
+Plotnya memakai ulang `_render_rebar_plots` apa adanya lewat parameter `rename`
+(`contour_*` → `envelope_*`); menyalin blok plotnya akan melahirkan dua jalur gambar yang
+dapat menyimpang diam-diam.
+
+**`strip_design_envelope.csv`** (mode `strip` saja) menjawab pertanyaan yang tidak dijawab
+berkas mana pun sebelumnya: `As` maksimum **per lajur** lintas kombinasi beserta kombinasi
+penentunya. `governing_strip_design` yang lama menciutkan seluruhnya jadi 4 baris — cukup
+untuk "berapa maksimum keseluruhan", tidak cukup untuk "apa yang saya pasang di lajur ini".
+Kuncinya menyertakan `face`, karena tanda momen satu lajur dapat berbalik antar kombinasi
+sehingga satu lajur bisa menuntut tulangan bawah dari satu kombinasi **dan** tulangan atas
+dari kombinasi lain.
+
+### Fixed — caption plot tulangan menyatakan hal yang keliru pada mode elemen
+
+Setiap plot lentur mencetak *"Peta orientasi — nilai desain diambil dari lajur muka pier"*.
+Pada `rebar_basis = "element"` kalimat itu **terbalik**: peta itulah sumber angka desainnya,
+dan lajur tidak dihitung sama sekali. Gambar inilah yang dicetak dan ditempel ke laporan,
+sehingga caption yang salah beredar sebagai pernyataan keliru di setiap lembar. Caption kini
+mengikuti mode. Caption plot geser tidak diubah — geser satu arah selalu didesain pada
+penampang `d` dari muka pier, terlepas dari mode.
+
+Tabel "Ke mana efeknya sampai" di README juga basi karena alasan yang sama: ia menyatakan
+`contour_As_*.png` "murni orientasi", padahal sejak bawaan berubah ia justru angka desain.
+Diganti tabel yang menyatakan peran tiap keluaran **per mode**.
+
+### Added — ilustrasi di dalam formulir `pilecap-ui`
+
+Ilustrasi tidak lagi hanya ada di README: `Section.illustration` menampilkannya **di dalam
+formulir**, pada bagian Pilecap (sistem koordinat), Pile (skema tumpuan–beban), Pier
+(tumpang tindih), dan Desain–pemilihan tulangan (ilustrasi mode baru). Data-driven — satu
+field di `ui/schema.py`, bukan cabang `if` yang tersebar di `app.py`.
+
+`st.image` menerima **string SVG** (diverifikasi pada streamlit 1.61), jadi berkasnya cukup
+dibaca: tidak perlu rasterisasi dan tidak ada dependency baru.
+
+**Satu kendala pengemasan ditutup sekaligus.** `docs/` sebelumnya **tidak ikut ke wheel**,
+sehingga UI pada instalasi `uvx`/wheel — justru pengguna yang paling terbantu gambar — akan
+gagal menemukan berkasnya, dan kegagalannya tidak terlihat di repo karena
+`config.illustrations_dir()` punya fallback. Ditutup dengan `force-include` (24 KB),
+`illustrations_dir()` yang meniru pola `examples_dir()`, dan pemeriksaan isi wheel di
+`test_wheel_memuat_contoh_dan_seluruh_modul` — persis alasan `examples` sudah diperiksa
+terpisah di sana.
+
 ### Added — panduan lengkap `pilecap_config.json` di README, dengan ilustrasi
 
 Seluruh **59 field** dari 11 blok kini dijelaskan di README: arti, satuan, bawaan, ke mana

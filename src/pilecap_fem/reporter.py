@@ -1118,6 +1118,118 @@ mendapat tulangan minimum. Keduanya dipisah karena menuntut kesimpulan yang berb
 """
 
 
+def _lokasi_governing(row: dict[str, Any], *, basis_elemen: bool) -> str:
+    """Kolom telusur baris governing: lokasi elemen, atau identitas lajur."""
+    if not basis_elemen:
+        return f"{row['pier_id']} {row['sisi']} lajur {row['strip']}"
+    if row.get("as_min_governs"):
+        # Seluruh elemen seri di `As_min`; koordinat mana pun tidak istimewa.
+        return "_seluruh elemen seri_"
+    to_disp = io_utils.to_display
+    return (
+        f"elem {row['elem_tag']} @ ({to_disp(row['centroid_x_m'], 'length'):,.0f}, "
+        f"{to_disp(row['centroid_y_m'], 'length'):,.0f})"
+    )
+
+
+def _element_design_block(
+    designs: dict[tuple[str, str], FlexureDesign],
+    mesh: MeshModel,
+    *,
+    mesh_size_m: float,
+) -> str:
+    """Angka desain pada `design.rebar_basis = "element"`.
+
+    Mengikuti pola `shell-kit`: konturnya deliverable, tabel ini ringkasannya. Satu baris
+    per arah x muka, dengan LOKASI puncaknya -- tanpa koordinat, puncak di sudut pier
+    (singularitas tumpuan jepit) tidak dapat dibedakan dari puncak di tempat lain yang
+    memang harus dipenuhi.
+
+    `mesh.size_global` ikut dicetak karena pada mode ini angka desainnya MEMANG bergantung
+    padanya: nilai puncak di tepi zona jepit tidak konvergen. Tanpa ukuran mesh tercetak
+    bersama angkanya, hasil ini tidak dapat direproduksi maupun dibandingkan antar run.
+    """
+    unit_len = io_utils.display_unit("length")
+    unit_as = io_utils.display_unit("steel_area")
+    unit_m = io_utils.display_unit("moment_per_width")
+    to_disp = io_utils.to_display
+
+    rows = capacity_engine.governing_element_design({"-": designs}, mesh)
+    baris = []
+    for r in rows:
+        lokasi = (
+            "_seluruh elemen seri_"
+            if r["as_min_governs"]
+            else (
+                f"elem {r['elem_tag']} @ ({to_disp(r['centroid_x_m'], 'length'):,.0f}, "
+                f"{to_disp(r['centroid_y_m'], 'length'):,.0f})"
+            )
+        )
+        baris.append(
+            [
+                r["direction"],
+                r["face"],
+                f"{to_disp(r['Mu_per_m_Nm'], 'moment_per_width'):,.2f}",
+                f"{to_disp(r['d_eff_m'], 'length'):,.0f}",
+                f"{to_disp(r['As_required_m2_per_m'], 'steel_area'):,.0f}",
+                f"{to_disp(r['As_design_m2_per_m'], 'steel_area'):,.0f}",
+                lokasi,
+                "**As_min**" if r["as_min_governs"] else r["status"],
+            ]
+        )
+
+    n_inadequate = sum(int(r["n_inadequate"]) for r in rows)
+    catatan_gagal = (
+        ""
+        if n_inadequate == 0
+        else (
+            f"\n> [!CAUTION]\n> **{n_inadequate} elemen ber-status "
+            f"`{capacity_engine.STATUS_SECTION_INADEQUATE}`.** Elemen itu menghasilkan "
+            "`As` = NaN sehingga TIDAK pernah muncul sebagai maksimum di tabel atas -- "
+            "angka di sana terlihat wajar justru karena kegagalannya tersaring keluar. "
+            "Periksa `rebar_design.csv` dan kontur `As` sebelum memakai hasil ini.\n"
+        )
+    )
+
+    ukuran_mesh = f"{to_disp(mesh_size_m, 'length'):,.0f} {unit_len}"
+    return f"""\
+### Angka desain -- dari nilai per ELEMEN
+
+`design.rebar_basis` = `element`: `As` diambil langsung dari momen tiap elemen, tanpa
+integrasi lajur -- algoritma yang sama dengan `shell-kit`. **Kontur `As` dan diameter
+adalah deliverable utamanya**; tabel di bawah hanya ringkasan maksimumnya.
+
+> [!WARNING]
+> **Nilai puncak di tepi zona jepit pier bersifat SINGULAR.** Ia membesar terus setiap
+> mesh diperhalus dan tidak pernah konvergen (PRD Bagian 8.3 keterbatasan #2). Arah
+> galatnya konservatif -- tulangan bertambah, bukan berkurang -- tetapi artinya angka di
+> bawah **bergantung pada `mesh.size_global` = {ukuran_mesh}** yang dipakai run ini.
+> Periksa kolom lokasi: puncak yang jatuh di sudut pier adalah artefak tumpuan, bukan
+> kebutuhan nyata.
+>
+> Untuk angka yang konvergen dan dapat dicek tangan, setel
+> `design.rebar_basis` = `"strip"`.
+{catatan_gagal}
+{
+        _markdown_table(
+            [
+                "arah",
+                "muka",
+                f"Mu [{unit_m}]",
+                f"d [{unit_len}]",
+                f"As perlu [{unit_as}]",
+                f"As pakai [{unit_as}]",
+                f"lokasi puncak [{unit_len}]",
+                "status",
+            ],
+            baris,
+        )
+        if baris
+        else "_(tidak ada elemen yang menghasilkan `As`)_"
+    }
+"""
+
+
 def _flexure_section(
     *,
     strip_design: list[dict[str, Any]],
@@ -1125,6 +1237,9 @@ def _flexure_section(
     selections: dict[tuple[str, str], capacity_engine.RebarSelection],
     inputs: CapacityInputs,
     deep_ratio: dict[str, Any],
+    rebar_basis: str = "strip",
+    mesh: MeshModel | None = None,
+    mesh_size_m: float = 0.0,
 ) -> str:
     """Bagian 7a calc sheet -- desain lentur."""
     unit_len = io_utils.display_unit("length")
@@ -1175,7 +1290,10 @@ Rumus dan pasal TIDAK ditulis ulang di `pilecap-fem`. Seluruh kapasitas dihitung
 dapat menyimpang diam-diam.
 
 {_capacity_provenance_table(capacity_engine.provenance_block(inputs))}
-
+{
+        _element_design_block(designs, mesh, mesh_size_m=mesh_size_m)
+        if rebar_basis == "element" and mesh is not None
+        else f'''
 ### Angka desain -- dari momen LAJUR di muka pier
 
 Inilah `As` yang dipakai. Momen lajur sudah terintegrasi sepanjang potongan, sehingga
@@ -1186,28 +1304,34 @@ sebagai angka desain (PRD Bagian 7.2(5)).
 (minimum susut & suhu, dihitung `shell_kit.rebar.calc_as_min_per_face`).
 
 {
-        _markdown_table(
-            [
-                "lokasi",
-                "pier",
-                "sisi",
-                "arah",
-                "lajur",
-                "muka",
-                f"Mu [{unit_m}]",
-                f"d [{unit_len}]",
-                f"As perlu [{unit_as}]",
-                f"As pakai [{unit_as}]",
-                "status",
-                "catatan",
-            ],
-            strip_md,
-        )
-        if strip_md
-        else "_(tidak ada lajur yang dihitung)_"
+            _markdown_table(
+                [
+                    "lokasi",
+                    "pier",
+                    "sisi",
+                    "arah",
+                    "lajur",
+                    "muka",
+                    f"Mu [{unit_m}]",
+                    f"d [{unit_len}]",
+                    f"As perlu [{unit_as}]",
+                    f"As pakai [{unit_as}]",
+                    "status",
+                    "catatan",
+                ],
+                strip_md,
+            )
+            if strip_md
+            else "_(tidak ada lajur yang dihitung)_"
+        }
+'''
     }
 
-### Peta per elemen -- ORIENTASI, bukan angka desain
+### Peta per elemen{
+        " -- inilah sumber angka desain di atas"
+        if rebar_basis == "element"
+        else " -- ORIENTASI, bukan angka desain"
+    }
 
 Nilai berikut berasal dari `rebar_design.csv` dan kontur `contour_As_*.png`. Gunakan untuk
 melihat SEBARAN kebutuhan tulangan. Nilai maksimumnya jatuh di tepi zona jepit pier dan
@@ -1340,6 +1464,8 @@ def write_calc_sheet(
     run_name: str,
     command: str,
     dependencies: dict[str, str],
+    rebar_basis: str = "strip",
+    mesh_size_m: float = 0.0,
 ) -> Path:
     """`calc_sheet.md` -- 10 bagian PRD Bagian 9.4, bukan sekadar hasil akhir."""
     unit_len = io_utils.display_unit("length")
@@ -1595,6 +1721,9 @@ dengan `d` = {io_utils.to_display(deep_ratio["d_m"], "length"):,.0f} {unit_len}.
             selections=selections,
             inputs=capacity_inputs,
             deep_ratio=deep_ratio,
+            rebar_basis=rebar_basis,
+            mesh=mesh,
+            mesh_size_m=mesh_size_m,
         )
     }
 
@@ -1710,6 +1839,7 @@ def write_summary(
     envelope: Envelope | None,
     rebar_governing: list[dict[str, Any]],
     capacity_inputs: CapacityInputs,
+    rebar_basis: str = "strip",
 ) -> Path:
     """`SUMMARY.md` -- ringkasan lintas kombinasi (PRD Bagian 9.4).
 
@@ -1768,6 +1898,11 @@ def write_summary(
 
     unit_as = io_utils.display_unit("steel_area")
     unit_len = io_utils.display_unit("length")
+    # Kolom terakhir berbeda antar mode karena yang ditelusuri memang berbeda: pada mode
+    # lajur, angka berasal dari lajur tertentu; pada mode elemen, dari satu elemen dengan
+    # koordinatnya -- dan koordinat itulah yang membedakan singularitas sudut pier dari
+    # kebutuhan nyata.
+    basis_elemen = rebar_basis == "element"
     rebar_table = (
         _markdown_table(
             [
@@ -1778,7 +1913,7 @@ def write_summary(
                 f"d [{unit_len}]",
                 "status",
                 "kombinasi",
-                "lajur",
+                f"lokasi [{unit_len}]" if basis_elemen else "lajur",
             ],
             [
                 [
@@ -1787,15 +1922,24 @@ def write_summary(
                     f"{io_utils.to_display(r['As_design_m2_per_m'], 'steel_area'):,.0f}",
                     f"{io_utils.to_display(r['Mu_per_m_Nm'], 'moment_per_width'):,.1f}",
                     f"{io_utils.to_display(r['d_eff_m'], 'length'):,.0f}",
-                    r["status"],
+                    "**As_min**" if r.get("as_min_governs") else r["status"],
                     r["combo"],
-                    f"{r['pier_id']} {r['sisi']} lajur {r['strip']}",
+                    _lokasi_governing(r, basis_elemen=basis_elemen),
                 ]
                 for r in rebar_governing
             ],
         )
         if rebar_governing
-        else "_(tidak ada lajur yang menghasilkan `As`)_"
+        else "_(tidak ada elemen/lajur yang menghasilkan `As`)_"
+    )
+    basis_note = (
+        "Angka desain diambil dari **nilai per elemen** (`design.rebar_basis` = `element`, "
+        "algoritma `shell-kit`). Kontur `As` dan diameter adalah deliverable utamanya; "
+        "tabel ini ringkasan maksimumnya. Puncak di sudut pier bersifat **singular** dan "
+        "bergantung `mesh.size_global` -- periksa kolom lokasi."
+        if basis_elemen
+        else "Angka desain diambil dari **integrasi lajur** di muka pier "
+        "(`design.rebar_basis` = `strip`). Hasilnya bergantung `strips_x`/`strips_y`."
     )
 
     content = f"""\
@@ -1833,7 +1977,7 @@ Sistem satuan internal: {config.SI_UNIT_SYSTEM}
 
 {deep_pilecap_warning(deep_ratio)}
 
-Angka di bawah berasal dari momen **lajur di muka pier**, bukan puncak per elemen.
+{basis_note}
 Kapasitas dihitung `shell-kit` v{capacity_engine.provenance_block(capacity_inputs)["engine_version"]}
 menurut SNI 2847:2019, dengan `fy` = {capacity_inputs.fy_mpa:,.0f} MPa
 (asal: {capacity_inputs.fy_source}) dan `phi` lentur = {capacity_inputs.phi_flexure:.2f}
@@ -1873,4 +2017,58 @@ menurut SNI 2847:2019, dengan `fy` = {capacity_inputs.fy_mpa:,.0f} MPa
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     _log.info("SUMMARY.md ditulis: %s", path)
+    return path
+
+
+def write_strip_envelope_csv(path: Path, rows: list[dict[str, Any]]) -> Path:
+    """`strip_design_envelope.csv` -- `As pakai` terbesar per LAJUR lintas kombinasi.
+
+    Melengkapi `rebar_design_envelope.csv`, yang per ELEMEN. Keduanya menjawab pertanyaan
+    berbeda: yang itu "berapa maksimum di peta", yang ini "apa yang saya pasang di lajur
+    ini" -- dan hanya yang kedua yang dapat langsung dipindahkan ke gambar kerja.
+
+    Satu lajur dapat muncul DUA KALI, sekali per muka: tanda momennya bisa berbalik antar
+    kombinasi, sehingga lajur yang sama menuntut tulangan bawah dari satu kombinasi dan
+    tulangan atas dari kombinasi lain.
+    """
+    unit_len = io_utils.display_unit("length")
+    unit_as = io_utils.display_unit("steel_area")
+    unit_m = io_utils.display_unit("moment_per_width")
+    to_disp = io_utils.to_display
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "pier_id",
+                "sisi",
+                "arah",
+                "lajur",
+                "muka",
+                "governing_combo",
+                f"Mu [{unit_m}]",
+                f"d [{unit_len}]",
+                f"As_perlu [{unit_as}]",
+                f"As_pakai [{unit_as}]",
+                "status",
+            ]
+        )
+        for r in rows:
+            writer.writerow(
+                [
+                    r.get("pier_id", "-"),
+                    r.get("sisi", "-"),
+                    r["direction"],
+                    r["strip"],
+                    r["face"],
+                    r["combo"],
+                    f"{to_disp(r['Mu_per_m_Nm'], 'moment_per_width'):.2f}",
+                    f"{to_disp(r['d_eff_m'], 'length'):.1f}",
+                    f"{to_disp(r['As_required_m2_per_m'], 'steel_area'):.1f}",
+                    f"{to_disp(r['As_design_m2_per_m'], 'steel_area'):.1f}",
+                    r["status"],
+                ]
+            )
+    _log.info("%s ditulis: %d lajur", path.name, len(rows))
     return path

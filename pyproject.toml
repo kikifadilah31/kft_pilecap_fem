@@ -118,6 +118,13 @@ packages = ["src/pilecap_fem"]
 [tool.hatch.build.targets.wheel.force-include]
 "examples" = "pilecap_fem/examples"
 
+# Ilustrasi ikut dikemas karena `pilecap-ui` menampilkannya DI DALAM formulir. Tanpa ini
+# justru pengguna `uvx`/wheel -- yang paling terbantu gambar -- yang kehilangannya, dan
+# kegagalannya tidak terlihat di repo karena `config.illustrations_dir()` punya fallback
+# ke `docs/img/`. Isi wheel karena itu diperiksa terpisah
+# (`tests/test_packaging.py::test_wheel_memuat_ilustrasi`). Ukurannya 24 KB.
+"docs/img" = "pilecap_fem/docs_img"
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

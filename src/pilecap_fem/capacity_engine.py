@@ -46,6 +46,7 @@ from pilecap_fem import config
 from pilecap_fem.validators import validate_design
 
 if TYPE_CHECKING:  # hanya untuk anotasi -- menghindari impor melingkar saat runtime
+    from pilecap_fem.mesh_model import MeshModel
     from pilecap_fem.postproc_engine import ShearCheck
 
 _log = config.get_logger("capacity_engine")
@@ -536,6 +537,74 @@ def strip_flexure_design(
     return rows
 
 
+def governing_element_design(
+    designs_by_combo: dict[str, dict[tuple[str, str], FlexureDesign]],
+    mesh: MeshModel,
+) -> list[dict[str, Any]]:
+    """`As pakai` terbesar per (arah, muka) lintas kombinasi, BESERTA lokasinya.
+
+    Ringkasan desain pada `design.rebar_basis = "element"`. Satu baris per arah x muka,
+    mengikuti pola `shell-kit`: konturnya deliverable, angka maksimum ringkasannya.
+
+    **Lokasi wajib ikut, dan itu bukan kelengkapan kosmetik.** Tanpa koordinatnya, pembaca
+    tidak dapat membedakan puncak yang jatuh di sudut pier -- singularitas tumpuan jepit,
+    yang membesar terus setiap mesh diperhalus dan bukan kebutuhan nyata -- dari puncak di
+    tempat lain, yang memang harus dipenuhi. Itu satu-satunya cara membaca angka maksimum
+    mode ini secara bertanggung jawab.
+
+    `n_inadequate` dibawa apa adanya: elemen yang penampangnya tidak memadai menghasilkan
+    `As` = NaN, sehingga ia TIDAK akan pernah muncul sebagai maksimum. Tanpa hitungannya,
+    kegagalan penampang justru tersembunyi di balik angka yang terlihat wajar.
+
+    `as_min_governs` menandai muka yang maksimumnya jatuh tepat di `As_min`. Di sana
+    SELURUH elemen seri, sehingga koordinat yang dilaporkan hanyalah elemen pertama yang
+    kebetulan ditemui -- bukan lokasi istimewa. Menyajikannya seolah bermakna akan
+    menyesatkan justru pada muka yang paling sering terjadi di pilecap tebal.
+    """
+    if not designs_by_combo:
+        raise ValueError("designs_by_combo kosong; ringkasan per elemen tidak dapat dibuat.")
+
+    rows: list[dict[str, Any]] = []
+    for direction, face in config.REBAR_FACES:
+        terbaik: dict[str, Any] | None = None
+        n_inadequate = 0
+        for combo, designs in designs_by_combo.items():
+            design = designs[(direction, face)]
+            n_inadequate += design.n_inadequate
+            values = as_design_array(design)
+            if not np.any(np.isfinite(values)):
+                continue
+            index = int(np.nanargmax(values))
+            value = float(values[index])
+            if terbaik is not None and value <= float(terbaik["As_design_m2_per_m"]):
+                continue
+            terbaik = {
+                "direction": direction,
+                "face": face,
+                "combo": combo,
+                "elem_tag": int(mesh.elem_tags[index]),
+                "centroid_x_m": float(mesh.elem_centroid[index, 0]),
+                "centroid_y_m": float(mesh.elem_centroid[index, 1]),
+                "group": str(mesh.group_names[int(mesh.elem_group[index])]),
+                "Mu_per_m_Nm": float(design.mu[index]),
+                "d_eff_m": float(design.d_effective[index]),
+                "As_required_m2_per_m": float(design.as_required[index]),
+                "As_min_m2_per_m": design.as_min,
+                "As_design_m2_per_m": value,
+                "status": str(design.status[index]),
+            }
+        if terbaik is not None:
+            as_min = float(terbaik["As_min_m2_per_m"])
+            rows.append(
+                {
+                    **terbaik,
+                    "n_inadequate": n_inadequate,
+                    "as_min_governs": float(terbaik["As_design_m2_per_m"]) <= as_min * (1.0 + 1e-9),
+                }
+            )
+    return rows
+
+
 def governing_strip_design(
     strip_design_by_combo: dict[str, list[dict[str, Any]]],
 ) -> list[dict[str, Any]]:
@@ -556,6 +625,42 @@ def governing_strip_design(
             value = float(row["As_design_m2_per_m"])
             if not np.isfinite(value):
                 continue
+            current = best.get(key)
+            if current is None or value > float(current["As_design_m2_per_m"]):
+                best[key] = {**row, "combo": combo}
+    return [best[key] for key in sorted(best)]
+
+
+def envelope_strip_design(
+    strip_design_by_combo: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """`As pakai` terbesar per LAJUR lintas kombinasi -- bukan diciutkan jadi 4 baris.
+
+    `governing_strip_design` menjawab "berapa maksimum keseluruhan"; fungsi ini menjawab
+    "apa yang saya pasang di lajur ini". Untuk mendetailkan tulangan, yang kedua itulah
+    yang dibutuhkan -- tanpanya angka per lajur hanya bisa didapat dengan membuka calc
+    sheet setiap kombinasi satu per satu.
+
+    **`face` ikut menjadi kunci, bukan diturunkan sesudahnya.** Tanda momen satu lajur
+    dapat berbalik antar kombinasi, sehingga satu lajur bisa menuntut tulangan BAWAH dari
+    satu kombinasi dan tulangan ATAS dari kombinasi lain. Mengunci satu muka per lajur
+    akan menghilangkan salah satunya tanpa jejak.
+    """
+    best: dict[tuple[str, str, str, int, str], dict[str, Any]] = {}
+    for combo, rows in strip_design_by_combo.items():
+        for row in rows:
+            if row.get("singular"):
+                continue
+            value = float(row["As_design_m2_per_m"])
+            if not np.isfinite(value):
+                continue
+            key = (
+                str(row.get("pier_id", "-")),
+                str(row.get("sisi", "-")),
+                str(row["direction"]),
+                int(row["strip"]),
+                str(row["face"]),
+            )
             current = best.get(key)
             if current is None or value > float(current["As_design_m2_per_m"]):
                 best[key] = {**row, "combo": combo}

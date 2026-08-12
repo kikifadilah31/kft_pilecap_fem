@@ -119,7 +119,7 @@ maupun menghafal satu pun flag.
 
 Yang tersedia di formulir:
 
-* **Penjelasan pada setiap field.** Seluruh 59 field dan 11 bagian punya tooltip yang
+* **Penjelasan pada setiap field.** Seluruh 60 field dan 11 bagian punya tooltip yang
   ditulis untuk pembaca yang tidak akrab dengan FEM: apa yang diisi, satuannya, dan akibat
   memilih salah. Cakupannya dijaga test — field baru tanpa penjelasan akan menggagalkan
   suite. Penjelasan versi panjang beserta ilustrasinya ada di
@@ -211,8 +211,12 @@ output/pilecap_20260804_093148/
 └── Envelope/              # nilai ekstrem lintas kombinasi + governing_combo
     ├── envelope_values.csv
     ├── rebar_design_envelope.csv   # As pakai governing + governing_combo per elemen
+    ├── strip_design_envelope.csv   # As maks per LAJUR + combo penentu (mode strip saja)
     ├── envelope_summary.md
-    └── envelope_*_max.png / _min.png
+    ├── envelope_*_max.png / _min.png        # 10 plot gaya (momen & geser)
+    ├── envelope_As_*.png                    # 4 — As envelope per muka
+    ├── envelope_diameter_*.png              # 4 — batang terpilih dari As envelope
+    └── envelope_Avs_*.png, envelope_Dsengkang_*.png   # 4 — geser envelope
 ```
 
 ### Tema plot
@@ -541,17 +545,91 @@ menetapkan **satu** hal, tool menghitung sisanya.
 
 | Field | Satuan | Bawaan | Arti |
 |---|---|---|---|
+| `design.rebar_basis` | – | `element` | **Dari mana angka desain diambil** — lihat [Metode desain tulangan](#metode-desain-tulangan--per-elemen-atau-per-lajur). |
 | `design.rebar_mode` | – | `—` | `spacing_fixed` = Anda tetapkan spasi, tool pilih diameter. `diameter_fixed` = Anda tetapkan batang, tool hitung spasi. |
 | `design.rebar_spacing` | panjang | `—` ᶜ | Jarak antar batang. Tool memilih diameter terkecil dari daftar standar yang masih memenuhi `As`. 150–200 mm lazim untuk pilecap. |
 | `design.rebar_config` | – | `—` ᵈ | Susunan batang, dibaca `<jumlah>D<diameter>`: `"2D25"` = dua batang D25 per titik pemasangan. Daftarnya datang langsung dari `shell-kit`. |
 | `design.rebar_select_codes` | – | `null` | Batasi pilihan ke kode tertentu, mis. bila di lapangan hanya tersedia D22 dan D25. Bila diisi, plot tulangan menjadi **kategorikal** berlabel kode. |
-| `design.strips_x` | – | `5` | Lihat di bawah. |
-| `design.strips_y` | – | `5` | Lihat di bawah. |
-| `design.moment_at` | – | `pier_face` | Lihat di bawah. |
+| `design.strips_x` | – | `5` ᵉ | Lihat di bawah. |
+| `design.strips_y` | – | `5` ᵉ | Lihat di bawah. |
+| `design.moment_at` | – | `pier_face` ᵉ | Lihat di bawah. |
 
-<sub>ᶜ hanya pada `spacing_fixed` — ᵈ hanya pada `diameter_fixed`</sub>
+<sub>ᶜ hanya pada `spacing_fixed` — ᵈ hanya pada `diameter_fixed` —
+ᵉ **hanya dibaca pada `rebar_basis: "strip"`**; pada mode `element` ketiganya diabaikan
+dan tool memberi peringatan bila terisi</sub>
+
+`rebar_mode` dan `rebar_basis` adalah **sumbu yang berbeda** dan mudah tertukar:
+`rebar_basis` menentukan **dari mana `As` berasal**, `rebar_mode` menentukan **batang apa
+yang dipasang** untuk memenuhi `As` itu. Keduanya berlaku bersamaan.
+
+#### Metode desain tulangan — per elemen atau per lajur
+
+`design.rebar_basis` menentukan **dari mana angka desain diambil**. Berlaku untuk
+**seluruh kombinasi sekaligus, termasuk envelope** — satu setelan, bukan per kombinasi.
+
+![Dua mode desain tulangan](docs/img/mode-desain-tulangan.svg)
+
+Sumbernya **sama**: momen `m_x`/`m_y` tiap elemen shell. Yang berbeda hanya operasinya.
+Keduanya memakai penampang selebar **1 m** dan rumus SNI yang sama lewat `shell-kit` —
+tidak satu pun rumus ditulis ulang di sini.
+
+| | `element` (bawaan) | `strip` |
+|---|---|---|
+| `As` diambil dari | momen tiap elemen apa adanya | rata-rata berbobot momen sepanjang potongan di muka pier |
+| Setara dengan | algoritma asli `shell-kit` | metode klasik pilecap (penampang kritis) |
+| Deliverable utama | **kontur** `As` & diameter | **tabel** per lajur |
+| Pembagian zona penulangan | **Anda**, saat mendetail dari kontur | **tool**, lewat `strips_x`/`strips_y` |
+| Konvergen terhadap mesh? | **tidak** di tepi pier | ya |
+| Dapat dicek tangan? | tidak | ya (`ΣPz × lengan`) |
+
+**Angka nyata dari `ex01`**, muka pier arah X — model yang sama, dua metode:
+
+| | `As` |
+|---|---:|
+| `element` — puncak | **1.541 mm²/m** di (−659, −547), yaitu **tepat di sudut pier** |
+| `strip` — lajur tengah dari 5 lajur | **1.330 mm²/m** |
+| `strip` — bila hanya 1 lajur | 1.080 mm²/m (`As_min` yang menahan) |
+
+##### Yang perlu Anda ketahui tentang `element`
+
+Nilai puncak di tepi zona jepit pier adalah **singularitas numerik**: ia membesar terus
+setiap kali mesh diperhalus dan **tidak pernah konvergen**. Terukur pada model pilecap
+15,9 m: puncak `m_x` naik ~16% ketika `size_global` 300 → 150 mm.
+
+Arah galatnya **konservatif** — tulangan bertambah, bukan berkurang — sehingga tidak
+berbahaya seperti galat yang meremehkan. Tetapi artinya:
+
+- Angka desain Anda **bergantung pada `mesh.size_global` yang Anda pilih**. Karena itu
+  ukuran mesh ikut tercetak di calc sheet bersama angkanya.
+- **Periksa kolom lokasi** di tabel ringkasan. Puncak yang jatuh di sudut pier adalah
+  artefak tumpuan; puncak di tempat lain adalah kebutuhan nyata. Keduanya terlihat sama
+  bila hanya angkanya yang dibaca.
+
+##### Yang perlu Anda ketahui tentang `strip`
+
+Hasilnya bergantung `strips_x`/`strips_y` — angka yang **tidak diwajibkan pasal mana pun**,
+sehingga dua engineer dengan model identik bisa mendapat `As` berbeda. Momen di muka pier
+jauh dari merata: pada `ex01` lajur tengah memikul 3,8× lajur tepi, sehingga lajur yang
+terlalu lebar **mengencerkan puncaknya** — un-konservatif tepat di lokasi paling kritis.
+
+Patokan yang lebih masuk akal daripada "5 lajur": tetapkan dari **lebar lajur**, sekitar
+1–1,5 m. Untuk cap 15,9 m itu berarti `strips_x` sekitar 11–16, bukan 5. Tetapi jangan
+terlalu banyak juga — lajur yang lebih sempit daripada beberapa elemen akan memasukkan
+kembali singularitas yang hendak dihindari.
+
+##### Memilih
+
+Mulailah dengan bawaan `element` bila Anda terbiasa dengan alur `shell-kit`: baca kontur,
+tentukan sendiri bandnya. Beralihlah ke `strip` bila Anda butuh angka yang konvergen,
+dapat dicek tangan, dan mengikuti metode penampang kritis yang lazim untuk pilecap.
+
+Apa pun pilihannya, **basis yang dipakai selalu tercetak** di `calc_sheet.md` dan
+`SUMMARY.md` — tidak ada berkas hasil yang beredar tanpa menyatakan metodenya.
 
 #### Lajur momen: `strips_x`, `strips_y`, dan `moment_at`
+
+> Ketiganya **hanya berlaku pada `rebar_basis: "strip"`**. Pada mode `element` ketiganya
+> tidak dibaca sama sekali, dan tool memberi peringatan bila terisi.
 
 ![Lajur momen desain](docs/img/lajur-momen.svg)
 
@@ -567,17 +645,23 @@ dihitung di sana:
 Pada `ex01` dengan 5 lajur × 2 sisi × 2 arah hasilnya **20 baris** — persis isi tabel
 `calc_sheet.md` bagian 7a dan `strip_moments_*.csv`.
 
-**Ke mana efeknya sampai** — ini yang sering membingungkan, karena `As` muncul di dua tempat
-dan hanya satu yang dipengaruhi:
+**Ke mana efeknya sampai.** `As` muncul di dua tempat, dan **peran keduanya bertukar
+mengikuti `rebar_basis`** — inilah yang paling mudah salah dibaca:
 
-| Keluaran | Dipengaruhi `strips_x/y`? | Perannya |
+| Keluaran | `rebar_basis: "element"` (bawaan) | `rebar_basis: "strip"` |
 |---|---|---|
-| `strip_moments_*.csv`, calc sheet bagian 6 & 7a | **Ya** | **Inilah `As` yang dipakai** — momen desain resmi |
-| `rebar_design.csv`, `contour_As_*.png` | **Tidak** | Peta per elemen, murni **orientasi** sebaran; dihitung langsung dari medan elemen |
+| `rebar_design.csv`, `contour_As_*.png` | **Inilah `As` yang dipakai** — dan `strips_x/y` tidak berpengaruh apa pun | Peta **orientasi** sebaran; bukan angka desain |
+| `strip_moments_*.csv`, calc sheet bagian 6 | **tidak dihasilkan** | dihasilkan; dipengaruhi `strips_x/y` |
+| calc sheet bagian 7a "Angka desain" | maksimum per arah×muka **beserta lokasinya** | satu baris per lajur |
 
-Lebih banyak lajur = penulangan lebih mengikuti sebaran momen, tetapi gambar kerja lebih
-rumit. Lebih sedikit = lebih sederhana, tetapi tiap lajur merata-ratakan muka yang lebih
-panjang sehingga puncak lokal bisa teredam. **5 lajur per arah lazim.**
+Jadi `strips_x`/`strips_y` hanya berpengaruh pada mode `strip`. Pada mode `element` keduanya
+tidak dibaca sama sekali, dan tool memperingatkan bila terisi.
+
+Dalam mode `strip`: lebih banyak lajur = penulangan lebih mengikuti sebaran momen, tetapi
+gambar kerja lebih rumit. Lebih sedikit = lebih sederhana, tetapi tiap lajur merata-ratakan
+muka yang lebih panjang sehingga puncak lokal bisa teredam. **5 lajur per arah lazim** untuk
+cap berukuran `ex01`; untuk cap lebar, tetapkan dari lebar lajur (~1–1,5 m) alih-alih dari
+jumlahnya.
 
 `moment_at` menentukan **di titik mana** momen dibaca:
 

@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 430" width="760" height="430" role="img" aria-labelledby="judul">
+  <title id="judul">Dua mode desain tulangan: per elemen dan per lajur</title>
+  <style>
+    :root { color-scheme: light dark; }
+    .src  { fill: #93c5fd; fill-opacity: .22; stroke: #1d4ed8; stroke-width: 1.2; }
+    .el   { fill: #38bdf8; fill-opacity: .18; stroke: #0369a1; stroke-width: 1.2; }
+    .st   { fill: #34d399; fill-opacity: .18; stroke: #047857; stroke-width: 1.2; }
+    .cut  { stroke: #d97706; stroke-width: 2; stroke-dasharray: 5 4; }
+    .arr  { stroke: #64748b; stroke-width: 1.4; fill: none; }
+    .t    { font: 13px sans-serif; fill: #334155; }
+    .tb   { font: 500 13px sans-serif; fill: #0f172a; }
+    .ts   { font: 11.5px sans-serif; fill: #64748b; }
+    .key  { font: 12px monospace; fill: #0f172a; }
+    .num  { font: 500 13px sans-serif; fill: #0f172a; }
+    @media (prefers-color-scheme: dark) {
+      .t{fill:#cbd5e1;} .tb{fill:#f1f5f9;} .ts{fill:#94a3b8;} .key{fill:#f1f5f9;} .num{fill:#f1f5f9;}
+      .arr{stroke:#94a3b8;} .cut{stroke:#fbbf24;}
+      .src{stroke:#60a5fa;} .el{stroke:#38bdf8;} .st{stroke:#34d399;}
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#64748b" stroke-width="1.6" stroke-linecap="round"/>
+    </marker>
+  </defs>
+
+  <text class="tb" x="30" y="30">Sumbernya sama — momen elemen shell. Yang berbeda operasinya.</text>
+
+  <rect class="src" x="286" y="52" width="190" height="46" rx="6"/>
+  <text class="tb" x="381" y="72" text-anchor="middle">m_x tiap elemen</text>
+  <text class="ts" x="381" y="90" text-anchor="middle">hasil FEM, kN·m/m</text>
+
+  <path class="arr" d="M340 100 L200 132" marker-end="url(#a)"/>
+  <path class="arr" d="M422 100 L562 132" marker-end="url(#a)"/>
+
+  <rect class="el" x="40" y="140" width="320" height="212" rx="8"/>
+  <text class="tb" x="60" y="164">rebar_basis = "element"</text>
+  <text class="ts" x="60" y="182">bawaan · algoritma shell-kit</text>
+
+  <rect class="el" x="60" y="198" width="46" height="26" rx="3"/>
+  <rect class="el" x="112" y="198" width="46" height="26" rx="3"/>
+  <rect class="el" x="164" y="198" width="46" height="26" rx="3"/>
+  <rect class="el" x="216" y="198" width="46" height="26" rx="3"/>
+  <text class="ts" x="83" y="216" text-anchor="middle">583</text>
+  <text class="ts" x="135" y="216" text-anchor="middle">470</text>
+  <text class="ts" x="187" y="216" text-anchor="middle">382</text>
+  <text class="ts" x="239" y="216" text-anchor="middle">0</text>
+  <text class="ts" x="286" y="216">tiap elemen</text>
+  <text class="ts" x="286" y="232">didesain sendiri</text>
+
+  <text class="ts" x="60" y="258">Puncak ex01</text>
+  <text class="num" x="60" y="280">As = 1.541 mm²/m</text>
+  <text class="ts" x="60" y="300">di sudut pier — SINGULAR,</text>
+  <text class="ts" x="60" y="316">naik terus bila mesh diperhalus</text>
+  <text class="ts" x="60" y="338">Anda yang menentukan band tulangan</text>
+
+  <rect class="st" x="400" y="140" width="320" height="212" rx="8"/>
+  <text class="tb" x="420" y="164">rebar_basis = "strip"</text>
+  <text class="ts" x="420" y="182">integrasi lajur di muka pier</text>
+
+  <rect class="st" x="420" y="198" width="46" height="26" rx="3"/>
+  <rect class="st" x="472" y="198" width="46" height="26" rx="3"/>
+  <rect class="st" x="524" y="198" width="46" height="26" rx="3"/>
+  <rect class="st" x="576" y="198" width="46" height="26" rx="3"/>
+  <line class="cut" x1="634" y1="192" x2="634" y2="230"/>
+  <text class="ts" x="443" y="216" text-anchor="middle">583</text>
+  <text class="ts" x="495" y="216" text-anchor="middle">470</text>
+  <text class="ts" x="547" y="216" text-anchor="middle">382</text>
+  <text class="ts" x="599" y="216" text-anchor="middle">0</text>
+  <text class="ts" x="644" y="212">satu</text>
+  <text class="ts" x="644" y="228">lajur</text>
+
+  <text class="ts" x="420" y="258">Mu = Σ(m·w) ÷ Σw = 556,2 kN·m/m</text>
+  <text class="num" x="420" y="282">As = 1.330 mm²/m</text>
+  <text class="ts" x="420" y="302">konvergen &amp; dapat dicek tangan,</text>
+  <text class="ts" x="420" y="318">tetapi bergantung strips_x / strips_y</text>
+  <text class="ts" x="420" y="338">Tool yang menentukan band tulangan</text>
+
+  <text class="ts" x="30" y="382">Berlaku untuk SELURUH kombinasi sekaligus, termasuk envelope — satu setelan, bukan per kombinasi.</text>
+  <text class="ts" x="30" y="402">Angka di atas dari ex01, muka pier arah X. Keduanya memakai penampang selebar 1 m dan rumus SNI yang sama.</text>
+  <text class="ts" x="30" y="422">Mode elemen konservatif di puncak; mode lajur mengencerkannya — pada 1 lajur, 556,2 turun jadi 283,4 kN·m/m.</text>
+</svg>

@@ -401,7 +401,39 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
             path = f"pilecap_fem/examples/{name}/{relative}"
             assert path in names, f"contoh {name} tidak lengkap terkemas ({path})"
 
+    # Ilustrasi ditampilkan DI DALAM formulir `pilecap-ui`. Alasannya sama dengan contoh
+    # di atas: dijalankan dari repo, `config.illustrations_dir()` tetap berhasil lewat
+    # fallback meskipun pengemasannya salah -- sehingga kegagalannya hanya menimpa
+    # pengguna `uvx`/wheel, yang justru paling terbantu gambar.
+    from pilecap_fem.ui import schema as ui_schema
+
+    dipakai = {s.illustration for s in ui_schema.SECTIONS if s.illustration}
+    assert dipakai, "tidak ada satu pun bagian formulir yang memakai ilustrasi"
+    for berkas in sorted(dipakai):
+        path = f"pilecap_fem/docs_img/{berkas}"
+        assert path in names, f"ilustrasi {berkas} tidak ikut terkemas ({path})"
+
     assert any(n.endswith("LICENSE") for n in names), "LICENSE tidak ikut terkemas"
+
+
+def test_setiap_illustration_section_ada_berkasnya():
+    """`Section.illustration` yang menunjuk berkas tidak ada akan meledak di formulir.
+
+    Murah diperiksa di sini, mahal ditemukan di sana: kegagalannya muncul di tengah
+    halaman yang sedang diisi engineer, bukan saat suite dijalankan.
+    """
+    from pilecap_fem.ui import schema as ui_schema
+
+    folder = config.illustrations_dir()
+    for section in ui_schema.SECTIONS:
+        if not section.illustration:
+            continue
+        path = folder / section.illustration
+        assert path.is_file(), f"bagian {section.title!r} menunjuk {path} yang tidak ada"
+        # `st.image` menerima STRING SVG; berkas yang bukan SVG akan tampil sebagai teks.
+        assert path.read_text(encoding="utf-8").lstrip().startswith("<svg"), (
+            f"{path.name} bukan berkas SVG"
+        )
 
 
 def test_streamlit_adalah_extra_opsional_bukan_dependency_inti():

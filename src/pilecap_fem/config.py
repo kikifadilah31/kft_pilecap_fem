@@ -467,6 +467,10 @@ CONTOUR_FIELDS: Final[dict[str, tuple[str, str, str]]] = {
 FILE_CONTOUR_DEFLECTION: Final[str] = "contour_deflection.png"
 FILE_REBAR_DESIGN: Final[str] = "rebar_design.csv"
 FILE_REBAR_ENVELOPE: Final[str] = "rebar_design_envelope.csv"
+#: Envelope per LAJUR (mode `rebar_basis = "strip"` saja). Melengkapi berkas di atas, yang
+#: per ELEMEN: keduanya menjawab pertanyaan berbeda -- "berapa maksimum di peta" versus
+#: "apa yang saya pasang di lajur ini".
+FILE_STRIP_ENVELOPE: Final[str] = "strip_design_envelope.csv"
 FILE_SHEAR_REBAR: Final[str] = "shear_rebar.csv"
 
 #: Arah geser -> (field ElementResults, berkas Av/s, berkas diameter sengkang, label).
@@ -486,6 +490,25 @@ REBAR_FACES: Final[dict[tuple[str, str], tuple[str, str]]] = {
 }
 #: Field ElementResults yang menjadi sumber momen tiap arah.
 REBAR_MOMENT_FIELD: Final[dict[str, str]] = {"x": "m_xx", "y": "m_yy"}
+
+#: Dari mana angka desain tulangan diambil. Berlaku untuk SELURUH kombinasi sekaligus --
+#: satu setelan, bukan per kombinasi.
+#:
+#: * ``element`` -- nilai tiap elemen apa adanya, algoritma asli `shell-kit`. Keputusan
+#:   pembagian zona penulangan berpindah ke engineer: tool memberi peta, engineer
+#:   menentukan band saat mendetail. KONSEKUENSI: nilai puncak di tepi zona jepit pier
+#:   adalah SINGULARITAS dan tidak konvergen -- DIUKUR naik ~16% ketika mesh 300 -> 150 mm.
+#:   Arahnya konservatif (tulangan bertambah), tetapi angkanya bergantung `mesh.size_global`
+#:   dan itu wajib tercetak bersama hasilnya.
+#: * ``strip`` -- integrasi momen sepanjang potongan di muka pier. Konvergen dan dapat
+#:   dicek tangan, tetapi hasilnya bergantung `strips_x`/`strips_y` yang tidak punya nilai
+#:   wajib dari pasal mana pun. DIUKUR pada ex01: memakai 1 lajur alih-alih 5 mengencerkan
+#:   puncak 556,2 -> 283,4 kN.m/m (1,96x) -- un-konservatif tepat di lokasi paling kritis.
+#:
+#: Tidak boleh dicampur antar kombinasi: envelope akan membandingkan besaran yang dihitung
+#: dengan cara berbeda, dan angka governing-nya kehilangan arti.
+REBAR_BASES: Final[tuple[str, str]] = ("element", "strip")
+REBAR_BASIS_DEFAULT: Final[str] = "element"
 
 #: Rasio geometri deep pile cap DILAPORKAN tanpa vonis: ambangnya (PRD Bagian 17 item 5)
 #: belum dikonfirmasi. Menuliskan angka batas tanpa pasal berarti tool memberi kesimpulan
@@ -777,4 +800,25 @@ def examples_dir() -> Path:
         "Folder contoh tidak ditemukan, baik di dalam paket "
         f"({packaged}) maupun di akar repo ({repo}). "
         "Instalasi kemungkinan tidak lengkap."
+    )
+
+
+def illustrations_dir() -> Path:
+    """Folder ilustrasi SVG yang dipakai README dan formulir `pilecap-ui`.
+
+    Pola pencariannya SAMA dengan `examples_dir()`, dan alasannya sama pula: pengguna
+    `uvx` tidak meng-clone repo, sehingga ilustrasi harus ikut terkemas -- kalau tidak,
+    justru merekalah yang kehilangan gambarnya. Isi wheel diperiksa terpisah
+    (`tests/test_packaging.py::test_wheel_memuat_ilustrasi`) karena fallback ke repo di
+    bawah ini akan menutupi kesalahan pengemasan pada jalur pengembangan.
+    """
+    packaged = Path(__file__).parent / "docs_img"
+    if packaged.is_dir():
+        return packaged
+    repo = Path(__file__).resolve().parents[2] / "docs" / "img"
+    if repo.is_dir():
+        return repo
+    raise FileNotFoundError(
+        f"Folder ilustrasi tidak ditemukan, baik di dalam paket ({packaged}) "
+        f"maupun di akar repo ({repo}). Instalasi kemungkinan tidak lengkap."
     )

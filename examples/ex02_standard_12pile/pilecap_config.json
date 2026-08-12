@@ -4,37 +4,41 @@
     "engineer": "[ISI]",
     "date": "2026-08-04"
   },
-
   "units": {
     "length": "mm",
     "force": "kN",
     "stress": "MPa"
   },
-
   "pilecap": {
     "length_x": 11000,
     "length_y": 8000,
-    "origin": [0, 0],
+    "origin": [
+      0,
+      0
+    ],
     "thickness": 1500
   },
-
   "pile": {
     "diameter": 800,
     "n_col": 4,
     "n_row": 3,
     "spacing_x": 3000,
     "spacing_y": 2600,
-    "grid_origin": [0, 0],
+    "grid_origin": [
+      0,
+      0
+    ],
     "modeling": "pressure"
   },
-
   "pier": {
     "shape": "circular",
-    "centerline": [0, 0],
+    "centerline": [
+      0,
+      0
+    ],
     "diameter": 1800,
     "support": "fixed"
   },
-
   "material": {
     "fc": 30,
     "E": 25000,
@@ -42,7 +46,6 @@
     "poisson": 0.2,
     "density": 24
   },
-
   "mesh": {
     "size_mode": "uniform",
     "size_global": 130,
@@ -54,16 +57,15 @@
     "require_all_quad": true,
     "element_order": 1
   },
-
   "analysis": {
     "shell_element": "ShellMITC4",
     "section": "PlateFiber",
     "n_layers": 10,
     "include_self_weight": false
   },
-
   "design": {
     "code": "SNI 2847:2019 (lewat shell-kit)",
+    "rebar_basis": "element",
     "phi_flexure": null,
     "phi_shear": null,
     "fy": 420,

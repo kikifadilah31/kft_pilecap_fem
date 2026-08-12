@@ -109,6 +109,13 @@ class Section:
     icon: str
     fields: tuple[Field, ...] = field(default_factory=tuple)
     help: str = ""
+    #: Nama berkas SVG di `config.illustrations_dir()` yang menjelaskan bagian ini.
+    #:
+    #: Data, bukan cabang `if` di `app.py`: menempatkannya di sini berarti menambah
+    #: ilustrasi untuk bagian baru tidak menyentuh kode formulir sama sekali. Berkas yang
+    #: ditunjuk WAJIB ada -- dijaga `test_setiap_illustration_section_ada_berkasnya`,
+    #: karena tautan yang putus baru terlihat saat formulir dibuka pengguna.
+    illustration: str = ""
     #: Entitas geometri yang di-override CSV; dipakai app.py untuk menandai bagian ini
     #: "akan diabaikan" ketika CSV terkait terdeteksi.
     override_entity: str | None = None
@@ -141,6 +148,16 @@ def _is_diameter_fixed(v: dict[str, Any]) -> bool:
 
 def _is_layered(v: dict[str, Any]) -> bool:
     return v.get("analysis.section") == "LayeredShell"
+
+
+def _is_strip_basis(v: dict[str, Any]) -> bool:
+    """Field lajur hanya relevan bila angka desain memang diambil dari lajur.
+
+    Menyembunyikannya pada mode elemen bukan sekadar kerapian: `strips_x` yang terlihat
+    dan dapat diisi padahal tidak dibaca sama sekali adalah tombol palsu -- user berhak
+    mengira setelannya berpengaruh.
+    """
+    return bool(v.get("design.rebar_basis", config.REBAR_BASIS_DEFAULT) == "strip")
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +240,7 @@ SECTIONS: tuple[Section, ...] = (
     Section(
         title="Pilecap",
         icon=":material/crop_square:",
+        illustration="sistem-koordinat.svg",
         override_entity="pilecap",
         help="Pelat beton yang menyatukan kepala tiang. Dimodelkan sebagai pelat datar di "
         "bidang XY dengan tebal seragam. Bila Anda menaruh CSV poligon di folder input, "
@@ -274,6 +292,7 @@ SECTIONS: tuple[Section, ...] = (
     Section(
         title="Pile",
         icon=":material/circle:",
+        illustration="skema-tumpuan-beban.svg",
         override_entity="pile",
         help="Tiang pancang/bor yang memikul pilecap. Di model ini pile BUKAN tumpuan: "
         "reaksinya (`Pz` dari `pile_reactions.csv`) diterapkan sebagai BEBAN KE ATAS pada "
@@ -356,6 +375,7 @@ SECTIONS: tuple[Section, ...] = (
     Section(
         title="Pier",
         icon=":material/view_column:",
+        illustration="tumpang-tindih-pile-pier.svg",
         override_entity="pier",
         help="Kolom/pilar yang berdiri di atas pilecap. Di model ini pier menjadi TUMPUAN: "
         "seluruh node di dalam daerah pier dijepit penuh (6 derajat kebebasan), menahan "
@@ -771,11 +791,31 @@ SECTIONS: tuple[Section, ...] = (
     Section(
         title="Desain - pemilihan tulangan",
         icon=":material/linear_scale:",
+        illustration="mode-desain-tulangan.svg",
         help="Dari luas tulangan yang dibutuhkan (As), tool memilih batang yang benar-benar "
         "dapat dipasang. Anda menetapkan SATU dari dua hal -- spasi atau batangnya -- dan "
         "tool menghitung sisanya. Hasilnya digambar sebagai peta diameter dan peta spasi per "
         "elemen, bukan hanya angka As.",
         fields=(
+            Field(
+                "design.rebar_basis",
+                "Metode hitung angka desain",
+                "select",
+                config.REBAR_BASIS_DEFAULT,
+                choices=config.REBAR_BASES,
+                help="Dari mana angka desain diambil. Berlaku untuk SELURUH kombinasi "
+                "sekaligus, termasuk envelope. "
+                "`element` (bawaan) memakai nilai tiap elemen apa adanya -- algoritma asli "
+                "shell-kit. Kontur menjadi deliverable utamanya, dan Anda yang menentukan "
+                "pembagian zona penulangan saat mendetail. Nilai puncaknya di tepi pier "
+                "bersifat SINGULAR: membesar terus setiap mesh diperhalus (terukur ~16% "
+                "saat mesh 300 -> 150 mm), jadi hasilnya bergantung ukuran mesh yang Anda "
+                "pilih. Arahnya konservatif -- tulangan bertambah, bukan berkurang. "
+                "`strip` mengintegrasi momen sepanjang potongan di muka pier: konvergen "
+                "dan dapat dicek tangan, tetapi hasilnya bergantung jumlah lajur yang Anda "
+                "tetapkan. Terukur pada ex01: memakai 1 lajur alih-alih 5 mengencerkan "
+                "puncak 556 -> 283 kNm/m.",
+            ),
             Field(
                 "design.rebar_mode",
                 "Mode",
@@ -783,7 +823,9 @@ SECTIONS: tuple[Section, ...] = (
                 "spacing_fixed",
                 choices=validators.REBAR_MODES,
                 help="spacing_fixed: Anda tetapkan spasi, tool memilih diameter. "
-                "diameter_fixed: Anda tetapkan batang, tool menghitung spasi.",
+                "diameter_fixed: Anda tetapkan batang, tool menghitung spasi. "
+                "Sumbu yang BERBEDA dari metode hitung di atas: yang ini menentukan batang "
+                "yang dipasang, bukan dari mana angka As berasal.",
             ),
             Field(
                 "design.rebar_spacing",
@@ -828,6 +870,7 @@ SECTIONS: tuple[Section, ...] = (
                 "int",
                 5,
                 min_value=1,
+                visible_when=_is_strip_basis,
                 help="Pilecap dibagi menjadi beberapa lajur (strip) sejajar sumbu X; di tiap "
                 "lajur momen dirata-ratakan menjadi satu momen desain, sesuai cara "
                 "penulangan pelat dikerjakan di lapangan. Lebih banyak lajur berarti "
@@ -840,6 +883,7 @@ SECTIONS: tuple[Section, ...] = (
                 "int",
                 5,
                 min_value=1,
+                visible_when=_is_strip_basis,
                 help="Banyaknya lajur sejajar sumbu Y, dengan cara kerja yang sama seperti "
                 "lajur arah X. Tulangan kedua arah dihitung terpisah, jadi jumlah lajurnya "
                 "boleh berbeda.",
@@ -850,6 +894,7 @@ SECTIONS: tuple[Section, ...] = (
                 "select",
                 "pier_face",
                 choices=("pier_face", "peak", "both"),
+                visible_when=_is_strip_basis,
                 help="Di titik mana momen desain dibaca. `pier_face` = di muka pier, sesuai "
                 "praktik SNI dan pilihan yang benar untuk desain. `peak` = nilai terbesar di "
                 "mana pun, yang pada model pelat muncul tepat di tumpuan dan bersifat "
