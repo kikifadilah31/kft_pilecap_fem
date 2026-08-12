@@ -391,7 +391,7 @@ def test_phi_kosong_memakai_konstanta_shell_kit_dan_mencatat_asalnya():
 def test_phi_dari_user_menang_dan_asalnya_dicatat():
     inputs = ce.CapacityInputs.from_config(_config_si(phi_flexure=0.85))
     assert inputs.phi_flexure == pytest.approx(0.85)
-    assert inputs.phi_source == "config user"
+    assert inputs.phi_source == "ditetapkan pengguna (design.phi_flexure/design.phi_shear)"
 
 
 # ---------------------------------------------------------------------------

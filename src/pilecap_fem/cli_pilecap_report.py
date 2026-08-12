@@ -25,7 +25,7 @@ import logging
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import numpy as np
 from tqdm import tqdm
@@ -407,20 +407,36 @@ def _project_block(manifest: dict[str, Any], geom: GeometryModel) -> renderer.Ti
     ).with_warnings(*geometry_builder.overlap_warning_lines(geom, float(limit)))
 
 
+#: Label baku untuk `design.rebar_mode` pada kop gambar -- nilai config aslinya adalah
+#: kode `snake_case` (`validators.REBAR_MODES`), bukan kalimat yang layak dicetak apa
+#: adanya pada dokumen teknik.
+_REBAR_MODE_LABELS: Final[dict[str, str]] = {
+    "spacing_fixed": "spasi tetap",
+    "diameter_fixed": "diameter tetap",
+}
+
+
 def _assumption_lines(inputs: capacity_engine.CapacityInputs) -> tuple[str, ...]:
     """Asumsi desain untuk kop gambar, dipecah jadi baris pendek.
 
     Menggantikan satu baris 130 karakter yang dulu menempel di bawah judul. `phi` ikut
     dibawa sekarang: ia mengubah SETIAP angka tulangan pada gambar, tetapi sebelumnya
     tidak pernah tampil di plot mana pun.
+
+    Sumber phi dan fy masing-masing baris tersendiri berlabel "Sumber ..." -- bukan
+    ditempel sebagai tanda kurung di belakang angkanya. Digabung sebagai tanda kurung,
+    `phi_source` yang sudah memuat tanda kurungnya sendiri (mis. "shell-kit v3.3.0
+    (SNI 2847:2019)") berakhir bersarang dua kali, yang terbaca berantakan di kop cetak.
     """
+    mode_label = _REBAR_MODE_LABELS.get(inputs.rebar_mode, inputs.rebar_mode)
     lines = [
         f"f'c {inputs.fc_mpa:,.0f} MPa · fy {inputs.fy_mpa:,.0f} MPa",
         f"Tebal {inputs.thickness_mm:,.0f} mm · selimut {inputs.cover_mm:,.0f} mm · "
-        f"mode {inputs.rebar_mode}",
-        f"φ lentur {inputs.phi_flexure:,.2f} · φ geser {inputs.phi_shear:,.2f}"
-        + (f" ({inputs.phi_source})" if inputs.phi_source else ""),
+        f"mode tulangan {mode_label}",
+        f"φ lentur {inputs.phi_flexure:,.2f} · φ geser {inputs.phi_shear:,.2f}",
     ]
+    if inputs.phi_source:
+        lines.append(f"Sumber φ: {inputs.phi_source}")
     if inputs.fy_source:
         lines.append(f"Sumber fy: {inputs.fy_source}")
     return tuple(lines)
@@ -454,13 +470,14 @@ def _render_rebar_plots(
     """
     peringatan = (
         (
-            "Inilah sumber angka desain (rebar_basis = element). Puncak di tepi zona "
-            "jepit pier bersifat SINGULAR dan bergantung kehalusan mesh."
+            "Peta ini merupakan sumber angka desain (parameter design.rebar_basis = "
+            "element). Nilai puncak di tepi zona jepit pier bersifat singular secara "
+            "numerik dan bergantung pada kehalusan mesh."
         )
         if rebar_basis == "element"
         else (
-            "Peta orientasi — nilai desain diambil dari lajur muka pier, bukan dari nilai "
-            "puncak elemen."
+            "Peta ini bersifat peta orientasi. Angka desain resmi diambil dari lajur "
+            "pada muka pier, bukan dari nilai puncak tiap elemen."
         )
     )
 
@@ -561,7 +578,7 @@ def _render_rebar_plots(
             style=style,
             # Diameter sengkang sering nyaris seragam karena luas per kaki mudah
             # terpenuhi pada grid yang lebar; Av/s yang membawa informasinya.
-            block=block.with_notes(catatan, "Baca bersama plot Av/s."),
+            block=block.with_notes(catatan, "Baca bersama dengan plot Av/s."),
             n_inadequate=smap.n_web_crushed,
             zero_label="tanpa sengkang",
         )
@@ -834,8 +851,8 @@ def _write_envelope(
                 # Sebelum v0.8.0 plot envelope sama sekali tidak membawa konteks, padahal
                 # justru inilah yang paling sering dicetak dan ditempel ke laporan.
                 block=block.with_notes(
-                    "Nilai terselubung seluruh kombinasi; kombinasi penentu per elemen "
-                    "ada di envelope_values.csv."
+                    "Nilai merupakan envelope (nilai ekstrem) dari seluruh kombinasi. "
+                    "Kombinasi penentu tiap elemen tercantum pada envelope_values.csv."
                 ),
             )
             plots.append(name)
@@ -919,8 +936,8 @@ def _render_envelope_rebar_plots(
         pz_by_pile={},
         style=style,
         block=block.with_notes(
-            "ENVELOPE seluruh kombinasi. BUKAN kondisi keseimbangan tunggal: tiap elemen "
-            "dapat berasal dari kombinasi yang berbeda."
+            "Envelope atas seluruh kombinasi, bukan kondisi keseimbangan tunggal — tiap "
+            "elemen dapat berasal dari kombinasi yang berbeda."
         ),
         rebar_basis=rebar_basis,
         rename=lambda name: name.replace("contour_", "envelope_"),

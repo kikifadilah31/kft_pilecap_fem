@@ -530,8 +530,8 @@ def _annotate_plan(
             },
         )
 
-    ax.set_xlabel(f"X - memanjang [{unit}]", color=th.text)
-    ax.set_ylabel(f"Y - melintang [{unit}]", color=th.text)
+    ax.set_xlabel(f"X — memanjang [{unit}]", color=th.text)
+    ax.set_ylabel(f"Y — melintang [{unit}]", color=th.text)
     ax.tick_params(colors=th.text)
     for spine in ax.spines.values():
         spine.set_color(th.grid)

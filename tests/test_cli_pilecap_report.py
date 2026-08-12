@@ -567,9 +567,9 @@ def test_caption_plot_per_kombinasi_mengikuti_rebar_basis(tmp_path_factory, monk
 
     Regresi: `_render_rebar_plots` dipanggil dari `_report_one_combo` tanpa meneruskan
     `rebar_basis`, sehingga jatuh ke default fungsi ("strip") apa pun mode yang
-    sebenarnya dipakai -- caption "Peta orientasi..." tercetak pada plot mode `element`
-    padahal plot itu JUSTRU sumber angka desainnya. Jalur envelope tidak terpengaruh
-    karena sudah meneruskan `rebar_basis` secara eksplisit.
+    sebenarnya dipakai -- caption bertema "peta orientasi" tercetak pada plot mode
+    `element` padahal plot itu JUSTRU sumber angka desainnya. Jalur envelope tidak
+    terpengaruh karena sudah meneruskan `rebar_basis` secara eksplisit.
     """
     workdir = tmp_path_factory.mktemp("caption")
     target = workdir / "ex01"
@@ -590,10 +590,10 @@ def test_caption_plot_per_kombinasi_mengikuti_rebar_basis(tmp_path_factory, monk
 
     assert captured, "tidak ada plot contour_As_* yang tertangkap"
     for name, notes in captured.items():
-        gabungan = " ".join(notes)
+        gabungan = " ".join(notes).lower()
         assert "sumber angka desain" in gabungan, (
             f"{name}: caption tidak menyatakan mode element -- {notes}"
         )
-        assert "Peta orientasi" not in gabungan, (
+        assert "peta orientasi" not in gabungan, (
             f"{name}: caption masih memakai teks mode strip -- {notes}"
         )

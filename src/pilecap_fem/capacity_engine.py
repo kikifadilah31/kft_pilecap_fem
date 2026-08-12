@@ -181,7 +181,7 @@ class CapacityInputs:
             phi_flexure = float(sk_rebar.PHI_FLEXURE)
             phi_shear = float(sk_rebar.PHI_SHEAR)
         else:
-            phi_source = "config user"
+            phi_source = "ditetapkan pengguna (design.phi_flexure/design.phi_shear)"
             phi_flexure = float(phi_flexure if phi_flexure is not None else sk_rebar.PHI_FLEXURE)
             phi_shear = float(phi_shear if phi_shear is not None else sk_rebar.PHI_SHEAR)
 

@@ -2,7 +2,45 @@
 
 Format mengikuti template PRD Bagian 16C.
 
-## [Unreleased]
+## [0.10.0] — 2026-08-12 — Metode desain tulangan per elemen jadi bawaan, envelope tulangan lengkap
+
+Perubahan bawaan terbesar sejak proyek ini mengintegrasikan `shell-kit`: angka desain
+tulangan kini diambil langsung dari nilai per elemen, bukan dari integrasi lajur yang
+diam-diam bergantung pada `strips_x`/`strips_y` yang tidak diwajibkan pasal mana pun.
+Envelope tulangan menyusul lengkap (12 plot + CSV per lajur), dan seluruh kop gambar
+dirapikan ke bahasa Indonesia baku.
+
+### Changed — kop gambar (ASUMSI DESAIN, CATATAN, judul, label) dirapikan ke bahasa baku
+
+Beberapa baris di kop cetak setiap plot membawa sisa kode mentah atau penekanan huruf
+kapital di tengah kalimat -- terbaca sebagai catatan tempel, bukan dokumen teknik:
+
+- `mode {inputs.rebar_mode}` mencetak nilai config apa adanya (`mode spacing_fixed`).
+  Kini diterjemahkan lewat `_REBAR_MODE_LABELS`: `spacing_fixed` -> "spasi tetap",
+  `diameter_fixed` -> "diameter tetap".
+- `φ lentur 0.90 · φ geser 0.75 (shell-kit v3.3.0 (SNI 2847:2019))` bersarang dua tanda
+  kurung ketika `phi_source` (yang sudah membawa kurungnya sendiri) ditempel lagi dalam
+  kurung baris asumsi. Sumber φ sekarang baris tersendiri berlabel "Sumber φ: ...",
+  sejalan dengan "Sumber fy: ..." yang sudah ada.
+- `phi_source` untuk nilai φ yang ditetapkan pengguna berbunyi `"config user"` --
+  campuran Inggris-Indonesia. Diganti `"ditetapkan pengguna
+  (design.phi_flexure/design.phi_shear)"`.
+- Catatan plot As/diameter berbunyi *"Inilah sumber angka desain... bersifat SINGULAR..."*
+  dan catatan plot envelope tulangan berbunyi *"ENVELOPE seluruh kombinasi. BUKAN kondisi
+  keseimbangan tunggal..."* -- pembuka kalimat informal ("Inilah") dan huruf kapital penuh
+  di tengah kalimat sebagai pengganti penekanan. Ditulis ulang jadi kalimat baku lengkap,
+  penekanan lewat pilihan kata bukan huruf kapital.
+- Label sumbu memakai tanda hubung biasa (`X - memanjang [mm]`), tidak konsisten dengan
+  en dash (`—`) yang dipakai di seluruh judul plot lain. Diseragamkan.
+
+**Tidak diubah:** badge "PENAMPANG TIDAK MEMADAI"/"TIDAK ADA BATANG YANG MEMADAI" dan
+placeholder `[CONTOH - ganti dengan mutu & sumber yang Anda tetapkan]` pada `fy_source`.
+Keduanya penanda keras yang disengaja (kegagalan penampang; data belum ditetapkan
+pengguna) -- huruf kapitalnya adalah alarm PRD Bagian 8.3, bukan gaya bahasa yang lupa
+dirapikan.
+
+Contoh perbandingan `element` vs `strip` di README (`docs/img/contoh-diameter-element-vs-strip.png`)
+dibuat ulang dengan kop yang sudah dirapikan.
 
 ### Changed — PERUBAHAN BAWAAN: angka desain tulangan kini dari nilai per ELEMEN
 
