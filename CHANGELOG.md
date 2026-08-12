@@ -110,9 +110,32 @@ sehingga caption yang salah beredar sebagai pernyataan keliru di setiap lembar. 
 mengikuti mode. Caption plot geser tidak diubah — geser satu arah selalu didesain pada
 penampang `d` dari muka pier, terlepas dari mode.
 
+**Perbaikan pertama tidak lengkap.** `_render_rebar_plots` menerima parameter `rebar_basis`,
+tetapi pemanggilnya di jalur **per-kombinasi** (`_report_one_combo`) tidak meneruskannya —
+jatuh diam-diam ke bawaan fungsi (`"strip"`) apa pun mode yang sebenarnya dipakai. Jalur
+**envelope** meneruskannya dengan benar, sehingga bug ini tersembunyi di balik plot envelope
+yang sudah benar. Ketahuan saat membuat perbandingan `contour_diameter_x_bawah.png` `ex02`
+antara `element` dan `strip` untuk README: kedua gambar mencetak caption `strip` yang sama,
+padahal salah satunya seharusnya berbeda. Ditutup dengan meneruskan `rebar_basis=rebar_basis`
+di pemanggilan yang hilang, plus regresi
+`test_caption_plot_per_kombinasi_mengikuti_rebar_basis` yang memata-matai `block.notes` yang
+sebenarnya dikirim ke `renderer.render_contour` — sesuatu yang tidak dapat diperiksa dari
+berkas PNG setelah jadi.
+
 Tabel "Ke mana efeknya sampai" di README juga basi karena alasan yang sama: ia menyatakan
 `contour_As_*.png` "murni orientasi", padahal sejak bawaan berubah ia justru angka desain.
 Diganti tabel yang menyatakan peran tiap keluaran **per mode**.
+
+### Added — contoh nyata perbandingan `element` vs `strip` di README
+
+`docs/img/contoh-diameter-element-vs-strip.png`: `contour_diameter_x_bawah.png` `ex02`
+(spasi 100 mm) yang sungguh dihasilkan dua kali, hanya `design.rebar_basis` yang diubah.
+Berbeda dari ilustrasi lain di `docs/img/` yang digambar tangan (SVG), ini tangkapan layar
+langsung dari `pilecap-report` (PNG) — sengaja, karena poinnya justru **petanya identik
+piksel demi piksel** antara kedua mode (lihat catatan di atas: `designs` selalu dihitung
+dari medan per elemen apa adanya, terlepas `rebar_basis`), dan hanya baris CATATAN di kop
+yang berbeda. `test_ilustrasi_readme_ada_berkasnya` diperluas untuk memvalidasi PNG lewat
+header magic byte-nya, bukan cuma XML seperti SVG.
 
 ### Added — ilustrasi di dalam formulir `pilecap-ui`
 

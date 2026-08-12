@@ -525,10 +525,12 @@ def test_readme_tidak_menyebut_field_yang_tidak_ada():
 
 
 def test_ilustrasi_readme_ada_berkasnya():
-    """Gambar yang ditautkan README harus benar-benar ada dan berupa SVG yang sah.
+    """Gambar yang ditautkan README harus benar-benar ada dan berupa berkas gambar yang sah.
 
     Tautan gambar yang putus baru terlihat setelah README dibuka di GitHub, yaitu setelah
-    dirilis -- terlambat.
+    dirilis -- terlambat. Ilustrasi tangan (SVG) divalidasi sebagai XML; tangkapan layar
+    hasil run nyata (PNG, mis. perbandingan `rebar_basis`) divalidasi lewat header PNG-nya
+    sendiri -- keduanya hidup di `docs/img/` yang sama tetapi bukan format yang sama.
     """
     import xml.etree.ElementTree as ET
 
@@ -539,4 +541,9 @@ def test_ilustrasi_readme_ada_berkasnya():
     for rel in tautan:
         path = REPO / rel
         assert path.is_file(), f"README menautkan {rel} yang tidak ada"
-        ET.parse(path)
+        if path.suffix == ".svg":
+            ET.parse(path)
+        elif path.suffix == ".png":
+            assert path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", f"{rel} bukan PNG yang sah"
+        else:
+            raise AssertionError(f"{rel}: ekstensi {path.suffix!r} belum didukung test ini")

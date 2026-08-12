@@ -560,3 +560,40 @@ def test_mode_elemen_melaporkan_lokasi_puncak(reported: Path):
     # Muka yang dikuasai As_min: SELURUH elemen seri, jadi koordinat mana pun tidak
     # istimewa dan menyajikannya seolah bermakna akan menyesatkan.
     assert "seluruh elemen seri" in teks
+
+
+def test_caption_plot_per_kombinasi_mengikuti_rebar_basis(tmp_path_factory, monkeypatch):
+    """Caption yang tercetak di plot As per-kombinasi HARUS mengikuti `rebar_basis`.
+
+    Regresi: `_render_rebar_plots` dipanggil dari `_report_one_combo` tanpa meneruskan
+    `rebar_basis`, sehingga jatuh ke default fungsi ("strip") apa pun mode yang
+    sebenarnya dipakai -- caption "Peta orientasi..." tercetak pada plot mode `element`
+    padahal plot itu JUSTRU sumber angka desainnya. Jalur envelope tidak terpengaruh
+    karena sudah meneruskan `rebar_basis` secara eksplisit.
+    """
+    workdir = tmp_path_factory.mktemp("caption")
+    target = workdir / "ex01"
+    shutil.copytree(EXAMPLES / "ex01_standard_4pile", target)
+    run_dir = _analyze(target, workdir / "output")
+
+    captured: dict[str, tuple[str, ...]] = {}
+    original = cli_pilecap_report.renderer.render_contour
+
+    def spy(path, *args, **kwargs):
+        name = Path(path).name
+        if name.startswith("contour_As_"):
+            captured[name] = kwargs["block"].notes
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(cli_pilecap_report.renderer, "render_contour", spy)
+    _report(run_dir)
+
+    assert captured, "tidak ada plot contour_As_* yang tertangkap"
+    for name, notes in captured.items():
+        gabungan = " ".join(notes)
+        assert "sumber angka desain" in gabungan, (
+            f"{name}: caption tidak menyatakan mode element -- {notes}"
+        )
+        assert "Peta orientasi" not in gabungan, (
+            f"{name}: caption masih memakai teks mode strip -- {notes}"
+        )

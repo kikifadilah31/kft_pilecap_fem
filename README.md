@@ -626,6 +626,22 @@ dapat dicek tangan, dan mengikuti metode penampang kritis yang lazim untuk pilec
 Apa pun pilihannya, **basis yang dipakai selalu tercetak** di `calc_sheet.md` dan
 `SUMMARY.md` — tidak ada berkas hasil yang beredar tanpa menyatakan metodenya.
 
+##### Contoh nyata (`ex02`): peta yang sama, tafsir yang berbeda
+
+Berikut `contour_diameter_x_bawah.png` yang benar-benar dihasilkan dari `ex02`
+(spasi dikunci 100 mm), satu kombinasi (`1.2D+1.6L`), dijalankan dua kali — hanya
+`design.rebar_basis` yang diubah:
+
+![Perbandingan kontur diameter tulangan, rebar_basis element vs strip](docs/img/contoh-diameter-element-vs-strip.png)
+
+Petanya **identik piksel demi piksel** — wajar, karena `designs` (dan karenanya
+`contour_As_*`/`contour_diameter_*`) selalu dihitung dari medan momen per elemen apa
+adanya, terlepas dari `rebar_basis`. Yang berbeda **hanya** baris CATATAN di kop gambar:
+kiri menyatakan gambar inilah sumber angka desain, kanan menyatakan gambar ini cuma peta
+orientasi dan angka resminya ada di `strip_moments_*.csv`/calc sheet bagian 6. Baca
+`rebar_basis` di kop sebelum menafsirkan gambar mana pun dari alat ini — gambarnya sendiri
+tidak cukup untuk membedakan.
+
 #### Lajur momen: `strips_x`, `strips_y`, dan `moment_at`
 
 > Ketiganya **hanya berlaku pada `rebar_basis: "strip"`**. Pada mode `element` ketiganya

@@ -721,6 +721,7 @@ def _report_one_combo(
             pz_by_pile=pz_by_pile,
             style=style,
             block=base_block,
+            rebar_basis=rebar_basis,
         )
 
     # --- calc sheet ---------------------------------------------------------
