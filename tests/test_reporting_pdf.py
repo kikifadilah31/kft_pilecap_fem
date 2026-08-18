@@ -69,9 +69,14 @@ def test_nomor_keterbatasan_tidak_hilang_sebagai_markup():
 # ---------------------------------------------------------------------------
 
 
-def test_tebal_dan_miring_dipetakan_ke_konvensi_typst():
-    """Pemetaan yang mudah tertukar: Markdown `**x**` -> Typst `*x*`, `*x*` -> `_x_`."""
-    assert tk.from_markdown("**tebal**") == "*tebal*"
+def test_tebal_menjadi_penekanan_berwarna_bukan_sekadar_tebal():
+    """Markdown `**x**` -> `#tegas[x]` (tebal + warna), `*x*` -> `_x_` (miring).
+
+    `#tegas` menggantikan HURUF KAPITAL di tengah kalimat sebagai penanda "penting".
+    Kapital mendadak memutus alur baca pada dokumen yang ditandatangani; warna gelap
+    + tebal tetap menonjol tanpa merusak tata bahasanya.
+    """
+    assert tk.from_markdown("**tebal**") == "#tegas[tebal]"
     assert tk.from_markdown("*miring*") == "_miring_"
 
 
@@ -82,7 +87,7 @@ def test_tebal_boleh_melintasi_pergantian_baris():
     desain**`. Versi pertama konverter ini memproses per baris, melihat `**` tanpa penutup,
     lalu menolak teks yang sebenarnya sah.
     """
-    assert tk.from_markdown("awal **tebal\nlanjut** akhir") == "awal *tebal lanjut* akhir"
+    assert tk.from_markdown("awal **tebal\nlanjut** akhir") == "awal #tegas[tebal lanjut] akhir"
 
 
 def test_isi_kode_tidak_ikut_di_escape():
@@ -176,6 +181,39 @@ def test_konversi_markdown_mempertahankan_tabel_bersarang_di_butir_daftar():
 
 
 # ---------------------------------------------------------------------------
+# Rujukan silang yang dapat diklik
+# ---------------------------------------------------------------------------
+
+
+def test_heading_berlabel_menjadi_sasaran_rujukan():
+    assert tk.heading(1, "Dasar teori", label="bab-teori") == "= Dasar teori <bab-teori>"
+    assert tk.ref("bab-teori", "Dasar teori") == "#link(<bab-teori>)[Dasar teori]"
+
+
+def test_rujukan_markdown_menjadi_tautan_yang_dapat_diklik():
+    """`[teks](#label)` -> `#link(<label>)[teks]`.
+
+    Regresi: rujukan semula dibangun dengan memanggil `ref()` lalu menyambungnya ke teks
+    yang masih akan melewati `from_markdown`. Konverter meng-escape `#`, `<`, dan `[`,
+    sehingga tautannya tercetak sebagai teks mentah `\\#link(\\<bab-teori\\>)[...]` --
+    tidak dapat diklik dan merusak kalimatnya.
+    """
+    keluaran = tk.from_markdown("Lihat bab [Dasar teori](#bab-teori) untuk rinciannya.")
+    assert "#link(<bab-teori>)[Dasar teori]" in keluaran
+    assert "\\#link" not in keluaran
+
+    # Kurung siku biasa TIDAK boleh ikut tertangkap sebagai tautan.
+    assert "\\[" in tk.from_markdown("nilai [lihat catatan] berikut")
+
+
+def test_label_tidak_sah_ditolak():
+    """Label cacat menghasilkan `.typ` yang gagal kompilasi jauh dari sumbernya."""
+    for buruk in ("Bab Teori", "bab teori", "-awal", ""):
+        with pytest.raises(tk.TypstMarkupError):
+            tk.heading(1, "x", label=buruk)
+
+
+# ---------------------------------------------------------------------------
 # Blok prosa tetap -- WAJIB direproduksi lengkap (PRD Bagian 1.3 poin 5)
 # ---------------------------------------------------------------------------
 
@@ -199,7 +237,9 @@ def test_peringatan_deep_pilecap_menjadi_kotak_peringatan():
     """Admonition `> [!WARNING]` harus jadi kotak, bukan kutipan biasa yang terlewat."""
     keluaran = tk.from_markdown(reporter.deep_pilecap_warning(DEEP_RATIO))
     assert "#kotak(" in keluaran
-    assert "TIDAK SAH sebagai dasar desain" in keluaran.replace("*", "")
+    # Kalimat pembatal keabsahan WAJIB tetap ada, dan tetap ditandai sebagai penting --
+    # sekarang lewat `#tegas` (tebal + warna), bukan huruf kapital.
+    assert "#tegas[tidak sah sebagai dasar desain]" in keluaran
     assert "0.754" in keluaran
 
 

@@ -31,6 +31,8 @@ __all__ = [
     "from_markdown",
     "heading",
     "pagebreak",
+    "ref",
+    "slug",
     "table",
 ]
 
@@ -64,6 +66,14 @@ PREAMBLE: Final[str] = """\
 
 #set table(inset: 5pt, stroke: 0.4pt + luma(170))
 #show table.cell.where(y: 0): set text(weight: "bold")
+// Rata kanan-kiri dimatikan di dalam sel: kolom tabel sempit, dan perataan paksa
+// merenggangkan "maks abs m_x" menjadi celah-celah lebar yang terbaca berantakan.
+#show table.cell: set par(justify: false)
+
+// Penekanan istilah penting. Dipakai menggantikan HURUF KAPITAL di tengah kalimat:
+// kapital mendadak memutus alur baca dan terbaca seperti membentak, sedangkan warna
+// gelap + tebal tetap menonjol tanpa merusak tata bahasa.
+#let tegas(isi) = text(fill: rgb("#1f3864"), weight: "bold")[#isi]
 
 #set figure(numbering: "1")
 #show figure.caption: set text(size: 8.5pt)
@@ -123,6 +133,9 @@ _LEADING_NUMBER = re.compile(r"^\d+\.")
 
 #: Flag baris perintah di dalam teks bebas, mis. `--opsvis`, `--no-rebar-plots`.
 _CLI_FLAG = re.compile(r"(?<![-\w])--[A-Za-z][\w-]*")
+
+#: Rujukan silang gaya Markdown: `[Dasar teori](#bab-teori)`.
+_RUJUKAN = re.compile(r"\[([^\]\n]+)\]\(#([a-z0-9][a-z0-9_-]*)\)")
 
 
 def esc(text: str) -> str:
@@ -208,7 +221,9 @@ def _inline(text: str) -> str:
             if end == -1:
                 raise TypstMarkupError(f"`**` tebal tidak ditutup: {text[i : i + 40]!r}")
             flush()
-            out.append(f"*{_inline(text[i + 2 : end])}*")
+            # `**tebal**` menjadi penekanan BERWARNA, bukan sekadar tebal. Ini yang
+            # menggantikan huruf kapital di tengah kalimat sebagai penanda "penting".
+            out.append(f"#tegas[{_inline(text[i + 2 : end])}]")
             i = end + 2
         elif text[i] == "`":
             end = text.find("`", i + 1)
@@ -228,6 +243,14 @@ def _inline(text: str) -> str:
             flush()
             out.append(f"_{_inline(text[i + 1 : tutup])}_")
             i = tutup + 1
+        elif (m := _RUJUKAN.match(text, i)) is not None:
+            # Rujukan silang ditulis sebagai tautan Markdown `[teks](#label)` supaya prosa
+            # di sumber tetap Markdown murni. Menyisipkan `#link(<label>)[..]` langsung ke
+            # dalam teks TIDAK bekerja: teks itu melewati konverter ini, yang meng-escape
+            # `#`, `<`, `[` menjadi karakter biasa -- tautannya tercetak apa adanya.
+            flush()
+            out.append(ref(m.group(2), m.group(1)))
+            i = m.end()
         else:
             buf.append(text[i])
             i += 1
@@ -241,11 +264,44 @@ def _inline(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def heading(level: int, text: str) -> str:
-    """Heading Typst. `level` 1 = bab."""
+_LABEL_SAH = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def slug(text: str) -> str:
+    """Ubah teks bebas menjadi label Typst yang sah dan stabil."""
+    hasil = re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")
+    return hasil or "bagian"
+
+
+def heading(level: int, text: str, *, label: str | None = None) -> str:
+    """Heading Typst. `level` 1 = bab.
+
+    `label` menjadikan heading ini sasaran rujukan yang DAPAT DIKLIK lewat `ref()`.
+    Tanpa label, rujukan silang hanya bisa ditulis sebagai teks mati -- pembaca harus
+    mencari sendiri bagian yang dimaksud di dokumen 40 halaman.
+    """
     if level < 1:
         raise TypstMarkupError(f"level heading tidak sah: {level}")
-    return f"{'=' * level} {_inline(text)}"
+    baris = f"{'=' * level} {_inline(text)}"
+    if label is None:
+        return baris
+    if not _LABEL_SAH.match(label):
+        raise TypstMarkupError(
+            f"label {label!r} tidak sah; pakai huruf kecil, angka, `-`, atau `_`."
+        )
+    return f"{baris} <{label}>"
+
+
+def ref(label: str, text: str) -> str:
+    """Rujukan silang yang dapat diklik ke heading ber-`label`.
+
+    Teksnya ditulis sendiri, bukan memakai `@label` bawaan Typst, supaya kalimatnya tetap
+    mengalir dalam bahasa Indonesia ("bagian Geser") alih-alih tersisip "Bagian 4.5" yang
+    kaku dan bergantung penomoran.
+    """
+    if not _LABEL_SAH.match(label):
+        raise TypstMarkupError(f"label {label!r} tidak sah.")
+    return f"#link(<{label}>)[{_inline(text)}]"
 
 
 def pagebreak() -> str:

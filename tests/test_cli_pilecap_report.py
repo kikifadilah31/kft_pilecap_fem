@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -238,7 +239,9 @@ def test_peringatan_deep_pilecap_mendahului_tabel_As(reported: Path):
     """
     for name in (config.FILE_CALC_SHEET, "../" + config.FILE_SUMMARY):
         text = (reported / "Combo_1_2D_1_6L" / name).read_text(encoding="utf-8")
-        warning_at = text.find("TIDAK SAH sebagai dasar desain")
+        # Penanda "penting" ini dulu HURUF KAPITAL; sekarang **tebal** biasa (v0.11.1) --
+        # kapital mendadak dianggap membentak pada dokumen yang ditandatangani.
+        warning_at = text.find("tidak sah sebagai dasar desain")
         table_at = text.find("As pakai [mm^2/m]")
         assert warning_at != -1, f"peringatan deep pilecap tidak ada di {name}"
         assert table_at != -1, f"tabel As tidak ada di {name}"
@@ -666,12 +669,12 @@ def test_peringatan_deep_pilecap_mendahului_tabel_As_di_pdf(reported_pdf: Path):
     """
     teks = (reported_pdf / config.FILE_PDF_SOURCE).read_text(encoding="utf-8")
     awal = teks.index("= Ringkasan eksekutif")
-    peringatan = teks.index("MODEL LENTUR PELAT", awal)
-    tabel = teks.index("As perlu", peringatan - 4000 if peringatan > 4000 else 0)
+    # Diikat pada kalimat yang membatalkan keabsahan angka, bukan pada gaya hurufnya:
+    # penandanya kini `#tegas` (tebal + warna), bukan HURUF KAPITAL.
+    peringatan = teks.index("tidak sah sebagai dasar desain", awal)
     assert peringatan < teks.index("As pakai", awal), (
         "peringatan deep pilecap muncul SETELAH tabel As pada ringkasan"
     )
-    assert tabel >= 0
 
 
 def test_ringkasan_pdf_cocok_dengan_summary_md(reported_pdf: Path):
@@ -710,6 +713,25 @@ def test_pdf_tidak_memuat_dump_seluruh_elemen(reported_pdf: Path):
     )
     assert typ.count("\n  [") < mesh.n_elements, "dokumen tampak memuat satu baris per elemen"
     assert "`element_resultants.csv`" in typ or "element\\_resultants.csv" in typ
+
+
+def test_bab_envelope_memuat_seluruh_gambar_tulangan(reported_pdf: Path):
+    """Bab Envelope harus menampilkan 12 gambar tulangan, sama seperti bab per kombinasi.
+
+    Regresi: bab ini semula hanya menyisipkan 4 peta `As`. Kedelapan sisanya -- peta
+    batang terpilih dan peta sengkang -- SUDAH dihasilkan ke `Envelope/` dan tinggal
+    dirujuk, sehingga pembaca melihat `As` envelope tanpa melihat batang yang memenuhinya
+    maupun kebutuhan sengkangnya.
+    """
+    typ = (reported_pdf / config.FILE_PDF_SOURCE).read_text(encoding="utf-8")
+    tertanam = {
+        berkas.name
+        for berkas in (reported_pdf / config.ENVELOPE_SUBDIR).glob("envelope_*.png")
+        if f"{config.ENVELOPE_SUBDIR}/{berkas.name}" in typ
+    }
+    rebar = {n for n in tertanam if not re.search(r"_(max|min)\.png$", n)}
+    assert len(rebar) == 12, f"gambar tulangan envelope yang tertanam: {sorted(rebar)}"
+    assert sum(1 for n in tertanam if re.search(r"_(max|min)\.png$", n)) == 10
 
 
 def test_pdf_dapat_dibuat_ulang_tanpa_analisis_ulang(reported_pdf: Path):

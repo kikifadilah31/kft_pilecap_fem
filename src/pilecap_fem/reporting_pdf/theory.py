@@ -86,7 +86,7 @@ EQUATIONS: tuple[Equation, ...] = (
 
 def chapter_theory(figs: FigureStore) -> str:
     """Bab 2 -- dasar teori, lengkap dengan rumus, sumber, dan ilustrasi."""
-    b: list[str] = [tk.heading(1, "Dasar teori")]
+    b: list[str] = [tk.heading(1, "Dasar teori", label="bab-teori")]
 
     # 2.1 -----------------------------------------------------------------
     b.append(tk.heading(2, "Lingkup dan idealisasi"))
@@ -255,8 +255,8 @@ def chapter_theory(figs: FigureStore) -> str:
     b.append(
         _md(
             "Seluruh perhitungan kapasitas penampang mengacu pada SNI 2847:2019 dan "
-            "dievaluasi oleh pustaka `shell-kit`, yang versinya dicatat pada Lampiran "
-            "Provenance. Perhitungan dilakukan pada penampang selebar "
+            "dievaluasi oleh pustaka `shell-kit`, yang versinya dicatat pada "
+            "[Lampiran A](#lampiran-provenance). Perhitungan dilakukan pada penampang selebar "
             f"**{_strip_width_mm():,.0f} mm**."
         )
     )
@@ -326,8 +326,8 @@ def chapter_theory(figs: FigureStore) -> str:
             "Besaran gaya yang tidak melenturkan pelat dilaporkan dalam dua komponen "
             "terpisah: komponen geometris, yang tidak bergantung pada ukuran elemen, dan "
             "komponen diskretisasi, yang besarnya sebanding dengan ukuran elemen. Uraian "
-            "lengkap beserta tabel pengukurannya disajikan pada bab Asumsi dan Keterbatasan "
-            "butir 10."
+            "lengkap beserta tabel pengukurannya disajikan pada bab "
+            "[Asumsi dan keterbatasan](#bab-keterbatasan) butir 10."
         )
     )
     b.append(

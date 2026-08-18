@@ -2,7 +2,45 @@
 
 Format mengikuti template PRD Bagian 16C.
 
-## [0.11.0] — 2026-08-18 — Laporan PDF lengkap satu run, dikompilasi Typst di dalam Python
+## [0.11.1] — 2026-08-19 — Rujukan dapat diklik, penekanan tanpa kapital, envelope tulangan lengkap
+
+Ditemukan lewat peninjauan visual PDF hasil `ex01` sebelum rilis, bukan lewat kode.
+
+### Fixed — bab 6 Envelope hanya menampilkan 4 dari 12 gambar tulangan
+
+`Envelope/` sudah berisi 12 PNG tulangan (4 `As` + 4 batang terpilih + 4 sengkang) sejak
+v0.10.0, tetapi `chapter_envelope` hanya merujuk keempat `As`-nya. Delapan gambar
+lain -- peta diameter/spasi batang dan `Av/s` sengkang -- sudah ada di disk dan tinggal
+dirujuk, tetapi tidak pernah dirujuk. Pembaca melihat `As` envelope tanpa melihat batang
+apa yang memenuhinya. Diperbaiki: bab ini sekarang menyusun daftar gambar dengan pola
+yang sama dengan bab per kombinasi (`_selection_kinds` membaca `RebarSelection.kind` yang
+sudah ada, bukan menebak ulang dari `rebar_mode`). Dijaga
+`test_bab_envelope_memuat_seluruh_gambar_tulangan`, yang mengunci angka 12.
+
+### Added — rujukan silang antar-bab dapat diklik
+
+`typst_kit.heading()` menerima `label=`, dan prosa merujuknya lewat sintaks tautan
+Markdown `[teks](#label)` yang diterjemahkan `#link(<label>)[teks]`. Ditulis sebagai
+tautan Markdown, bukan `tk.ref()` yang disambung langsung ke string: percobaan pertama
+menyambungnya sebagai literal Typst gagal diam-diam -- string itu tetap melewati
+`from_markdown`, yang meng-escape `#`/`<`/`[`, sehingga tautannya tercetak sebagai teks
+mati `\#link(\<bab-teori\>)[...]`. Dijaga
+`test_rujukan_markdown_menjadi_tautan_yang_dapat_diklik`.
+
+### Changed — penekanan penting tidak lagi lewat HURUF KAPITAL mendadak
+
+`**tebal**` sekarang diterjemahkan `#tegas[...]` (tebal + warna biru gelap), bukan
+`*tebal*` Typst biasa. Menggantikan pola lama yang menandai kalimat penting dengan
+kapital di tengah prosa (`TIDAK SAH`, `ZONA`, `UKURAN ELEMEN`, `ARAH GALATNYA TIDAK
+AMAN`) -- kapital mendadak memutus alur baca dokumen yang ditandatangani dan terbaca
+seperti membentak. `config.KNOWN_LIMITATIONS` (PRD Bagian 8.3, direproduksi apa adanya
+di setiap laporan) ikut ditulis ulang ejaannya: **tidak ada kata yang ditambah, dihapus,
+atau diubah maknanya** -- hanya kapital yang dipindah ke `**tebal**`. Perubahan ejaan itu
+otomatis ikut memperbaiki `calc_sheet.md` dan `SUMMARY.md`, bukan cuma PDF.
+
+Sekalian: `#show table.cell: set par(justify: false)` -- rata kanan-kiri di dalam sel
+tabel sempit merenggangkan header ("maks␣␣abs␣␣m_x") menjadi celah lebar yang tidak
+terbaca sebagai satu frasa.
 
 ### Added — `--pdf`: satu dokumen lengkap, dengan dasar teori dan seluruh diagram
 

@@ -592,25 +592,25 @@ KNOWN_LIMITATIONS: Final[str] = """\
 8. **Berat sendiri opsional dan default OFF** - user harus sadar apakah `Pz` yang diinput
    sudah memperhitungkan berat pilecap atau belum. Tool tidak bisa mendeteksi ini.
 
-9. **Mesh gmsh TIDAK reproducible bit demi bit.** DIUKUR pada gmsh 4.15.2, dua run dengan
+9. **Mesh gmsh tidak reproducible bit demi bit.** Terukur pada gmsh 4.15.2, dua run dengan
    input dan versi yang sama: jumlah node & elemen selalu identik, tetapi posisi node dapat
    berbeda hingga **33 mm** pada model 12 pile. Menyetel `General.NumThreads = 1` **tidak**
    menghilangkannya - penyebabnya ada di algoritma Quasi-structured Quad itu sendiri.
-   Dampaknya pada angka desain DIUKUR kecil: momen lajur dan `As` bergeser paling banyak
+   Dampaknya pada angka desain terukur kecil: momen lajur dan `As` bergeser paling banyak
    **0,02%** antar run. Konsekuensi praktisnya: `As` dan momen lajur dapat dibandingkan
    antar run, tetapi **nilai per elemen di satu titik tidak** - dua run dapat memberi
    angka berbeda di lokasi yang sama karena elemennya memang bukan elemen yang sama.
    Untuk mereproduksi angka secara persis, simpan `00_Model/nodes.csv` dan
    `elements.csv`; keduanya memuat mesh yang benar-benar dipakai.
 
-10. **Pile yang tumpang tindih dengan pier: bagian di dalam footprint pier TIDAK
+10. **Pile yang tumpang tindih dengan pier: bagian di dalam footprint pier tidak
     melenturkan pelat.** Pier dimodelkan jepit sempurna (lihat #2), sehingga tekanan yang
     bekerja di dalam footprint-nya langsung masuk ke reaksi. Secara fisik itu aksi **strut**
     -- gaya tersalur langsung dari kepala pile ke pier menembus tebal pilecap. Tool **tidak
     menghitung kapasitas strut itu**; bagian tersebut wajib dicek terpisah sebagai
     tumpu/strut, dan besarnya dilaporkan tersendiri di calc sheet.
 
-    **Angka desainnya bergantung pada UKURAN ELEMEN yang Anda pilih.** Selain komponen
+    **Angka desainnya bergantung pada ukuran elemen yang Anda pilih.** Selain komponen
     strut yang murni geometris, ada komponen diskretisasi: beban elemen di tepi footprint
     pier ikut mendarat pada node jepit. Besarnya sebanding `L·h/(2·A_pile)` (`L` = panjang
     potongan pile di muka pier, `h` = ukuran elemen), yaitu **orde `h`**. DIUKUR pada
@@ -627,20 +627,20 @@ KNOWN_LIMITATIONS: Final[str] = """\
     diperhalus 4x. Keduanya dilaporkan **terpisah** supaya terlihat mana yang geometri dan
     mana yang kehalusan mesh. Memperhalus mesh mengecilkan komponen diskretisasinya.
 
-    **ARAH GALATNYA TIDAK AMAN.** Komponen diskretisasi membuat pelat menerima beban lebih
-    KECIL daripada seharusnya -- momen mengecil, sehingga tulangan yang dihitung lebih
+    **Arah galatnya tidak aman.** Komponen diskretisasi membuat pelat menerima beban lebih
+    **kecil** daripada seharusnya -- momen mengecil, sehingga tulangan yang dihitung lebih
     sedikit. Mesh yang lebih kasar menghasilkan desain yang lebih ringan, bukan lebih berat.
     Karena itu sejak v0.9.1 besarnya **dibatasi**, bukan sekadar dilaporkan: di atas
     `OVERLAP_LEAK_WARN` muncul peringatan, di atas `OVERLAP_LEAK_ERROR` run ditolak. Batas
     itu diturunkan dari tabel pengukuran di dekat kedua konstanta tersebut.
 
     Bocoran juga bergantung **bentuk** irisannya, bukan hanya luasnya: irisan yang terpotong
-    dua sisi (pile menindih SUDUT pier) punya chord lebih panjang, sehingga bocor lebih besar
+    dua sisi (pile menindih **sudut** pier) punya chord lebih panjang, sehingga bocor lebih besar
     daripada irisan satu muka pada kehalusan mesh yang sama -- terukur 2,3x pada D/h=24.
     Itulah sebabnya rasio `D/h` tidak dipakai sebagai penduga, dan yang diukur adalah
     bocoran yang sebenarnya.
 
-    Ini sensitivitas terhadap **ukuran elemen**, BUKAN terhadap jitter mesh antar run.
+    Ini sensitivitas terhadap **ukuran elemen**, bukan terhadap jitter mesh antar run.
     Batas 0,02% pada #9 tetap berlaku: DIUKUR pada 8 run ex04 dengan ukuran elemen yang
     sama, sebaran besaran desainnya hanya **0,0001%** -- lebih kecil daripada contoh tanpa
     overlap. Kedua hal itu sering tertukar; yang perlu Anda putuskan adalah `mesh.size_*`,

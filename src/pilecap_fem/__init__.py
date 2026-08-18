@@ -45,4 +45,4 @@ _check_interpreter()
 #: di setiap `run_manifest.json`. Menyimpan versi di dua tempat pernah membuat seluruh
 #: laporan mengklaim v0.1.0 padahal tool sudah v0.3.0 -- dijaga oleh
 #: `tests/test_packaging.py`.
-__version__ = "0.11.0"
+__version__ = "0.11.1"

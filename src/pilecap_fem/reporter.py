@@ -1018,14 +1018,15 @@ def deep_pilecap_warning(deep_ratio: dict[str, Any]) -> str:
     """
     return f"""\
 > [!WARNING]
-> **`As` DI BAWAH INI BERASAL DARI MODEL LENTUR PELAT.** `shell-kit` adalah alat desain
-> pelat per lajur 1 m. Bila pilecap berperilaku *deep member* (mekanisme strut-and-tie),
-> angka-angka ini **TIDAK SAH sebagai dasar desain** (PRD Bagian 8.3 keterbatasan #1).
+> **Nilai `As` di bawah ini berasal dari model lentur pelat.** `shell-kit` adalah alat
+> desain pelat per lajur 1 m. Bila pilecap berperilaku *deep member* dengan mekanisme
+> strut-and-tie, angka-angka tersebut **tidak sah sebagai dasar desain**
+> (PRD Bagian 8.3 keterbatasan #1).
 >
 > `a/d` minimum terhitung = **{deep_ratio["min_a_over_d"]:.3f}** (pada {deep_ratio["min_at"]}).
-> **Ambang batas deep pile cap belum dikonfirmasi** (PRD Bagian 17 item 5), sehingga tool
-> ini TIDAK memberi vonis. Penilaian apakah pilecap ini deep atau tidak **ada pada
-> engineer**, dan harus dilakukan SEBELUM angka `As` dipakai."""
+> **Ambang batas deep pile cap belum dikonfirmasi** (PRD Bagian 17 item 5), sehingga
+> perangkat lunak ini tidak memberikan vonis. Penilaian atas perilaku tersebut merupakan
+> **kewenangan engineer** dan harus diselesaikan **sebelum** angka `As` dipakai."""
 
 
 def capacity_provenance_table(provenance: dict[str, Any]) -> str:
@@ -1086,13 +1087,14 @@ def stirrup_section(
 ## 7b. TULANGAN GESER (SENGKANG) - peta per elemen
 
 > [!NOTE]
-> **Dua besaran `Av/s` disajikan laporan ini, dan keduanya sah.** Bagian 7 memeriksa
-> penampang kritis pada `d` dari muka pier: geser satu arah adalah fenomena PENAMPANG,
-> bidang runtuhnya memotong seluruh lebar, dan itulah cek yang lazim untuk pilecap.
-> Tabel di bawah menyajikan `Av/s` per elemen, dihitung dengan fungsi desain
-> `shell-kit` yang sama (`calc_shear_Av_per_s`, penampang 1 m) sebagaimana `As` lentur
-> per elemen dihitung. Angka per elemen dapat dipakai untuk menentukan ZONA pemasangan
-> sengkang; cek penampang bagian 7 tetap menjadi dasar penerimaan.
+> **Dua besaran `Av/s` disajikan laporan ini, dan keduanya sah.** Bagian **Geser** di
+> atas memeriksa penampang kritis pada `d` dari muka pier: geser satu arah adalah
+> **fenomena penampang** yang bidang runtuhnya memotong seluruh lebar, dan itulah cek
+> yang lazim untuk pilecap. Tabel di bawah menyajikan `Av/s` per elemen, dihitung dengan
+> fungsi desain `shell-kit` yang sama (`calc_shear_Av_per_s`, penampang 1 m) sebagaimana
+> `As` lentur per elemen dihitung. Angka per elemen berguna untuk menetapkan **zona
+> pemasangan** sengkang, sedangkan cek penampang pada bagian Geser tetap menjadi
+> **dasar penerimaan**.
 >
 > Perlu diperhatikan: nilai `q` per elemen di tepi zona jepit pier bersifat singular dan
 > bergantung kehalusan mesh, sama seperti momen di lokasi tersebut. Parameter

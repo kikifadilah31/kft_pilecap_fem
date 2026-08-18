@@ -149,7 +149,7 @@ def chapter_summary(data: ReportData) -> str:
     (PRD Bagian 8.3 keterbatasan #1). Peringatan yang baru terbaca setelah angka
     tercetak sudah terlambat.
     """
-    bagian = [tk.heading(1, "Ringkasan eksekutif")]
+    bagian = [tk.heading(1, "Ringkasan eksekutif", label="bab-ringkasan")]
 
     bagian.append(
         _md(
@@ -157,7 +157,7 @@ def chapter_summary(data: ReportData) -> str:
             f"**{data.project_name or '(tanpa nama)'}** terhadap {len(data.combo_rows)} "
             f"kombinasi beban menggunakan model pelat lentur berbasis metode elemen hingga. "
             f"Angka desain tulangan ditentukan dengan basis `{data.rebar_basis}`, "
-            f"sebagaimana diuraikan pada bab Dasar Teori."
+            f"sebagaimana diuraikan pada bab [Dasar teori](#bab-teori)."
         )
     )
 
@@ -282,7 +282,7 @@ def chapter_input(data: ReportData, figs: FigureStore) -> str:
     geom, mesh, cfg = data.geom, data.mesh, data.cfg
     inputs = data.capacity_inputs
     stats = data.manifest.get("model_stats") or {}
-    bagian = [tk.heading(1, "Data masukan")]
+    bagian = [tk.heading(1, "Data masukan", label="bab-masukan")]
 
     # -- provenance & hash --------------------------------------------------
     bagian.append(tk.heading(2, "Provenance run"))
@@ -820,7 +820,7 @@ def _grid(figures: list[Any]) -> str:
 
 
 def chapter_envelope(data: ReportData, figs: FigureStore) -> str:
-    bagian = [tk.heading(1, "Envelope lintas kombinasi")]
+    bagian = [tk.heading(1, "Envelope lintas kombinasi", label="bab-envelope")]
     if data.envelope is None:
         bagian.append(
             tk.callout(
@@ -887,19 +887,73 @@ def chapter_envelope(data: ReportData, figs: FigureStore) -> str:
     bagian.append(tk.heading(2, "Envelope gaya dalam"))
     bagian.append(_grid(gaya))
 
-    bagian.append(tk.heading(2, "Envelope tulangan"))
+    bagian.append(tk.heading(2, "Envelope tulangan lentur"))
     bagian.append(_md(reporter.deep_pilecap_warning(data.deep_ratio)))
+    alasan = "dilewati bila dipakai `--no-rebar-plots` atau `--no-envelope`."
     tulangan = [
         figs.resolve(
             data.envelope_dir / nama.replace("contour_", "envelope_"),
             f"Envelope -- {judul}.",
-            reason="dilewati bila dipakai `--no-rebar-plots` atau `--no-envelope`.",
+            reason=alasan,
         )
         for nama, judul in config.REBAR_FACES.values()
     ]
+    # Peta batang terpilih ikut ditampilkan, sama seperti pada bab per kombinasi. Tanpa
+    # ini pembaca melihat `As` envelope tetapi tidak melihat batang apa yang memenuhinya,
+    # padahal berkasnya sudah dihasilkan dan tinggal dirujuk.
+    for kind in _selection_kinds(data):
+        for nama, _judul in config.REBAR_FACES.values():
+            berkas = nama.replace("contour_As_", f"envelope_{kind}_")
+            arah, muka = _arah_muka(nama)
+            tulangan.append(
+                figs.resolve(
+                    data.envelope_dir / berkas,
+                    f"Envelope -- {kind.capitalize()} tulangan arah {arah} muka {muka}.",
+                    reason=alasan,
+                )
+            )
     bagian.append(_grid(tulangan))
+
+    bagian.append(tk.heading(2, "Envelope tulangan geser"))
+    sengkang = []
+    for _, avs, dia, label in config.SHEAR_REBAR_FIELDS.values():
+        sengkang.append(
+            figs.resolve(
+                data.envelope_dir / avs.replace("contour_", "envelope_"),
+                f"Envelope -- Av/s sengkang {label}.",
+                reason=alasan,
+            )
+        )
+        sengkang.append(
+            figs.resolve(
+                data.envelope_dir / dia.replace("contour_", "envelope_"),
+                f"Envelope -- diameter sengkang {label}.",
+                reason=alasan,
+            )
+        )
+    bagian.append(_grid(sengkang))
     bagian.append(tk.pagebreak())
     return "\n\n".join(bagian)
+
+
+def _selection_kinds(data: ReportData) -> list[str]:
+    """Jenis peta batang terpilih yang benar-benar dihasilkan run ini.
+
+    Diambil dari `RebarSelection` yang sudah dipakai bab per kombinasi, bukan diturunkan
+    ulang dari `rebar_mode`: nama berkasnya dibentuk dari `selection.kind` yang sama,
+    sehingga menebaknya di sini berisiko merujuk berkas yang tidak pernah ditulis.
+    """
+    for ci in data.calc_inputs_by_combo.values():
+        jenis = {sel.kind for sel in ci.selections.values()}
+        if jenis:
+            return sorted(jenis)
+    return []
+
+
+def _arah_muka(nama_berkas: str) -> tuple[str, str]:
+    """`contour_As_x_bawah.png` -> ("X", "bawah")."""
+    bagian = nama_berkas.removesuffix(".png").split("_")
+    return bagian[-2].upper(), bagian[-1]
 
 
 # ---------------------------------------------------------------------------
@@ -909,7 +963,7 @@ def chapter_envelope(data: ReportData, figs: FigureStore) -> str:
 
 def chapter_limitations(data: ReportData) -> str:
     bagian = [
-        tk.heading(1, "Asumsi dan keterbatasan"),
+        tk.heading(1, "Asumsi dan keterbatasan", label="bab-keterbatasan"),
         _md(
             "Bagian ini dikutip tanpa perubahan dari dokumen acuan perangkat lunak dan "
             "berlaku bagi seluruh angka yang disajikan dalam dokumen ini."
@@ -941,7 +995,7 @@ def chapter_responsibility(data: ReportData) -> str:
     block = data.block
     return "\n\n".join(
         [
-            tk.heading(1, "Pernyataan tanggung jawab"),
+            tk.heading(1, "Pernyataan tanggung jawab", label="bab-tanggung-jawab"),
             _md(reporter.disclaimer_block()),
             tk.heading(2, "Pengesahan"),
             tk.table(
@@ -962,7 +1016,7 @@ def chapter_responsibility(data: ReportData) -> str:
 def appendix_provenance(data: ReportData) -> str:
     prov = capacity_engine.provenance_block(data.capacity_inputs)
     bagian = [
-        tk.heading(1, "Lampiran A -- Provenance kapasitas"),
+        tk.heading(1, "Lampiran A -- Provenance kapasitas", label="lampiran-provenance"),
         tk.table(
             ["Keterangan", "Nilai"],
             [
