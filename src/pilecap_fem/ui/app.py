@@ -432,6 +432,14 @@ with st.form("masukan", border=False):
             "yang menentukan. Kosongkan centang ini bila Anda menganalisis lebih dari "
             "satu kombinasi — envelope-lah yang biasanya dipakai mendesain.",
         )
+        run_values["pdf"] = st.checkbox(
+            "Buat laporan PDF",
+            help="Satu dokumen PDF lengkap untuk seluruh run: sampul, dasar teori beserta "
+            "rumus dan sumbernya, data masukan, satu bab per kombinasi, envelope, "
+            "keterbatasan, dan provenance — dengan seluruh diagram sebagai gambar "
+            "bernomor. Sumber Typst-nya ikut disimpan agar hasilnya dapat diperiksa. "
+            "Menambah waktu di akhir pelaporan dan menghasilkan berkas belasan MB.",
+        )
 
     with st.container(horizontal=True):
         submitted = st.form_submit_button(

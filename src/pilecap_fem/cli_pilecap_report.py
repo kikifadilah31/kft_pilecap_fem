@@ -23,6 +23,7 @@ import argparse
 import json
 import logging
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
@@ -77,9 +78,17 @@ def add_report_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--no-rebar-plots",
         action="store_true",
-        help="Lewati 8 plot tulangan per kombinasi (mempercepat pelaporan)",
+        help="Lewati 12 plot tulangan per kombinasi (mempercepat pelaporan)",
     )
     parser.add_argument("--no-envelope", action="store_true", help="Lewati envelope")
+    parser.add_argument(
+        "--pdf",
+        action="store_true",
+        help=(
+            "Buat laporan PDF lengkap (dasar teori, input, tiap kombinasi, envelope) "
+            "dengan seluruh diagram sebagai figures. Sumber Typst-nya ikut disimpan"
+        ),
+    )
     parser.add_argument(
         "--no-verify-hash",
         action="store_true",
@@ -208,10 +217,25 @@ def run(args: argparse.Namespace, command: str) -> Path:
     config.setup_logging(run_dir, args.log_level)
     _log.info("pilecap-fem v%s | laporan untuk run: %s", __version__, run_dir)
 
+    # Dipakai menandai gambar yang berasal dari pelaporan SEBELUMNYA: `pilecap-report`
+    # memang dirancang untuk dijalankan ulang, dan PNG lama tetap ada di disk.
+    started_at = time.time()
+
     if args.wood_armer:
         # Dipanggil lebih dulu agar user tidak menunggu seluruh plot selesai hanya untuk
         # mendapati fiturnya memang belum ada.
         math_engine.wood_armer(np.zeros(1), np.zeros(1), np.zeros(1))
+
+    if getattr(args, "pdf", False):
+        # Alasan yang sama dengan `--wood-armer`: gagal SEBELUM satu plot pun digambar.
+        from pilecap_fem import reporting_pdf
+
+        reporting_pdf.preflight()
+        if args.no_rebar_plots:
+            _log.warning(
+                "--pdf dipakai bersama --no-rebar-plots: seluruh gambar tulangan tidak "
+                "dibuat, sehingga di PDF ia muncul sebagai kotak penjelasan, bukan gambar."
+            )
 
     manifest = _load_manifest(run_dir)
     model_dir = run_dir / config.MODEL_SUBDIR
@@ -311,13 +335,16 @@ def run(args: argparse.Namespace, command: str) -> Path:
     results_by_combo: dict[str, postproc_engine.ElementResults] = {}
     designs_by_combo: dict[str, dict[tuple[str, str], capacity_engine.FlexureDesign]] = {}
     strip_design_by_combo: dict[str, list[dict[str, Any]]] = {}
+    # Masukan calc sheet per kombinasi, disimpan agar laporan PDF memakai angka yang SAMA
+    # PERSIS -- bukan menghitung ulang, bukan membaca balik CSV yang sudah dibulatkan.
+    calc_inputs_by_combo: dict[str, reporter.CalcSheetInputs] = {}
     combo_rows: list[dict[str, Any]] = []
     checks: dict[str, Any] = {
         k: v for k, v in (manifest.get("checks") or {}).items() if k != "error"
     }
 
     for combo, combo_dir in tqdm(combo_dirs.items(), desc="Laporan", unit="combo"):
-        results_by_combo[combo] = _report_one_combo(
+        results_by_combo[combo], calc_inputs_by_combo[combo] = _report_one_combo(
             combo=combo,
             combo_dir=combo_dir,
             run_dir=run_dir,
@@ -358,6 +385,12 @@ def run(args: argparse.Namespace, command: str) -> Path:
             block=base_block,
         )
 
+    semua_warning = warnings + list(manifest.get("warnings") or [])
+    rebar_governing = (
+        capacity_engine.governing_strip_design(strip_design_by_combo)
+        if rebar_basis == "strip"
+        else capacity_engine.governing_element_design(designs_by_combo, mesh)
+    )
     reporter.write_summary(
         run_dir / config.FILE_SUMMARY,
         project_name=str(
@@ -372,16 +405,47 @@ def run(args: argparse.Namespace, command: str) -> Path:
         combo_rows=combo_rows,
         checks=checks,
         deep_ratio=deep_ratio,
-        warnings=warnings + list(manifest.get("warnings") or []),
+        warnings=semua_warning,
         envelope=envelope,
         rebar_basis=rebar_basis,
-        rebar_governing=(
-            capacity_engine.governing_strip_design(strip_design_by_combo)
-            if rebar_basis == "strip"
-            else capacity_engine.governing_element_design(designs_by_combo, mesh)
-        ),
+        rebar_governing=rebar_governing,
         capacity_inputs=capacity_inputs,
     )
+
+    if getattr(args, "pdf", False):
+        # Impor tertunda: `reporting_pdf` menarik PIL, dan disiplin impor modul ini
+        # dijaga `test_pilecap_report_tidak_menarik_solver`.
+        from pilecap_fem import reporting_pdf
+
+        pdf_path = reporting_pdf.build_pdf_report(
+            run_dir,
+            reporting_pdf.ReportData(
+                run_dir=run_dir,
+                run_name=run_dir.name,
+                command=command,
+                manifest=manifest,
+                cfg=cfg,
+                geom=geom,
+                mesh=mesh,
+                block=base_block,
+                capacity_inputs=capacity_inputs,
+                deep_ratio=deep_ratio,
+                rebar_basis=rebar_basis,
+                mesh_size_m=mesh_size,
+                calc_inputs_by_combo=calc_inputs_by_combo,
+                designs_by_combo=designs_by_combo,
+                strip_design_by_combo=strip_design_by_combo,
+                combo_rows=combo_rows,
+                checks=checks,
+                warnings=semua_warning,
+                envelope=envelope,
+                no_rebar_plots=args.no_rebar_plots,
+                no_envelope=args.no_envelope,
+                started_at=started_at,
+                rebar_governing=rebar_governing,
+            ),
+        )
+        _log.info("Laporan PDF: %s", pdf_path)
 
     _log.info("Laporan selesai: %d kombinasi -> %s", len(combo_dirs), run_dir)
     return run_dir
@@ -458,15 +522,17 @@ def _render_rebar_plots(
     rename: Callable[[str], str] | None = None,
     title_prefix: str = "",
 ) -> None:
-    """Delapan plot tulangan per kombinasi: 4 As + 4 seleksi + 4 geser.
+    """Dua belas plot tulangan per kombinasi: 4 As + 4 seleksi + 4 geser.
 
     Caption plot LENTUR mengikuti `rebar_basis`, dan itu bukan kehalusan: gambar inilah
     yang dicetak dan ditempel ke laporan. Pada mode `strip` peta ini alat baca, sedangkan
     pada mode `element` ia justru sumber angka desainnya -- caption yang salah satu arah
     akan beredar sebagai pernyataan yang keliru pada setiap lembar.
 
-    Caption plot GESER tidak bergantung mode: geser satu arah selalu didesain pada
-    penampang `d` dari muka pier, bukan per elemen.
+    Caption plot GESER tidak bergantung mode, karena `rebar_basis` memang tidak menyentuh
+    jalur geser: `Av/s` per elemen selalu dihitung dengan fungsi desain `shell-kit` yang
+    sama, dan cek penampang kritis pada `d` dari muka pier selalu ikut dilaporkan. Uraian
+    hubungan keduanya ada di calc sheet bagian 7b.
     """
     peringatan = (
         (
@@ -634,7 +700,7 @@ def _report_one_combo(
     designs_by_combo: dict[str, dict[tuple[str, str], capacity_engine.FlexureDesign]],
     strip_design_by_combo: dict[str, list[dict[str, Any]]],
     base_block: renderer.TitleBlock,
-) -> postproc_engine.ElementResults:
+) -> tuple[postproc_engine.ElementResults, reporter.CalcSheetInputs]:
     resultants_csv = combo_dir / "element_resultants.csv"
     if not resultants_csv.is_file():
         raise InputError(
@@ -764,23 +830,28 @@ def _report_one_combo(
         "section": stats.get("section", "PlateFiber"),
         "n_fixed_nodes": stats.get("n_fixed_nodes", "-"),
     }
-    reporter.write_calc_sheet(
-        combo_dir / config.FILE_CALC_SHEET,
+    calc_inputs = reporter.CalcSheetInputs(
         combo=combo,
-        geom=geom,
-        mesh=mesh,
+        combo_dir=combo_dir,
         results=results,
         equilibrium=equilibrium,
+        pz_by_pile=pz_by_pile,
         material=material,
         strip_rows=strip_rows,
-        shear_checks=shear_checks,
-        capacity_inputs=capacity_inputs,
         strip_design=strip_design,
+        shear_checks=shear_checks,
         designs=designs,
         selections=selections,
         shear_maps=shear_maps,
         shear_capacities=shear_capacities,
         trace=trace,
+    )
+    reporter.write_calc_sheet(
+        combo_dir / config.FILE_CALC_SHEET,
+        inputs=calc_inputs,
+        geom=geom,
+        mesh=mesh,
+        capacity_inputs=capacity_inputs,
         deep_ratio=deep_ratio,
         project_name=str(
             ((manifest.get("parameters") or {}).get("config_raw") or {})
@@ -808,7 +879,7 @@ def _report_one_combo(
             "vc0": equilibrium.get("status", "-"),
         }
     )
-    return results
+    return results, calc_inputs
 
 
 def _write_envelope(

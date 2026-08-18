@@ -2,6 +2,175 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.11.0] — 2026-08-18 — Laporan PDF lengkap satu run, dikompilasi Typst di dalam Python
+
+### Added — `--pdf`: satu dokumen lengkap, dengan dasar teori dan seluruh diagram
+
+Sebelumnya keluaran hanya Markdown (`calc_sheet.md` per kombinasi, `SUMMARY.md`) plus
+ratusan PNG tersebar di folder run. Untuk dokumen yang **ditandatangani dan diserahkan** itu
+belum cukup: pembaca harus membuka belasan berkas dan merakit sendiri konteksnya, dan tidak
+ada satu artefak pun yang memuat dasar teori beserta sumber tiap rumusnya.
+
+`--pdf` (opt-in, pada `pilecap-report` maupun `pilecap-run`) menghasilkan **satu PDF untuk
+seluruh run**: sampul, daftar isi, ringkasan eksekutif, dasar teori, data masukan, satu bab
+per kombinasi, envelope, keterbatasan, pernyataan tanggung jawab, dan lampiran provenance.
+Seluruh diagram yang sudah dibuat menjadi gambar bernomor dengan caption yang menyebut
+kombinasi dan **CSV sumber angkanya**.
+
+**Kompilasi terjadi di dalam Python.** Dipakai ulang `shell_kit.pdf` — `compile_to_pdf`
+(binding native Typst, **tanpa biner luar**), `downscale_figure`, dan `PRINT_FIGURE_DIR` —
+bukan membangun pipeline kedua. Yang ditulis sendiri hanya isinya, karena
+`shell_kit.reporting_typst` berbentuk model data shell-kit, bukan pilecap.
+
+**Angka PDF dan calc sheet dijamin sama OLEH KONSTRUKSI.** `_report_one_combo` dulu
+menghitung `designs`, `selections`, `shear_maps`, `trace`, dan seterusnya, menyerahkannya ke
+`write_calc_sheet`, lalu **membuang semuanya kecuali `results`**. PDF karena itu hanya punya
+dua pilihan buruk: menghitung ulang (dilarang aturan `exporters/__init__.py` — penyaji tidak
+pernah menghitung ulang besaran rekayasa) atau membaca balik CSV yang sudah dibulatkan ke
+satuan tampilan dan tidak membawa `as_min`, `phi_v_c`, `labels`, maupun `status`. Keduanya
+melahirkan jalur angka ketiga yang dapat menyimpang diam-diam.
+
+Diselesaikan dengan `reporter.CalcSheetInputs`: satu objek berisi seluruh masukan calc
+sheet, dikembalikan `_report_one_combo` dan dipakai ULANG oleh PDF. Nol perhitungan ulang,
+dan tanpa `--pdf` biayanya nol byte. `test_ringkasan_pdf_cocok_dengan_summary_md`
+membandingkan `As` governing yang terparsing dari kedua dokumen sebagai penjaga divergensi.
+
+**Blok prosa liabilitas tidak disalin.** `config.KNOWN_LIMITATIONS`, disclaimer,
+`OPEN_BLOCKERS`, dan peringatan deep pilecap diterjemahkan saat pembuatan dokumen lewat
+`typst_kit.from_markdown`, sehingga sumbernya tetap satu. Konverter itu **sempit dan galak**:
+ia menerima persis konstruksi yang dipakai blok-blok tersebut dan **RAISE** pada yang lain --
+konstruksi asing yang dijatuhkan diam-diam berarti kalimat peringatan hilang dari dokumen
+tercetak tanpa satu pun tanda.
+
+**Urutan yang dijaga:** peringatan deep pilecap dan catatan pons SELALU mendahului tabel
+`As`, sama seperti di Markdown, dan diuji lewat offset karakter pada `.typ`.
+
+**Yang TIDAK dicetak:** data per elemen. Tabel memuat nilai governing dan ekstrem beserta
+lokasinya; data lengkap tetap di CSV yang namanya disebut di dokumen. `ex01` punya ribuan
+elemen — mencetaknya menghasilkan dokumen yang tidak terbaca.
+
+**Gambar yang tidak ada tidak pernah dihilangkan diam-diam** — ia muncul sebagai kotak yang
+menyebutkan berkasnya, alasannya, dan cara memunculkannya (`--no-rebar-plots`,
+`--no-envelope`, `--no-save-raw`, atau opsvis yang dilewati di atas ambang elemen).
+
+**`PDF_IMAGE_MAX_PX` DIUKUR, bukan diwarisi.** `shell_kit.pdf` memakai 1.600 px, tetapi
+kontur di sini ditempatkan pada grid **dua kolom** selebar ~8 cm -- bukan selebar teks penuh
+-- sehingga 1.600 px setara ~508 dpi di tempatnya, jauh di atas standar cetak 300 dpi.
+Terukur pada `ex02` (12 pile, 2 kombinasi, tanpa bab envelope):
+
+| `max_px` | ukuran | dpi pada lebar tempatnya |
+|---|---:|---:|
+| 1600 | 26,35 MB | ~508 |
+| **1200 (dipilih)** | **16,95 MB** | **~381** |
+| 1000 | 13,66 MB | ~317 |
+| 800 | 10,05 MB | ~254 |
+
+Dipilih **1.200 px**: masih ~381 dpi di tempatnya, dengan berkas **36% lebih kecil**.
+Menaikkannya kembali tidak menambah ketajaman yang terlihat pada kertas, hanya ukuran berkas.
+PNG aslinya tidak pernah diubah.
+
+**DIUKUR** pada `ex02` lengkap (12 pile, 2 kombinasi, DPI bawaan): **39 halaman, 22,6 MB,
+54 detik** untuk tahap PDF-nya saja. Angka ini dicatat supaya ambangnya dapat ditinjau dari
+data, bukan dari dugaan.
+
+**Render ilustrasi dibuktikan lebih dulu, bukan diandaikan.** Ketujuh SVG `docs/img` hanya
+mendeklarasikan font generik (`sans-serif`, `monospace`) tanpa satu pun `font-family`
+konkret, sehingga resvg di dalam Typst berpotensi menghilangkan seluruh label tanpa error.
+DIUKUR: label terender, nol warning, dan keluaran dengan `ignore_system_fonts=True`
+**identik byte demi byte** — dokumen ini tidak menyentuh font sistem, sehingga tampil sama
+di mesin lain. Fakta itu dijaga `test_kompilasi_tidak_memakai_font_sistem`.
+
+### Changed — `typst` dan `pillow` di-pin eksak, dengan alasan yang BERBEDA
+
+Keduanya sudah ikut secara transitif (`typst` lewat shell-kit, `pillow` lewat matplotlib),
+jadi menuliskannya menambah **nol byte**. Tetap dituliskan karena dependency transitif bukan
+kontrak: `uvx`/`uv tool install` dari git mengabaikan `uv.lock` dan me-resolve ulang dari
+`pyproject.toml`, dan bila shell-kit atau matplotlib berhenti membutuhkannya, `--pdf` mati
+pada instalasi baru dengan `ImportError` yang membingungkan.
+
+Alasan pin-nya sengaja dinyatakan berbeda dari pin lain: keduanya **tidak menyentuh satu pun
+angka rekayasa** dan tidak ikut satu pun validation case. Yang dijaga adalah dokumen yang
+reproducible — pergeseran tata letak antar versi Typst menggeser penomoran halaman pada
+dokumen yang sudah ditandatangani. Konsekuensinya, menaikkan keduanya **tidak** menuntut
+VC-0..VC-7 diulang, berbeda dari gmsh/openseespy/numpy. Keduanya juga masuk
+`provenance.TRACKED_DEPENDENCIES`.
+
+### Changed — lima helper prosa `reporter.py` menjadi publik
+
+`overlap_block`, `one_way_section_outboard_note`, `stirrup_section`,
+`capacity_provenance_table`, `traceability_block`, `lokasi_governing`, dan `selection_range`
+kehilangan awalan garis bawahnya: ketujuhnya kini dipakai dua penyaji, bukan satu. Nol
+perubahan keluaran; suite penuh tetap **683 lulus, 2 skip** sesudah refactor.
+
+### Fixed — `to_display` menyebut lapisan penyajian, bukan dua modul
+
+Docstring-nya menyatakan "HANYA boleh dipanggil dari `renderer.py` dan `reporter.py`".
+`reporting_pdf` adalah lapisan penyajian ketiga dengan alasan yang sama persis, jadi aturannya
+diperluas secara eksplisit alih-alih dilanggar diam-diam.
+
+### Fixed — catatan sengkang (calc sheet 7b) menyatakan hal yang tidak lagi benar
+
+Catatan bagian 7b berbunyi *"Ini PETA ORIENTASI, bukan angka desain"* untuk `Av/s` per
+elemen. Pernyataan itu **peninggalan dari sebelum v0.10.0**, ketika lentur pun masih
+berbasis lajur. Saat bawaan lentur dibalik ke `element` dan caption plot lentur ikut
+diperbaiki, catatan geser tidak ditinjau ulang.
+
+Yang membuatnya keliru: `Av/s` per elemen dihitung `shell_kit.rebar.calc_shear_Av_per_s`
+— **fungsi desain yang sama** yang dipakai `shell-kit` sendiri untuk keluaran sengkangnya
+(`cli_rebar.py:251`), dan `shell-kit` memasukkan kegagalannya ke hitungan titik tidak
+memenuhi syarat (`reporting_rebar.py:274`). Menyebutnya "bukan angka desain" lebih keras
+daripada yang dapat dipertanggungjawabkan.
+
+Catatan diganti: kedua besaran dinyatakan sah dengan pertanyaan yang berbeda — cek
+penampang kritis pada `d` dari muka pier sebagai dasar penerimaan (geser satu arah adalah
+fenomena penampang, bidang runtuhnya memotong seluruh lebar), dan `Av/s` per elemen untuk
+menentukan zona pemasangan. Singularitas `q` di tepi zona jepit ikut dinyatakan.
+
+**Tidak ada satu pun angka yang berubah.** Ini murni perbaikan pernyataan; pilihan untuk
+memperluas `design.rebar_basis` ke geser sengaja TIDAK diambil, karena mengubah dasar
+penerimaan desain menuntut keputusan rekayasa tersendiri, bukan konsistensi kosmetik.
+
+### Fixed — lingkup `design.rebar_basis` dinyatakan, bukan disiratkan
+
+Parameter itu bernama dan berdokumentasi "dari mana angka desain tulangan diambil",
+padahal penelusuran menunjukkan ia **hanya** menggerbangi jalur lajur lentur, caption
+lentur, dan tabel governing lentur; `shear_rebar_map` dan `one_way_shear_from_checks`
+berjalan tanpa syarat. Pembaca wajar menyangka sengkang ikut diatur. README, tooltip UI,
+docstring `ShearRebarMap`, dan `_render_rebar_plots` kini menyebutkan batas itu.
+
+### Changed — ragam bahasa laporan PDF dinaikkan ke kaidah penulisan teknik
+
+Narasi bab Dasar Teori dan bab-bab data disusun ulang. Draf pertama berbentuk prosa yang
+membela keputusan desain ("bukan ditebak", "alih-alih disembunyikan"), memakai penekanan
+tebal hampir di tiap kalimat, dan menyebut nama modul Python (`config.py`,
+`postproc_engine`, `eleResponse`) di dalam dokumen yang ditandatangani engineer. Aturan
+penyuntingan yang kini dipakai:
+
+- Huruf tebal hanya untuk istilah yang didefinisikan dan peringatan yang membatalkan
+  keabsahan angka, bukan sebagai penekanan retoris.
+- Kalimat deklaratif; pembelaan atas keputusan desain tetap tinggal di komentar kode.
+- Istilah baku: *perangkat lunak* bukan *tool*, *proses analisis* bukan *run*, *pemeriksa*
+  bukan *checker*, *diverifikasi melalui* bukan *digating*.
+- Narasi tidak menyebut nama modul; jejak implementasi tetap ada, tetapi pada Lampiran
+  Provenance yang memang diperuntukkan bagi itu.
+
+Tiga cacat penyajian ikut ditutup, ketiganya ditemukan dengan membaca PDF hasil, bukan
+dengan membaca kode:
+
+1. **Flag baris perintah tercetak sebagai en dash.** Typst mengubah `--` menjadi en dash
+   sebagai fitur tipografi, sehingga pesan `Gunakan --opsvis` tercetak `Gunakan -opsvis` --
+   perintah yang TIDAK berjalan bila disalin pembaca. DIUKUR: `\-\-`, string kode `#"--"`,
+   maupun sisipan zero-width space semuanya tetap dikonversi; hanya raw span yang
+   mempertahankannya. `esc()` kini membungkus pola flag sebagai raw span, yang sekaligus
+   benar secara semantik. Dijaga `test_flag_baris_perintah_tidak_berubah_menjadi_en_dash`.
+2. **Persamaan bernomor sebagai "Gambar".** `#figure` tanpa `kind` tersendiri membuat
+   persamaan ikut penomoran gambar sekaligus masuk Daftar Gambar, dan menggeser nomor
+   gambar yang sebenarnya. Kini bernomor "Persamaan N" pada penghitung terpisah.
+3. **Pesan log operator tersaji sebagai prosa laporan.** Bagian peringatan menerbitkan
+   ulang `data.warnings` apa adanya, lengkap dengan nama konstanta internal dan angka
+   benchmark. Pesan itu WAJIB tetap tampil, tetapi kini didahului kalimat yang menyatakan
+   bahwa yang dikutip adalah catatan proses, bukan temuan rekayasa yang sudah dirumuskan.
+
 ## [0.10.0] — 2026-08-12 — Metode desain tulangan per elemen jadi bawaan, envelope tulangan lengkap
 
 Perubahan bawaan terbesar sejak proyek ini mengintegrasikan `shell-kit`: angka desain

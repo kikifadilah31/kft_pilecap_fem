@@ -583,9 +583,11 @@ dependencies = [
     { name = "openseespy" },
     { name = "opsvis" },
     { name = "pandas" },
+    { name = "pillow" },
     { name = "shapely" },
     { name = "shell-kit" },
     { name = "tqdm" },
+    { name = "typst" },
 ]
 
 [package.optional-dependencies]
@@ -612,10 +614,12 @@ requires-dist = [
     { name = "openseespy", specifier = "==3.8.0.0" },
     { name = "opsvis", specifier = "==1.3.7" },
     { name = "pandas", specifier = "==2.3.3" },
+    { name = "pillow", specifier = "==12.3.0" },
     { name = "shapely", specifier = "==2.1.2" },
     { name = "shell-kit", url = "https://github.com/kikifadilah31/plot_kontur_plate_fea_midas_civil/releases/download/v3.3.0/shell_kit-3.3.0-py3-none-any.whl" },
     { name = "streamlit", marker = "extra == 'ui'", specifier = ">=1.57" },
     { name = "tqdm", specifier = "==4.70.0" },
+    { name = "typst", specifier = "==0.15.0" },
 ]
 provides-extras = ["ui"]
 

@@ -777,10 +777,17 @@ def one_way_shear_capacity(
 class ShearRebarMap:
     """Kebutuhan sengkang per elemen untuk satu arah. Seluruh nilai SI.
 
-    .. warning::
-       Ini **peta orientasi**, bukan angka desain -- sama seperti peta `As` per elemen.
-       Geser satu arah pilecap didesain pada penampang `d` dari muka pier
-       (`one_way_shear_capacity`), bukan per elemen.
+    .. note::
+       Nilainya dihitung `shell_kit.rebar.calc_shear_Av_per_s` -- fungsi DESAIN yang sama
+       yang dipakai `shell-kit` sendiri untuk keluaran sengkangnya, bukan sekadar peta
+       tampilan. Yang membedakannya dari `one_way_shear_capacity` adalah PERTANYAANNYA:
+       di sini `Av/s` per elemen (berguna menentukan zona pemasangan), di sana cek
+       penampang kritis pada `d` dari muka pier (dasar penerimaan, karena geser satu arah
+       adalah fenomena penampang yang bidang runtuhnya memotong seluruh lebar).
+
+       `q` per elemen di tepi zona jepit pier singular dan bergantung kehalusan mesh,
+       sama seperti momen di sana. `design.rebar_basis` TIDAK menyentuh jalur geser --
+       ia hanya mengatur lentur.
     """
 
     direction: str

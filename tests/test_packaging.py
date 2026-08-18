@@ -150,6 +150,21 @@ def test_pilecap_report_tidak_menarik_solver(heavy: str):
     )
 
 
+@pytest.mark.parametrize("heavy", ["gmsh", "openseespy"])
+def test_reporting_pdf_tidak_menarik_solver(heavy: str):
+    """Laporan PDF juga hanya menyusun ulang hasil; solver tidak perlu ikut dimuat.
+
+    Alasannya sama dengan `cli_pilecap_report`, dan penjaganya dibutuhkan tersendiri:
+    `reporting_pdf` mengimpor `reporter` dan `capacity_engine`, jadi disiplin impor kedua
+    modul itu bisa runtuh lewat jalur ini tanpa test di atas menyadarinya.
+    """
+    code = f"import sys; import pilecap_fem.reporting_pdf; print({heavy!r} in sys.modules)"
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    assert result.stdout.strip() == "False", f"mengimpor reporting_pdf ikut memuat {heavy}"
+
+
 # ---------------------------------------------------------------------------
 # Penjaga interpreter
 # ---------------------------------------------------------------------------
@@ -395,6 +410,13 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
         "reporter",
     ):
         assert f"pilecap_fem/{module}.py" in names, f"modul {module} tidak ikut terkemas"
+
+    # Sub-paket memang ikut lewat `packages = ["src/pilecap_fem"]`, tetapi tata letak yang
+    # rusak (mis. `__init__.py` tertinggal) hanya terlihat di sini, bukan saat dijalankan
+    # dari repo.
+    for module in ("__init__", "chapters", "document", "figures", "model", "theory", "typst_kit"):
+        path = f"pilecap_fem/reporting_pdf/{module}.py"
+        assert path in names, f"modul laporan PDF tidak ikut terkemas ({path})"
 
     for name in config.EXAMPLE_NAMES:
         for relative in ("pilecap_config.json", "expected/golden.json"):

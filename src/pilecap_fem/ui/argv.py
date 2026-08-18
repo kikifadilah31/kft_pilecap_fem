@@ -90,6 +90,7 @@ def build_argv(
     add_flag("--no-save-raw", "no_save_raw")
     add_flag("--no-rebar-plots", "no_rebar_plots")
     add_flag("--no-envelope", "no_envelope")
+    add_flag("--pdf", "pdf")
 
     return argv
 

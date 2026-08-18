@@ -33,6 +33,10 @@ TRACKED_DEPENDENCIES = (
     # longgar dari pin kita, jadi mencatat versi yang benar-benar terpasang adalah satu-
     # satunya cara penyimpangan numerik tetap terdeteksi di kemudian hari.
     "shell-kit",
+    # Pembuat laporan PDF. Tata letak dokumen adalah deliverable yang ditandatangani,
+    # sehingga versi pembuatnya wajib tercatat sama seperti versi solver.
+    "typst",
+    "pillow",
 )
 
 MANIFEST_FILENAME = "run_manifest.json"

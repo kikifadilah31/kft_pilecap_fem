@@ -191,6 +191,9 @@ output/pilecap_20260804_093148/
 │   ├── model.mct          # model siap impor Midas Civil, lengkap dengan pembebanan
 │   └── model.msh          # opsional (--export-msh), untuk dibuka di GUI gmsh
 ├── SUMMARY.md             # ringkasan lintas kombinasi + governing + Known Limitations
+├── laporan_pilecap.pdf    # opsional (--pdf): satu dokumen lengkap seluruh run
+├── laporan_pilecap.typ    # sumber Typst-nya, ikut disimpan agar dapat diperiksa & di-diff
+├── _figur_pdf/            # salinan gambar berukuran cetak untuk PDF (asli tidak diubah)
 ├── Combo_<nama>/          # satu folder per kombinasi
 │   ├── calc_sheet.md            # 10 bagian auditable, termasuk rantai telusur 1 elemen
 │   ├── element_resultants.csv   # m11/m22/m12 lokal + m_x/m_y/m_xy/q_x/q_y global
@@ -218,6 +221,49 @@ output/pilecap_20260804_093148/
     ├── envelope_diameter_*.png              # 4 — batang terpilih dari As envelope
     └── envelope_Avs_*.png, envelope_Dsengkang_*.png   # 4 — geser envelope
 ```
+
+### Laporan PDF (`--pdf`)
+
+```bash
+uv run pilecap-run --config input/pilecap_config.json --input-dir input --pdf
+```
+
+Menghasilkan **satu dokumen lengkap untuk seluruh run** — bukan satu PDF per kombinasi —
+dengan seluruh diagram yang sudah dibuat menjadi gambar bernomor:
+
+| Bagian | Isi |
+|---|---|
+| Sampul | proyek, engineer, tanggal, perintah, versi tool, status run, pernyataan tanggung jawab |
+| Daftar isi | termasuk daftar gambar dan daftar tabel |
+| 1. Ringkasan eksekutif | hasil tiap kombinasi, tulangan governing lintas kombinasi, daftar tegas yang **tidak** dinilai |
+| 2. Dasar teori | idealisasi, konvensi tanda, `D = E t³/(12(1−ν²))`, transformasi tensor, integrasi lajur, `V_c` SNI, basis elemen vs lajur, status VC-0..VC-7 — **tiap rumus menyebut sumber dan fungsi yang menghitungnya** |
+| 3. Data masukan | provenance + sha256 input, resolusi geometri, geometri, material beserta asal nilainya, pembebanan, mesh |
+| 4..N. Per kombinasi | keseimbangan VC-0, gaya dalam + kontur, rantai telusur satu elemen, momen lajur, geser, desain lentur, sengkang, daftar berkas CSV rinci |
+| N+1. Envelope | nilai ekstrem + kombinasi penentu, 22 gambar envelope |
+| N+2. Keterbatasan | `KNOWN_LIMITATIONS` dan item PRD Bagian 17 yang masih terbuka, **apa adanya** |
+| N+3. Tanggung jawab | disclaimer + blok tanda tangan (dibuat / diperiksa / disetujui) |
+| Lampiran A | provenance kapasitas: engine, versi, φ, fy beserta sumbernya, fungsi `shell-kit` yang dipanggil, dan pasal SNI yang dipakai |
+
+Yang perlu diketahui:
+
+- **Kompilasi terjadi di dalam Python.** Typst dipanggil lewat binding native yang sudah
+  ikut terpasang — **tidak ada biner luar yang perlu Anda pasang**.
+- **Sumber `.typ` ikut disimpan** di samping PDF-nya. Ia yang membuat kegagalan kompilasi
+  dapat didiagnosis, dan satu-satunya bentuk laporan yang dapat di-diff antar run.
+- **Data per elemen tidak dicetak.** Tabel memuat nilai governing dan ekstrem **beserta
+  lokasinya**; data lengkap tetap di CSV, yang namanya disebut di dokumen. Mencetak ribuan
+  elemen menghasilkan dokumen yang tidak terbaca.
+- **Gambar yang tidak ada tidak pernah dihilangkan diam-diam** — ia muncul sebagai kotak
+  yang menyebutkan berkasnya, alasannya, dan cara memunculkannya. Itu terjadi bila dipakai
+  `--no-rebar-plots`, `--no-envelope`, `--no-save-raw`, atau bila opsvis dilewati.
+- **Ukuran berkas.** DIUKUR pada `ex02` (12 pile, 2 kombinasi, 39 halaman, DPI bawaan):
+  **22,6 MB, 54 detik** untuk tahap PDF-nya saja. Gambar diperkecil ke
+  `config.PDF_IMAGE_MAX_PX` = 1.200 px sebelum ditanam — kontur ditempatkan pada grid dua
+  kolom selebar ~8 cm, sehingga itu setara **~381 dpi di tempatnya**, di atas standar cetak
+  300 dpi. PNG aslinya tidak pernah diubah. Turunkan konstanta itu bila berkasnya masih
+  terlalu besar: 800 px memberi 10 MB dan masih ~254 dpi.
+- Angka di PDF berasal dari objek yang **sama persis** dengan `calc_sheet.md` — bukan
+  dihitung ulang, bukan dibaca balik dari CSV yang sudah dibulatkan.
 
 ### Tema plot
 
@@ -314,6 +360,7 @@ Format berbasis teks lain (mis. SAP2000 `.s2k`) dapat menyusul sebagai modul sej
 | `--strips-x` / `--strips-y` | `report`, `run` | Jumlah lajur integrasi momen |
 | `--moment-at pier_face\|peak\|both` | `report`, `run` | Lokasi momen desain |
 | `--no-envelope` | `report`, `run` | Lewati envelope |
+| `--pdf` | `report`, `run` | Buat laporan PDF lengkap satu run (Typst, dikompilasi di dalam Python) |
 | `--wood-armer` | `report`, `run` | **Belum tersedia** — menolak dengan pesan sumber primer |
 | `--init-example DIR` | `mesh`, `analyze`, `run` | Salin contoh bawaan ke DIR lalu keluar |
 | `--export-msh`, `--dpi`, `--log-level` | semua | Output tambahan & verbositas |
@@ -566,6 +613,12 @@ yang dipasang** untuk memenuhi `As` itu. Keduanya berlaku bersamaan.
 
 `design.rebar_basis` menentukan **dari mana angka desain diambil**. Berlaku untuk
 **seluruh kombinasi sekaligus, termasuk envelope** — satu setelan, bukan per kombinasi.
+
+> **Hanya tulangan LENTUR.** Sengkang tidak terpengaruh setelan ini. Geser satu arah
+> selalu disajikan dalam dua bentuk sekaligus: cek penampang kritis pada `d` dari muka
+> pier (dasar penerimaan, karena bidang runtuh geser memotong seluruh lebar) dan peta
+> `Av/s` per elemen yang dihitung dengan fungsi desain `shell-kit` yang sama seperti `As`
+> (berguna menentukan zona pemasangan). Lihat calc sheet bagian 7 dan 7b.
 
 ![Dua mode desain tulangan](docs/img/mode-desain-tulangan.svg)
 

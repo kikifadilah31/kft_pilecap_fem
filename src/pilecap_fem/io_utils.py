@@ -107,8 +107,9 @@ def display_unit(quantity: str) -> str:
 def to_display(value: float | np.ndarray, quantity: str) -> Any:
     """Konversi nilai SI ke satuan tampilan (PRD Bagian 4.3).
 
-    HANYA boleh dipanggil dari `renderer.py` dan `reporter.py`. Modul perhitungan
-    (`math_engine`, `fem_engine`, `postproc_engine`, `mesh_engine`) bekerja murni SI.
+    HANYA boleh dipanggil dari lapisan penyajian -- `renderer.py`, `reporter.py`, dan
+    `reporting_pdf/`. Modul perhitungan (`math_engine`, `fem_engine`, `postproc_engine`,
+    `mesh_engine`) bekerja murni SI.
     """
     _, factor = config.DISPLAY_UNITS[quantity]
     return value * factor

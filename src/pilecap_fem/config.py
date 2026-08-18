@@ -456,6 +456,36 @@ FILE_TRACEABILITY: Final[str] = "traceability_sample.json"
 FILE_SUMMARY: Final[str] = "SUMMARY.md"
 ENVELOPE_SUBDIR: Final[str] = "Envelope"
 
+#: Laporan PDF (`--pdf`). Sumber `.typ` SELALU disimpan di samping PDF-nya: ia satu-satunya
+#: yang membuat kegagalan kompilasi dapat didiagnosis, dan satu-satunya bentuk laporan yang
+#: dapat di-diff antar run.
+FILE_PDF_REPORT: Final[str] = "laporan_pilecap.pdf"
+FILE_PDF_SOURCE: Final[str] = "laporan_pilecap.typ"
+
+#: Sisi terpanjang gambar di dalam PDF [piksel].
+#:
+#: Plot disimpan 300 dpi pada figur 14 inci, yaitu ~4.150 px. Menanamnya apa adanya membuat
+#: berkas membengkak tanpa menambah ketajaman yang terlihat; PNG aslinya tidak pernah diubah.
+#:
+#: Nilainya DIUKUR, bukan diwarisi. `shell_kit.pdf` memakai 1600 px, tetapi kontur di sini
+#: ditempatkan pada grid DUA KOLOM selebar ~8 cm -- bukan selebar teks penuh -- sehingga
+#: 1600 px setara ~508 dpi di tempatnya, jauh di atas standar cetak 300 dpi. Terukur pada
+#: `ex02` (12 pile, 2 kombinasi, tanpa bab envelope):
+#:
+#: ===========  ==========  ================================
+#: ``max_px``   ukuran      dpi pada lebar tempatnya (~8 cm)
+#: ===========  ==========  ================================
+#: 1600         26,35 MB    ~508
+#: **1200**     **16,95 MB**  **~381**
+#: 1000         13,66 MB    ~317
+#: 800          10,05 MB    ~254
+#: ===========  ==========  ================================
+#:
+#: Dipilih 1200: masih ~381 dpi di tempatnya -- di atas standar cetak -- dengan berkas 36%
+#: lebih kecil. Menaikkannya kembali ke 1600 tidak menambah ketajaman yang terlihat pada
+#: kertas, hanya ukuran berkas.
+PDF_IMAGE_MAX_PX: Final[int] = 1200
+
 #: Peta field hasil -> (nama berkas kontur, besaran satuan, judul).
 CONTOUR_FIELDS: Final[dict[str, tuple[str, str, str]]] = {
     "m_xx": ("contour_mx.png", "moment_per_width", "Momen m_x (tulangan arah X)"),

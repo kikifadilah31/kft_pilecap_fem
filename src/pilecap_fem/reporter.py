@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -52,7 +53,7 @@ def disclaimer_block() -> str:
     return f"{prefix}> {text}\n"
 
 
-def _overlap_block(equilibrium: dict[str, Any]) -> str:
+def overlap_block(equilibrium: dict[str, Any]) -> str:
     """Rincian beban pile yang TIDAK melenturkan pelat, bila ada tumpang tindih pile-pier.
 
     Kosong sepenuhnya bila tidak ada overlap, sehingga calc sheet run biasa tidak berubah
@@ -961,7 +962,7 @@ def _markdown_table(header: list[str], rows: list[list[Any]]) -> str:
     return "\n".join(lines)
 
 
-def _traceability_block(trace: dict[str, Any]) -> str:
+def traceability_block(trace: dict[str, Any]) -> str:
     """Bagian 5 calc sheet: RANTAI LENGKAP satu elemen agar dapat dihitung ulang."""
     gauss = trace["gauss_raw"]
     order = gauss["component_order"]
@@ -1027,7 +1028,7 @@ def deep_pilecap_warning(deep_ratio: dict[str, Any]) -> str:
 > engineer**, dan harus dilakukan SEBELUM angka `As` dipakai."""
 
 
-def _capacity_provenance_table(provenance: dict[str, Any]) -> str:
+def capacity_provenance_table(provenance: dict[str, Any]) -> str:
     rows = [
         ["Engine kapasitas", f"{provenance['engine']} v{provenance['engine_version']}"],
         ["Standar", provenance["standard"]],
@@ -1044,7 +1045,7 @@ def _capacity_provenance_table(provenance: dict[str, Any]) -> str:
     return f"{table}\n\nFungsi yang dipanggil:\n\n{functions}\n\nPasal yang dirujuk:\n\n{clauses}"
 
 
-def _stirrup_section(
+def stirrup_section(
     shear_maps: dict[str, capacity_engine.ShearRebarMap],
     inputs: CapacityInputs,
 ) -> str:
@@ -1085,9 +1086,18 @@ def _stirrup_section(
 ## 7b. TULANGAN GESER (SENGKANG) - peta per elemen
 
 > [!NOTE]
-> **Ini PETA ORIENTASI, bukan angka desain.** Geser satu arah pilecap didesain pada
-> penampang `d` dari muka pier (bagian 7 di atas), bukan per elemen. Peta ini berguna
-> untuk melihat DI MANA sengkang terkonsentrasi.
+> **Dua besaran `Av/s` disajikan laporan ini, dan keduanya sah.** Bagian 7 memeriksa
+> penampang kritis pada `d` dari muka pier: geser satu arah adalah fenomena PENAMPANG,
+> bidang runtuhnya memotong seluruh lebar, dan itulah cek yang lazim untuk pilecap.
+> Tabel di bawah menyajikan `Av/s` per elemen, dihitung dengan fungsi desain
+> `shell-kit` yang sama (`calc_shear_Av_per_s`, penampang 1 m) sebagaimana `As` lentur
+> per elemen dihitung. Angka per elemen dapat dipakai untuk menentukan ZONA pemasangan
+> sengkang; cek penampang bagian 7 tetap menjadi dasar penerimaan.
+>
+> Perlu diperhatikan: nilai `q` per elemen di tepi zona jepit pier bersifat singular dan
+> bergantung kehalusan mesh, sama seperti momen di lokasi tersebut. Parameter
+> `design.rebar_basis` **hanya mengatur tulangan lentur** dan tidak mengubah kedua
+> besaran di atas.
 
 `Av/s` dihitung `shell_kit.rebar.calc_shear_Av_per_s`, diameter sengkang oleh
 `calc_shear_diameter` dengan luas per kaki `Av/s x s_long x s_trans`.
@@ -1118,7 +1128,7 @@ mendapat tulangan minimum. Keduanya dipisah karena menuntut kesimpulan yang berb
 """
 
 
-def _lokasi_governing(row: dict[str, Any], *, basis_elemen: bool) -> str:
+def lokasi_governing(row: dict[str, Any], *, basis_elemen: bool) -> str:
     """Kolom telusur baris governing: lokasi elemen, atau identitas lajur."""
     if not basis_elemen:
         return f"{row['pier_id']} {row['sisi']} lajur {row['strip']}"
@@ -1273,7 +1283,7 @@ def _flexure_section(
             [
                 f"{direction} / {face}",
                 f"{to_disp(design.as_governing, 'steel_area'):,.0f}",
-                _selection_range(selection),
+                selection_range(selection),
                 design.n_inadequate,
             ]
         )
@@ -1289,7 +1299,7 @@ Rumus dan pasal TIDAK ditulis ulang di `pilecap-fem`. Seluruh kapasitas dihitung
 `shell-kit`, sehingga rumus SNI hidup di satu repo saja dan tidak ada dua salinan yang
 dapat menyimpang diam-diam.
 
-{_capacity_provenance_table(capacity_engine.provenance_block(inputs))}
+{capacity_provenance_table(capacity_engine.provenance_block(inputs))}
 {
         _element_design_block(designs, mesh, mesh_size_m=mesh_size_m)
         if rebar_basis == "element" and mesh is not None
@@ -1351,7 +1361,7 @@ merupakan **singularitas numerik**, bukan kebutuhan nyata.
 """
 
 
-def _selection_range(selection: capacity_engine.RebarSelection) -> str:
+def selection_range(selection: capacity_engine.RebarSelection) -> str:
     """Ringkas seleksi satu muka menjadi daftar yang muncul, bukan satu angka.
 
     Satu nilai maksimum tidak cukup untuk seleksi: yang ingin dibaca engineer adalah
@@ -1372,7 +1382,7 @@ def _selection_range(selection: capacity_engine.RebarSelection) -> str:
     return f"{lo:,.0f} - {hi:,.0f} mm"
 
 
-def _one_way_section_outboard_note(deep_ratio: dict[str, Any]) -> str:
+def one_way_section_outboard_note(deep_ratio: dict[str, Any]) -> str:
     """Peringatan bila penampang geser satu arah jatuh DI LUAR pile.
 
     Ini fakta geometri, bukan pasal: `a` adalah jarak muka pier ke pusat pile dan
@@ -1441,24 +1451,49 @@ def _shear_capacity_rows(
     return rows
 
 
+@dataclass(frozen=True)
+class CalcSheetInputs:
+    """Seluruh masukan satu calc sheet, dalam satu objek.
+
+    Dibuat karena laporan PDF (`reporting_pdf`) membutuhkan besaran yang SAMA PERSIS
+    dengan yang masuk ke `calc_sheet.md`. Sebelumnya `_report_one_combo` menghitung
+    semuanya, menyerahkannya ke `write_calc_sheet`, lalu **membuang seluruhnya kecuali
+    `results`** -- sehingga PDF hanya punya dua pilihan buruk: menghitung ulang (dilarang
+    aturan `exporters/__init__.py`: penyaji tidak pernah menghitung ulang besaran
+    rekayasa) atau membaca balik CSV yang sudah dibulatkan ke satuan tampilan dan tidak
+    membawa `as_min`, `phi_v_c`, `labels`, maupun `status`.
+
+    Dengan satu objek bersama, kesamaan angka antara calc sheet dan PDF dijamin **oleh
+    konstruksi**, bukan oleh konvensi yang harus dijaga dua tempat.
+
+    Isinya HANYA yang bersifat per kombinasi. Besaran per run (`geom`, `mesh`,
+    `capacity_inputs`, `deep_ratio`, ...) tetap argumen tersendiri karena dipakai bersama
+    oleh seluruh kombinasi.
+    """
+
+    combo: str
+    combo_dir: Path
+    results: ElementResults
+    equilibrium: dict[str, Any]
+    pz_by_pile: dict[str, float]
+    material: dict[str, Any]
+    strip_rows: list[dict[str, Any]]
+    strip_design: list[dict[str, Any]]
+    shear_checks: list[ShearCheck]
+    designs: dict[tuple[str, str], FlexureDesign]
+    selections: dict[tuple[str, str], capacity_engine.RebarSelection]
+    shear_maps: dict[str, capacity_engine.ShearRebarMap]
+    shear_capacities: dict[str, OneWayShearCapacity]
+    trace: dict[str, Any]
+
+
 def write_calc_sheet(
     path: Path,
     *,
-    combo: str,
+    inputs: CalcSheetInputs,
     geom: GeometryModel,
     mesh: MeshModel,
-    results: ElementResults,
-    equilibrium: dict[str, Any],
-    material: dict[str, Any],
-    strip_rows: list[dict[str, Any]],
-    shear_checks: list[ShearCheck],
     capacity_inputs: CapacityInputs,
-    strip_design: list[dict[str, Any]],
-    designs: dict[tuple[str, str], FlexureDesign],
-    selections: dict[tuple[str, str], capacity_engine.RebarSelection],
-    shear_maps: dict[str, capacity_engine.ShearRebarMap],
-    shear_capacities: dict[str, OneWayShearCapacity],
-    trace: dict[str, Any],
     deep_ratio: dict[str, Any],
     project_name: str,
     run_name: str,
@@ -1468,6 +1503,18 @@ def write_calc_sheet(
     mesh_size_m: float = 0.0,
 ) -> Path:
     """`calc_sheet.md` -- 10 bagian PRD Bagian 9.4, bukan sekadar hasil akhir."""
+    combo = inputs.combo
+    results = inputs.results
+    equilibrium = inputs.equilibrium
+    material = inputs.material
+    strip_rows = inputs.strip_rows
+    strip_design = inputs.strip_design
+    shear_checks = inputs.shear_checks
+    designs = inputs.designs
+    selections = inputs.selections
+    shear_maps = inputs.shear_maps
+    shear_capacities = inputs.shear_capacities
+    trace = inputs.trace
     unit_len = io_utils.display_unit("length")
     unit_f = io_utils.display_unit("force")
     unit_m = io_utils.display_unit("moment_per_width")
@@ -1596,7 +1643,7 @@ dalam physical group pile -- bukan `pi r^2` analitis. Itulah yang menjamin
             pile_rows,
         )
     }
-{_overlap_block(equilibrium)}
+{overlap_block(equilibrium)}
 ## 4. CEK KESEIMBANGAN (VC-0)
 
 | Besaran | Nilai |
@@ -1614,7 +1661,7 @@ dalam physical group pile -- bukan `pi r^2` analitis. Itulah yang menjamin
 
 ## 5. HASIL PER ELEMEN - contoh telusur
 
-{_traceability_block(trace)}
+{traceability_block(trace)}
 
 ## 6. MOMEN DESAIN PER LAJUR
 
@@ -1699,7 +1746,7 @@ saja tidak cukup** dan diperlukan tulangan geser sebesar `Av/s`.
         else "_(tidak ada cek geser)_"
     }
 
-{_one_way_section_outboard_note(deep_ratio)}
+{one_way_section_outboard_note(deep_ratio)}
 > [!IMPORTANT]
 > **GESER PONS TETAP TIDAK DICEK.** `shell-kit` hanya menyediakan geser **satu arah**
 > (`calc_Vc` memakai `b_w x d_v`). Memakainya untuk pons berarti menerapkan rumus di luar
@@ -1727,7 +1774,7 @@ dengan `d` = {io_utils.to_display(deep_ratio["d_m"], "length"):,.0f} {unit_len}.
         )
     }
 
-{_stirrup_section(shear_maps, capacity_inputs)}
+{stirrup_section(shear_maps, capacity_inputs)}
 
 ## 8. ASUMSI & KETERBATASAN
 
@@ -1924,7 +1971,7 @@ def write_summary(
                     f"{io_utils.to_display(r['d_eff_m'], 'length'):,.0f}",
                     "**As_min**" if r.get("as_min_governs") else r["status"],
                     r["combo"],
-                    _lokasi_governing(r, basis_elemen=basis_elemen),
+                    lokasi_governing(r, basis_elemen=basis_elemen),
                 ]
                 for r in rebar_governing
             ],

@@ -17,7 +17,7 @@ from pilecap_fem import (
     mesh_model,
 )
 from pilecap_fem.geometry_builder import GeometryModel
-from pilecap_fem.validators import InputError
+from pilecap_fem.validators import InputError, PilecapError
 
 pytestmark = pytest.mark.slow
 
@@ -597,3 +597,147 @@ def test_caption_plot_per_kombinasi_mengikuti_rebar_basis(tmp_path_factory, monk
         assert "peta orientasi" not in gabungan, (
             f"{name}: caption masih memakai teks mode strip -- {notes}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Laporan PDF (`--pdf`)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def reported_pdf(tmp_path_factory):
+    """Run tersendiri dengan `--pdf`.
+
+    Sengaja TIDAK memakai ulang `reported`: begitu PDF dibuat di folder itu,
+    `test_tanpa_flag_pdf_tidak_ada_berkas_pdf_yang_dibuat` kehilangan artinya karena
+    urutan test tidak dijamin.
+    """
+    workdir = tmp_path_factory.mktemp("pdf")
+    target = workdir / "ex01"
+    shutil.copytree(EXAMPLES / "ex01_standard_4pile", target)
+    run_dir = _analyze(target, workdir / "output")
+    _report(run_dir, "--pdf")
+    return run_dir
+
+
+def test_flag_pdf_menghasilkan_berkas_pdf_dan_sumber_typ(reported_pdf: Path):
+    """Sumber `.typ` ikut disimpan: ia satu-satunya bentuk laporan yang dapat di-diff."""
+    pdf = reported_pdf / config.FILE_PDF_REPORT
+    typ = reported_pdf / config.FILE_PDF_SOURCE
+    assert pdf.is_file() and typ.is_file()
+    assert pdf.read_bytes().startswith(b"%PDF-")
+
+
+def test_tanpa_flag_pdf_tidak_ada_berkas_pdf_yang_dibuat(reported: Path):
+    """`--pdf` bersifat opt-in; run yang sudah ada tidak boleh berubah perilakunya."""
+    assert not (reported / config.FILE_PDF_REPORT).exists()
+    assert not (reported / config.FILE_PDF_SOURCE).exists()
+
+
+def test_pdf_memuat_seluruh_bab_wajib(reported_pdf: Path):
+    teks = (reported_pdf / config.FILE_PDF_SOURCE).read_text(encoding="utf-8")
+    for judul in (
+        "= Ringkasan eksekutif",
+        "= Dasar teori",
+        "= Data masukan",
+        "= Envelope lintas kombinasi",
+        "= Asumsi dan keterbatasan",
+        "= Pernyataan tanggung jawab",
+        "= Lampiran A",
+    ):
+        assert judul in teks, f"bab {judul!r} hilang dari dokumen"
+
+
+def test_pdf_menyebut_setiap_kombinasi_yang_dianalisis(reported_pdf: Path):
+    teks = (reported_pdf / config.FILE_PDF_SOURCE).read_text(encoding="utf-8")
+    for combo_dir in reported_pdf.glob("Combo_*"):
+        slug = combo_dir.name.removeprefix("Combo_")
+        assert slug.replace("_", "") in teks.replace("\\", "").replace(".", "").replace(
+            "+", ""
+        ).replace("_", ""), f"kombinasi {slug} tidak muncul di dokumen"
+
+
+def test_peringatan_deep_pilecap_mendahului_tabel_As_di_pdf(reported_pdf: Path):
+    """PRD Bagian 8.3 keterbatasan #1 -- saudara `test_peringatan_deep_pilecap_...`.
+
+    Begitu angka `As` tercetak, pembaca cenderung langsung memakainya. Peringatan yang
+    baru terbaca SETELAH tabel sudah terlambat, dan di PDF konsekuensinya lebih besar
+    daripada di Markdown: dokumen inilah yang dicetak dan ditandatangani.
+    """
+    teks = (reported_pdf / config.FILE_PDF_SOURCE).read_text(encoding="utf-8")
+    awal = teks.index("= Ringkasan eksekutif")
+    peringatan = teks.index("MODEL LENTUR PELAT", awal)
+    tabel = teks.index("As perlu", peringatan - 4000 if peringatan > 4000 else 0)
+    assert peringatan < teks.index("As pakai", awal), (
+        "peringatan deep pilecap muncul SETELAH tabel As pada ringkasan"
+    )
+    assert tabel >= 0
+
+
+def test_ringkasan_pdf_cocok_dengan_summary_md(reported_pdf: Path):
+    """Penjaga divergensi utama: PDF dan SUMMARY harus menyebut angka yang SAMA.
+
+    Keduanya lahir dari objek yang sama (`reporter.CalcSheetInputs` dan `rebar_governing`),
+    jadi perbedaan di sini berarti salah satu jalur penyajian menghitung sendiri -- persis
+    yang dilarang aturan modul `reporting_pdf`.
+    """
+    summary = (reported_pdf / config.FILE_SUMMARY).read_text(encoding="utf-8")
+    typ = (reported_pdf / config.FILE_PDF_SOURCE).read_text(encoding="utf-8")
+
+    bagian = summary[summary.index("## 3a.") :]
+    bagian = bagian[: bagian.index("\n## ")] if "\n## " in bagian else bagian
+    baris = [b for b in bagian.splitlines() if b.startswith("| ") and " | " in b]
+    nilai = [b.split("|")[3].strip() for b in baris[2:]]  # kolom "As pakai"
+    assert nilai, "tabel governing SUMMARY tidak terbaca"
+
+    for angka in nilai:
+        assert angka in typ, (
+            f"As governing {angka!r} ada di SUMMARY.md tetapi TIDAK di laporan PDF -- "
+            "kedua dokumen menyimpang"
+        )
+
+
+def test_pdf_tidak_memuat_dump_seluruh_elemen(reported_pdf: Path):
+    """Keputusan desain: tabel memuat nilai governing, data lengkap tetap di CSV.
+
+    `ex01` punya ribuan elemen; mencetaknya akan menghasilkan dokumen ratusan halaman
+    yang tidak terbaca. Yang wajib ada adalah PENUNJUK ke berkas datanya.
+    """
+    typ = (reported_pdf / config.FILE_PDF_SOURCE).read_text(encoding="utf-8")
+    mesh = mesh_model.from_csv(
+        reported_pdf / config.MODEL_SUBDIR / "nodes.csv",
+        reported_pdf / config.MODEL_SUBDIR / "elements.csv",
+    )
+    assert typ.count("\n  [") < mesh.n_elements, "dokumen tampak memuat satu baris per elemen"
+    assert "`element_resultants.csv`" in typ or "element\\_resultants.csv" in typ
+
+
+def test_pdf_dapat_dibuat_ulang_tanpa_analisis_ulang(reported_pdf: Path):
+    """`pilecap-report --pdf` harus dapat dijalankan berulang pada folder run yang sama."""
+    sebelum = (reported_pdf / config.FILE_PDF_REPORT).stat().st_mtime
+    _report(reported_pdf, "--pdf")
+    assert (reported_pdf / config.FILE_PDF_REPORT).stat().st_mtime >= sebelum
+
+
+def test_gagal_kompilasi_mempertahankan_berkas_typ(reported_pdf: Path, monkeypatch):
+    """`.typ` adalah satu-satunya yang membuat kegagalan kompilasi dapat didiagnosis."""
+    from shell_kit.pdf import PdfCompileError
+
+    from pilecap_fem.reporting_pdf import document
+
+    def gagal(typ_path, pdf_path=None, root=None):
+        raise PdfCompileError(typ_path, "kesalahan buatan untuk test")
+
+    monkeypatch.setattr(document, "compile_to_pdf", gagal, raising=False)
+    monkeypatch.setattr("shell_kit.pdf.compile_to_pdf", gagal)
+
+    with pytest.raises(PilecapError, match="DIPERTAHANKAN"):
+        _report(reported_pdf, "--pdf")
+    assert (reported_pdf / config.FILE_PDF_SOURCE).is_file()
+
+
+def test_pilecap_run_meneruskan_flag_pdf():
+    """`--pdf` didaftarkan di `add_report_arguments`, sehingga `pilecap-run` ikut menerima."""
+    args = cli_pilecap_run.build_parser().parse_args([])
+    assert hasattr(args, "pdf")
+    assert cli_pilecap_run.build_parser().parse_args(["--pdf"]).pdf is True

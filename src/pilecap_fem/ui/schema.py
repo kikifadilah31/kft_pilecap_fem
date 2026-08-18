@@ -803,7 +803,9 @@ SECTIONS: tuple[Section, ...] = (
                 "select",
                 config.REBAR_BASIS_DEFAULT,
                 choices=config.REBAR_BASES,
-                help="Dari mana angka desain diambil. Berlaku untuk SELURUH kombinasi "
+                help="Dari mana angka desain TULANGAN LENTUR diambil -- sengkang tidak "
+                "terpengaruh sama sekali (lihat calc sheet bagian 7b). Berlaku untuk "
+                "SELURUH kombinasi "
                 "sekaligus, termasuk envelope. "
                 "`element` (bawaan) memakai nilai tiap elemen apa adanya -- algoritma asli "
                 "shell-kit. Kontur menjadi deliverable utamanya, dan Anda yang menentukan "

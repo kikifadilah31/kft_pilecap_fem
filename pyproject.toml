@@ -57,6 +57,21 @@ dependencies = [
     "openseespy==3.8.0.0",
     "opsvis==1.3.7",
     "shell-kit @ https://github.com/kikifadilah31/plot_kontur_plate_fea_midas_civil/releases/download/v3.3.0/shell_kit-3.3.0-py3-none-any.whl",
+    # Laporan PDF (`--pdf`). Keduanya SUDAH ikut secara transitif -- `typst` lewat
+    # shell-kit, `pillow` lewat matplotlib -- sehingga menuliskannya di sini menambah NOL
+    # byte pada instalasi. Tetap dituliskan karena dependency transitif bukan kontrak:
+    # `uvx`/`uv tool install` dari git MENGABAIKAN uv.lock dan me-resolve ulang dari berkas
+    # ini, dan bila shell-kit atau matplotlib berhenti membutuhkannya, `--pdf` akan mati
+    # pada instalasi baru dengan ImportError yang membingungkan. `shell_kit.pdf` mengimpor
+    # PIL secara langsung, jadi pillow memang dependency langsung fitur ini.
+    #
+    # ALASAN PIN-nya BERBEDA dari yang di atas: keduanya tidak menyentuh satu pun angka
+    # rekayasa dan tidak ikut satu pun validation case. Yang dijaga adalah DOKUMEN yang
+    # reproducible -- pergeseran tata letak antar versi Typst menggeser penomoran halaman
+    # pada dokumen yang sudah ditandatangani. Konsekuensinya, menaikkan keduanya TIDAK
+    # menuntut VC-0..VC-7 diulang, berbeda dari gmsh/openseespy/numpy.
+    "typst==0.15.0",
+    "pillow==12.3.0",
 ]
 
 # SATU-SATUNYA dependency yang TIDAK di-pin eksak, dan itu disengaja.
