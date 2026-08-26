@@ -2,6 +2,17 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.11.2] — 2026-08-19 — Grid spasi sengkang dicantumkan di plot `Av/s` dan diameter
+
+Ditemukan oleh pengguna: plot diameter sengkang mode spasi tetap tidak menyebut spasi
+yang dipakai. Sengkang hanya punya SATU mode -- `stirrup_spacing_long`/
+`stirrup_spacing_trans` ditetapkan pengguna, tool memilih diameter yang memenuhinya --
+dan nilai itu sebelumnya hanya tercetak di `calc_sheet.md` bagian 7b (Markdown), tidak
+pernah di plot itu sendiri. Plot `Av/s` dan diameter sengkang (per kombinasi maupun
+envelope) kini menyertakan baris "Grid sengkang (spasi tetap, ditetapkan pengguna):
+{long} x {trans} mm." di kop gambar. Dijaga
+`test_plot_sengkang_menyebut_grid_spasi_yang_dipakai`.
+
 ## [0.11.1] — 2026-08-19 — Rujukan dapat diklik, penekanan tanpa kapital, envelope tulangan lengkap
 
 Ditemukan lewat peninjauan visual PDF hasil `ex01` sebelum rilis, bukan lewat kode.

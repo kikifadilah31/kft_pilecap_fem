@@ -602,6 +602,47 @@ def test_caption_plot_per_kombinasi_mengikuti_rebar_basis(tmp_path_factory, monk
         )
 
 
+def test_plot_sengkang_menyebut_grid_spasi_yang_dipakai(tmp_path_factory, monkeypatch):
+    """Plot `Av/s` dan diameter sengkang WAJIB menyebut grid spasi yang menghasilkannya.
+
+    Regresi: sengkang hanya punya SATU mode -- spasi ditetapkan pengguna
+    (`stirrup_spacing_long`/`stirrup_spacing_trans`), tool memilih diameter yang
+    memenuhinya. Nilai itu sebelumnya hanya tercetak di calc sheet bagian 7b
+    (Markdown); plotnya sendiri -- yang justru HASIL LANGSUNG dari spasi itu, dan yang
+    dicetak/ditempel ke laporan -- beredar tanpa menyebut spasi yang dipakai.
+    """
+    workdir = tmp_path_factory.mktemp("grid_sengkang")
+    target = workdir / "ex01"
+    shutil.copytree(EXAMPLES / "ex01_standard_4pile", target)
+    run_dir = _analyze(target, workdir / "output")
+
+    captured: dict[str, tuple[str, ...]] = {}
+
+    def spy_contour(path, *args, **kwargs):
+        name = Path(path).name
+        if name.startswith("contour_Avs_"):
+            captured[name] = kwargs["block"].notes
+        return original_contour(path, *args, **kwargs)
+
+    def spy_categorical(path, *args, **kwargs):
+        name = Path(path).name
+        if name.startswith("contour_Dsengkang_"):
+            captured[name] = kwargs["block"].notes
+        return original_categorical(path, *args, **kwargs)
+
+    original_contour = cli_pilecap_report.renderer.render_contour
+    original_categorical = cli_pilecap_report.renderer.render_categorical
+    monkeypatch.setattr(cli_pilecap_report.renderer, "render_contour", spy_contour)
+    monkeypatch.setattr(cli_pilecap_report.renderer, "render_categorical", spy_categorical)
+    _report(run_dir)
+
+    assert len(captured) == 4, f"plot sengkang yang tertangkap tidak lengkap: {captured.keys()}"
+    for name, notes in captured.items():
+        gabungan = " ".join(notes)
+        assert "Grid sengkang" in gabungan, f"{name}: grid spasi tidak disebut -- {notes}"
+        assert "spasi tetap" in gabungan, f"{name}: mode spasi tidak dinyatakan -- {notes}"
+
+
 # ---------------------------------------------------------------------------
 # Laporan PDF (`--pdf`)
 # ---------------------------------------------------------------------------

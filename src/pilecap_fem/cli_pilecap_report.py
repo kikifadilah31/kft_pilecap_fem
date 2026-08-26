@@ -514,6 +514,7 @@ def _render_rebar_plots(
     designs: dict[tuple[str, str], capacity_engine.FlexureDesign],
     selections: dict[tuple[str, str], capacity_engine.RebarSelection],
     shear_maps: dict[str, capacity_engine.ShearRebarMap],
+    capacity_inputs: capacity_engine.CapacityInputs,
     combo: str,
     pz_by_pile: dict[str, float],
     style: renderer.PlotStyle,
@@ -607,6 +608,16 @@ def _render_rebar_plots(
                 n_inadequate=selection.n_inadequate,
             )
 
+    # Grid spasi sengkang: SATU nilai tetap (ditetapkan pengguna, bukan dipilih tool),
+    # dipakai `calc_shear_diameter` untuk kedua arah sekaligus. Tanpa mencantumkannya di
+    # sini, plot diameter sengkang -- yang justru HASIL LANGSUNG dari spasi ini -- beredar
+    # tanpa menyebut spasi yang menghasilkannya. Sebelumnya hanya tercetak di calc sheet
+    # bagian 7b (Markdown), tidak pernah di gambar itu sendiri.
+    grid_sengkang = (
+        f"Grid sengkang (spasi tetap, ditetapkan pengguna): "
+        f"{capacity_inputs.stirrup_long_mm:,.0f} x {capacity_inputs.stirrup_trans_mm:,.0f} "
+        f"{io_utils.display_unit('length')}."
+    )
     for direction, (_, avs_file, dia_file, label) in config.SHEAR_REBAR_FIELDS.items():
         smap = shear_maps[direction]
         catatan = (
@@ -624,7 +635,7 @@ def _render_rebar_plots(
             combo=combo,
             pz_by_pile=pz_by_pile,
             style=style,
-            block=block.with_notes(catatan),
+            block=block.with_notes(catatan, grid_sengkang),
             n_inadequate=smap.n_web_crushed,
         )
         # Diameter sengkang adalah pilihan DISKRET dari daftar yang diizinkan -- sama
@@ -644,7 +655,7 @@ def _render_rebar_plots(
             style=style,
             # Diameter sengkang sering nyaris seragam karena luas per kaki mudah
             # terpenuhi pada grid yang lebar; Av/s yang membawa informasinya.
-            block=block.with_notes(catatan, "Baca bersama dengan plot Av/s."),
+            block=block.with_notes(catatan, grid_sengkang, "Baca bersama dengan plot Av/s."),
             n_inadequate=smap.n_web_crushed,
             zero_label="tanpa sengkang",
         )
@@ -800,6 +811,7 @@ def _report_one_combo(
             designs=designs,
             selections=selections,
             shear_maps=shear_maps,
+            capacity_inputs=capacity_inputs,
             combo=combo,
             pz_by_pile=pz_by_pile,
             style=style,
@@ -1001,6 +1013,7 @@ def _render_envelope_rebar_plots(
         designs=designs,
         selections=selections,
         shear_maps=shear_maps,
+        capacity_inputs=capacity_inputs,
         # Kosong: baris kedua judul akan berbunyi "Kombinasi ENVELOPE", padahal envelope
         # justru BUKAN satu kombinasi. Keterangannya masuk sebagai catatan di kop.
         combo="",
