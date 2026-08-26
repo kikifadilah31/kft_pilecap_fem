@@ -2,7 +2,30 @@
 
 Format mengikuti template PRD Bagian 16C.
 
-## [0.11.2] — 2026-08-19 — Grid spasi sengkang dicantumkan di plot `Av/s` dan diameter
+## [0.11.3] — 2026-08-26 — `--pdf` gagal pada pile yang tumpang tindih dengan pier
+
+Dilaporkan pengguna: `TypstMarkupError: heading Markdown di dalam blok prosa` pada baris
+`### 3a. Beban pile yang TIDAK melenturkan pelat (tumpang tindih dengan pier)`.
+
+### Fixed — `reporter.overlap_block` dirutekan lewat konverter yang salah
+
+Fragmen calc sheet yang membawa heading bernomor sendiri (`stirrup_section`,
+`capacity_provenance_table`, `traceability_block`, dan `overlap_block`) WAJIB melewati
+`chapters._md_body()`, yang membuang heading itu sebelum konversi -- bukan `_md()`, yang
+justru dirancang RAISE pada heading tak terduga di prosa lain. `overlap_block` (bagian
+"3a", hanya muncul bila ada pile yang menindih pier) terlewat saat `chapters.py` ditulis,
+karena `ex01`/`ex02` -- contoh yang dipakai mengembangkan fitur PDF -- tidak punya
+tumpang tindih pile-pier, sehingga fungsinya selalu mengembalikan string kosong di kedua
+run itu dan baris ini tidak pernah benar-benar dieksekusi. Baru meledak pada model
+dengan overlap nyata.
+
+Diperbaiki: dirutekan ke `_md_body()`, plus heading Typst asli level-3 ditambahkan
+sebelum kontennya -- bukan sekadar dibuang -- supaya sub-bagian "Beban pile yang tidak
+melenturkan pelat" tetap punya entri sendiri di Daftar Isi, sama seperti "Tulangan geser
+(sengkang)" pada bagian lain. Direproduksi dan diverifikasi pada `ex04_pile_overlap_pier`
+(satu-satunya contoh bawaan dengan overlap nyata): PDF 41 halaman berhasil dibuat,
+Tabel 4.1.1 tampil benar. Dijaga
+`test_overlap_block_meledak_lewat_md_biasa_tetapi_aman_lewat_md_body`.
 
 Ditemukan oleh pengguna: plot diameter sengkang mode spasi tetap tidak menyebut spasi
 yang dipakai. Sengkang hanya punya SATU mode -- `stirrup_spacing_long`/

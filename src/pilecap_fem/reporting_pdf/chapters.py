@@ -70,10 +70,11 @@ _HEADING_MD = re.compile(r"^\s{0,3}#{1,6}\s")
 def _md_body(text: str) -> str:
     """Konversi satu BAGIAN calc sheet, tanpa heading bawaannya.
 
-    `reporter.stirrup_section`, `capacity_provenance_table`, dan `traceability_block`
-    dirancang untuk ditempel ke `calc_sheet.md`, sehingga masing-masing membawa heading
-    bernomor sendiri (`## 7b.` dan seterusnya). Penomoran bab PDF dibangun `document.py`,
-    dan menyisipkan heading calc sheet ke dalamnya akan merusak urutannya.
+    `reporter.overlap_block`, `stirrup_section`, `capacity_provenance_table`, dan
+    `traceability_block` dirancang untuk ditempel ke `calc_sheet.md`, sehingga masing-
+    masing membawa heading bernomor sendiri (`### 3a.`, `## 7b.`, dan seterusnya).
+    Penomoran bab PDF dibangun `document.py`, dan menyisipkan heading calc sheet ke
+    dalamnya akan merusak urutannya.
 
     Heading itu dibuang **di sini, secara sengaja dan terbatas pada blok ini** -- bukan oleh
     konverter, yang tetap menolak heading tak terduga di prosa mana pun.
@@ -559,7 +560,13 @@ def _one_combo(data: ReportData, figs: FigureStore, combo: str) -> str:
         )
     blok_overlap = reporter.overlap_block(ci.equilibrium)
     if blok_overlap.strip():
-        bagian.append(_md(blok_overlap))
+        # Heading Typst asli menggantikan `### 3a.` bawaan calc sheet yang dibuang
+        # `_md_body` -- bukan sekadar dijatuhkan, supaya sub-bagian ini tetap punya entri
+        # sendiri di Daftar Isi, sama seperti "Tulangan geser (sengkang)" di bawah.
+        bagian.append(
+            tk.heading(3, "Beban pile yang tidak melenturkan pelat (tumpang tindih dengan pier)")
+        )
+        bagian.append(_md_body(blok_overlap))
 
     # -- gaya dalam ---------------------------------------------------------
     bagian.append(tk.heading(2, "Gaya dalam"))

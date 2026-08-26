@@ -12,6 +12,7 @@ import re
 import pytest
 
 from pilecap_fem import config, reporter
+from pilecap_fem.reporting_pdf import chapters
 from pilecap_fem.reporting_pdf import typst_kit as tk
 
 DEEP_RATIO = {
@@ -247,6 +248,38 @@ def test_open_blockers_direproduksi_beserta_seluruh_itemnya():
     keluaran = tk.from_markdown(reporter.open_blockers_block())
     for key in config.OPEN_BLOCKERS:
         assert f"\\{key}" in keluaran, f"blocker {key} hilang dari dokumen"
+
+
+_EQUILIBRIUM_DENGAN_OVERLAP = {
+    "pile_loads": [
+        {
+            "pile_id": "P1",
+            "A_lens_m2": 0.05,
+            "overlap_fraction": 0.15,
+            "pz_strut_N": 15_000.0,
+            "pz_bocor_mesh_N": 500.0,
+            "pz_ke_pelat_N": 84_500.0,
+            "Pz_N": 100_000.0,
+        }
+    ]
+}
+
+
+def test_overlap_block_meledak_lewat_md_biasa_tetapi_aman_lewat_md_body():
+    """Regresi: `overlap_block` MEMBAWA heading `### 3a.` sendiri, sama seperti
+    `stirrup_section`. Rute `_md()` (dipakai chapters.py sebelum perbaikan) menolaknya --
+    tepat kegagalan yang dilaporkan user pada run dengan tumpang tindih pile-pier (`ex04`).
+    `_md_body()` (rute yang benar) membuang heading itu tanpa RAISE.
+    """
+    blok = reporter.overlap_block(_EQUILIBRIUM_DENGAN_OVERLAP)
+    assert blok.strip(), "fixture ini seharusnya menghasilkan blok non-kosong"
+
+    with pytest.raises(tk.TypstMarkupError, match="heading Markdown"):
+        tk.from_markdown(blok)
+
+    keluaran = chapters._md_body(blok)
+    assert "### 3a" not in keluaran
+    assert "strut" in keluaran
 
 
 # ---------------------------------------------------------------------------
