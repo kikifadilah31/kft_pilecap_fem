@@ -692,6 +692,21 @@ def test_pdf_memuat_seluruh_bab_wajib(reported_pdf: Path):
         assert judul in teks, f"bab {judul!r} hilang dari dokumen"
 
 
+def test_setiap_rujukan_silang_di_laporan_run_punya_label_tujuannya(reported_pdf: Path):
+    """Rujukan yang tujuannya tidak ada tercetak sebagai tanda tanya di PDF.
+
+    Kembaran dari test yang sama di `tests/test_manual.py`. Dua dokumen kini memakai ulang
+    bab yang sama, sehingga sebuah bab dapat merujuk ke label yang hanya ada di salah
+    satunya -- kegagalan yang tidak terlihat sampai PDF-nya dibuka orang.
+    """
+    import re
+
+    teks = (reported_pdf / config.FILE_PDF_SOURCE).read_text(encoding="utf-8")
+    tujuan = set(re.findall(r"#link\(<([a-z0-9_-]+)>\)", teks))
+    tersedia = set(re.findall(r"^=+ .*<([a-z0-9_-]+)>\s*$", teks, re.MULTILINE))
+    assert not (tujuan - tersedia), f"rujukan menggantung: {sorted(tujuan - tersedia)}"
+
+
 def test_pdf_menyebut_setiap_kombinasi_yang_dianalisis(reported_pdf: Path):
     teks = (reported_pdf / config.FILE_PDF_SOURCE).read_text(encoding="utf-8")
     for combo_dir in reported_pdf.glob("Combo_*"):

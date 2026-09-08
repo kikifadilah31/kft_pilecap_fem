@@ -121,7 +121,7 @@ def chapter_theory(figs: FigureStore) -> str:
     )
 
     # 2.2 -----------------------------------------------------------------
-    b.append(tk.heading(2, "Sumbu dan konvensi tanda"))
+    b.append(tk.heading(2, "Sumbu dan konvensi tanda", label="teori-konvensi-tanda"))
     b.append(
         _md(
             "Sumbu global ditetapkan sebagai berikut: X arah memanjang, Y arah melintang, "
@@ -178,7 +178,8 @@ def chapter_theory(figs: FigureStore) -> str:
             "pengolahan berikut.\n\n"
             "1. Pengambilan resultan pada setiap titik Gauss tanpa modifikasi.\n"
             "2. Perataan nilai antartitik Gauss dalam satu elemen.\n"
-            "3. Koreksi tanda menuju konvensi yang ditetapkan pada Subbab 2.2.\n"
+            "3. Koreksi tanda menuju konvensi yang ditetapkan pada subbab "
+            "[Sumbu dan konvensi tanda](#teori-konvensi-tanda).\n"
             "4. Transformasi tensor dari sumbu lokal elemen ke sumbu global.\n"
             "5. Penyajian hasil sebagai `m_xx`, `m_yy`, `m_xy`, `q_x`, dan `q_y`."
         )

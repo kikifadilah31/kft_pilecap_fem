@@ -31,3 +31,9 @@ htmlcov/
 # keputusan sadar pemilik proyek: PRD tetap ada lokal (lihat juga ref/), traceability-nya
 # ditanggung di luar git selama repo ini publik.
 PRD_pilecap_fem.md
+
+# Panduan mandiri (`pilecap-manual`). Sumber `.typ` dan ilustrasinya DI-commit supaya
+# dokumen yang diedarkan dapat ditinjau sebagai diff teks dan dikompilasi ulang siapa pun.
+# PDF-nya tidak: ia ~0,8 MB per rilis, dihasilkan ulang dengan satu perintah, dan
+# diedarkan sebagai release asset di samping wheel.
+docs/manual/*.pdf

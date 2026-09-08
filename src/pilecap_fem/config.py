@@ -462,6 +462,34 @@ ENVELOPE_SUBDIR: Final[str] = "Envelope"
 FILE_PDF_REPORT: Final[str] = "laporan_pilecap.pdf"
 FILE_PDF_SOURCE: Final[str] = "laporan_pilecap.typ"
 
+#: Panduan mandiri (`pilecap-manual`). Diberi nama berbeda dari laporan run karena
+#: keduanya memang dokumen berbeda: laporan menjelaskan SATU run, panduan menjelaskan
+#: TOOL-nya. Menaruh keduanya dengan nama sama akan membuat salah satu tertimpa.
+FILE_MANUAL_REPORT: Final[str] = "panduan_pilecap_fem.pdf"
+FILE_MANUAL_SOURCE: Final[str] = "panduan_pilecap_fem.typ"
+
+#: Peringatan singkat di footer SETIAP halaman dokumen PDF, laporan run maupun panduan.
+#: Ditaruh di sini, bukan di modul PDF, karena isinya pernyataan tanggung jawab -- satu
+#: kalimat yang sama harus muncul di kedua dokumen dan tidak boleh menyimpang diam-diam.
+FOOTER_NOTE: Final[str] = (
+    "alat bantu perhitungan; wajib diperiksa dan disetujui engineer yang bertanggung jawab"
+)
+
+#: Alamat repo publik. SATU-SATUNYA tempat URL ini ditulis untuk konsumsi dokumen.
+#:
+#: `wheel_url()` di bawahnya membangun tautan unduhan dari versi, sehingga panduan dan
+#: README tidak dapat menyebut versi yang berbeda. Sebelum ini URL wheel diketik tangan di
+#: README dan harus disunting manual setiap rilis -- suntingan yang diingat, bukan yang
+#: diperiksa. Dijaga `tests/test_manual.py::test_url_wheel_di_panduan_sama_dengan_yang_di_readme`.
+REPO_URL: Final[str] = "https://github.com/kikifadilah31/kft_pilecap_fem"
+RELEASES_URL: Final[str] = f"{REPO_URL}/releases"
+
+
+def wheel_url(version: str) -> str:
+    """Tautan unduh wheel untuk satu versi rilis."""
+    return f"{RELEASES_URL}/download/v{version}/pilecap_fem-{version}-py3-none-any.whl"
+
+
 #: Sisi terpanjang gambar di dalam PDF [piksel].
 #:
 #: Plot disimpan 300 dpi pada figur 14 inci, yaitu ~4.150 px. Menanamnya apa adanya membuat

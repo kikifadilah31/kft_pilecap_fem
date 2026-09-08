@@ -333,7 +333,7 @@ def test_seluruh_blok_prosa_tetap_benar_benar_dapat_dikompilasi(tmp_path):
     assert not warnings, f"kompilasi memunculkan warning: {warnings}"
 
 
-def test_kompilasi_tidak_memakai_font_sistem(tmp_path):
+def test_kompilasi_tidak_memakai_font_sistem(tmp_path, tanpa_stempel_waktu):
     """Dokumen harus tampil sama di mesin lain.
 
     typst hanya membundel New Computer Modern, Libertinus Serif, dan DejaVu Sans Mono.
@@ -349,7 +349,13 @@ def test_kompilasi_tidak_memakai_font_sistem(tmp_path):
     tanpa, _ = typst.compile_with_warnings(str(typ), root=str(tmp_path), ignore_system_fonts=True)
     if isinstance(dengan, list):
         dengan, tanpa = dengan[0], tanpa[0]
-    assert dengan == tanpa, "dokumen bergantung pada font sistem"
+    # Stempel waktu dinormalkan: Typst menanam jam dinding di setiap PDF, sehingga dua
+    # kompilasi yang jatuh di sisi berbeda pergantian detik SELALU berbeda byte -- test
+    # tanpa normalisasi sesungguhnya menguji jam, dan lolos hanya selama dokumennya cukup
+    # kecil untuk dikompilasi dua kali dalam satu detik.
+    assert tanpa_stempel_waktu(dengan) == tanpa_stempel_waktu(tanpa), (
+        "dokumen bergantung pada font sistem"
+    )
 
 
 def test_sumber_reporting_pdf_tidak_mengetik_satuan_sebagai_literal():
@@ -479,3 +485,58 @@ def test_ilustrasi_svg_disalin_ke_folder_run_tanpa_diperkecil(tmp_path):
     assert fig.rel_path == "_figur_pdf/sistem-koordinat.svg"
     assert (tmp_path / fig.rel_path).is_file()
     assert not toko.missing
+
+
+def test_blok_kode_mempertahankan_perintah_apa_adanya():
+    """Perintah yang dicetak WAJIB dapat disalin dan dijalankan.
+
+    Tipografi Typst mengubah `--` menjadi en dash, sehingga `--python 3.12` yang disalin
+    pembaca menjadi perintah yang tidak berjalan. Bab instalasi panduan seluruhnya berisi
+    perintah semacam itu.
+    """
+    perintah = "uv tool install --python 3.12 https://x/pilecap_fem-0.1.0-py3-none-any.whl"
+    hasil = tk.code_block(perintah)
+    assert perintah in hasil
+    assert "raw(block: true," in hasil
+
+
+def test_tautan_web_dapat_diklik_dan_tidak_diubah_tipografi():
+    hasil = tk.url("https://contoh.id/a--b_c.whl")
+    assert hasil.startswith("#link(")
+    assert "https://contoh.id/a--b_c.whl" in hasil
+    assert "#raw(" in hasil
+
+
+def test_tautan_bukan_http_ditolak():
+    """Alamat yang salah bentuk tidak boleh diam-diam tercetak sebagai teks mati."""
+    with pytest.raises(tk.TypstMarkupError):
+        tk.url("ftp://contoh.id/berkas")
+
+
+def test_preamble_menyebut_perintah_yang_benar_benar_menghasilkan_dokumen():
+    """Komentar kepala yang menyebut perintah keliru menuntun pembaca menimpa dokumen lain."""
+    assert "pilecap-report --pdf" in tk.PREAMBLE
+    lain = tk.preamble(regenerated_by="pilecap-manual", source_note="catatan.")
+    assert "pilecap-manual" in lain
+    assert "pilecap-report" not in lain
+
+    # Selain dua baris komentar kepala, isinya wajib identik -- tata letak tidak berubah.
+    def badan(teks: str) -> str:
+        return "\n".join(teks.splitlines()[2:])
+
+    assert badan(lain) == badan(tk.PREAMBLE)
+
+
+def test_nama_berkas_ilustrasi_stabil_antar_folder_keluaran(tmp_path):
+    """Ilustrasi PNG harus bernama sama di folder keluaran mana pun.
+
+    `downscale_figure` memberi awalan hash dari jalur absolut sumbernya. Tanpa penstabilan,
+    sumber `.typ` panduan -- yang di-commit dan di-diff antarversi -- memuat nama berkas
+    berbeda setiap kali dibangun di folder lain.
+    """
+    from pilecap_fem.reporting_pdf.figures import FigureStore
+
+    nama = "contoh-diameter-element-vs-strip.png"
+    a = FigureStore(tmp_path / "a", started_at=0.0).illustration(nama, "x")
+    b = FigureStore(tmp_path / "b", started_at=0.0).illustration(nama, "x")
+    assert a.rel_path == b.rel_path == f"_figur_pdf/{nama}"

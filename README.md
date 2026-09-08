@@ -24,7 +24,7 @@ dipasang dari wheel rilis) diambil lewat HTTPS biasa.
 **PC tanpa git — pasang dari wheel rilis, disematkan ke versi tertentu:**
 
 ```bash
-uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.11.3/pilecap_fem-0.11.3-py3-none-any.whl
+uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.12.0/pilecap_fem-0.12.0-py3-none-any.whl
 ```
 
 **PC yang sudah punya git — jalankan langsung dari sumber, tanpa memasang apa pun:**
@@ -45,12 +45,12 @@ Lima hal yang perlu diketahui:
   menyebutkan persoalannya dan perintah yang benar — bukan error DLL yang membingungkan.
 - **Jalur wheel selalu tersemat ke satu versi** — nomor versinya ada di URL sendiri, jadi
   tidak perlu (dan tidak bisa) "selalu ambil terbaru" lewat jalur ini. Untuk versi lain,
-  ganti `v0.11.3` dan nama berkasnya menjadi versi yang dituju di
+  ganti `v0.12.0` dan nama berkasnya menjadi versi yang dituju di
   [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases) — lihat
   juga "Upgrade ke versi terbaru" di bawah.
 - **`--from` wajib** pada `uvx` karena nama paket (`pilecap-fem`) berbeda dari nama
   command yang dijalankan.
-- **Sematkan tag versi** (`@v0.11.3`) pada jalur git untuk pekerjaan yang hasilnya akan
+- **Sematkan tag versi** (`@v0.12.0`) pada jalur git untuk pekerjaan yang hasilnya akan
   diperiksa kemudian. `run_manifest.json` merekam `tool_version`; dengan tag, versi itu
   dapat ditarik kembali persis. Tanpa tag, instalasi selalu mengambil `main` terbaru.
 - **Unduhan pertama ~60 MB** (gmsh saja 40 MB), lalu di-cache `uv`.
@@ -68,10 +68,10 @@ pilecap-run --version
 yang lebih baru, dengan `--force` karena nama tool-nya (`pilecap-fem`) sudah terpasang:
 
 ```bash
-uv tool install --python 3.12 --force https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.11.3/pilecap_fem-0.11.3-py3-none-any.whl
+uv tool install --python 3.12 --force https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.12.0/pilecap_fem-0.12.0-py3-none-any.whl
 ```
 
-Ganti `v0.11.3` dan nama berkasnya sesuai versi yang dituju di
+Ganti `v0.12.0` dan nama berkasnya sesuai versi yang dituju di
 [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases). Tanpa
 `--force`, `uv` menolak memasang di atas tool dengan nama yang sama.
 
@@ -103,6 +103,30 @@ git clone https://github.com/kikifadilah31/kft_pilecap_fem && cd kft_pilecap_fem
 ```
 
 Lalu jalankan lewat `uv run <command>`.
+
+## Panduan mandiri untuk diedarkan (`pilecap-manual`)
+
+README ini mengandaikan pembacanya nyaman dengan GitHub. Untuk yang tidak — calon pengguna
+di kantor lain, atau eksekutif yang menilai apakah perusahaannya akan memakai tool ini —
+tersedia **satu dokumen PDF yang berdiri sendiri**:
+
+```bash
+uv run pilecap-manual --out docs/manual
+```
+
+Isinya: ringkasan eksekutif yang tuntas dalam ±5 halaman (apa yang dikerjakan, apa yang
+**tidak**, tingkat pertanggungjawaban, bukti validasi, kebutuhan penerapan), pemasangan
+langkah demi langkah untuk orang yang belum pernah membuka terminal, referensi lengkap
+seluruh field config, dasar teori, keluaran, dan keterbatasan.
+
+Dokumen itu **dihasilkan dari kode**, bukan ditulis tangan: versi, daftar field, pasal SNI,
+keterbatasan, dan pin dependency ditarik hidup-hidup saat dibangun, sehingga tidak dapat
+basi diam-diam terhadap versi yang benar-benar terpasang. `pilecap-manual` ikut di dalam
+wheel justru supaya penerima wheel dapat membuat panduan yang cocok dengan versinya
+sendiri.
+
+Sumber `.typ` dan ilustrasinya di-commit di `docs/manual/`; PDF-nya tidak — ia dilampirkan
+sebagai release asset di samping wheel.
 
 ## Antarmuka grafis (opsional) — untuk yang tidak terbiasa CLI
 

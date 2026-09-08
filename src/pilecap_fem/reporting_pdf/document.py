@@ -12,12 +12,18 @@ from pathlib import Path
 
 from pilecap_fem import config
 from pilecap_fem.reporting_pdf import chapters, theory
+from pilecap_fem.reporting_pdf import typst_kit as tk
 from pilecap_fem.reporting_pdf.figures import FigureStore
 from pilecap_fem.reporting_pdf.model import ReportData
-from pilecap_fem.reporting_pdf.typst_kit import PREAMBLE
 from pilecap_fem.validators import PilecapError
 
-__all__ = ["PdfReportError", "build_pdf_report", "preflight", "render_source"]
+__all__ = [
+    "PdfReportError",
+    "build_pdf_report",
+    "compile_document",
+    "preflight",
+    "render_source",
+]
 
 _log = config.get_logger("reporting_pdf")
 
@@ -53,8 +59,10 @@ def preflight() -> None:
 def render_source(data: ReportData, figs: FigureStore) -> str:
     """Rakit seluruh dokumen menjadi satu string `.typ`."""
     bagian = [
-        PREAMBLE,
-        _page_footer(data),
+        tk.PREAMBLE,
+        tk.page_footer(
+            version=str(data.manifest.get("tool_version", "?")), note=config.FOOTER_NOTE
+        ),
         chapters.cover(data),
         chapters.outline(),
         chapters.chapter_summary(data),
@@ -62,60 +70,76 @@ def render_source(data: ReportData, figs: FigureStore) -> str:
         chapters.chapter_input(data, figs),
         chapters.chapter_combos(data, figs),
         chapters.chapter_envelope(data, figs),
-        chapters.chapter_limitations(data),
+        _bab_keterbatasan(data),
         chapters.chapter_responsibility(data),
         chapters.appendix_provenance(data),
     ]
     return "\n\n".join(b for b in bagian if b)
 
 
-def _page_footer(data: ReportData) -> str:
-    """Footer tiap halaman: identitas tool + peringatan singkat + nomor halaman.
-
-    Dipasang SETELAH sampul supaya halaman sampul tetap bersih.
-    """
-    versi = str(data.manifest.get("tool_version", "?"))
-    return (
-        "#set page(footer: context [\n"
-        f"  #set text(size: 7.5pt, fill: luma(90))\n"
-        f"  pilecap-fem v{versi} -- alat bantu perhitungan; wajib diperiksa dan disetujui "
-        f"engineer yang bertanggung jawab\n"
-        "  #h(1fr)\n"
-        '  #counter(page).display("1 / 1", both: true)\n'
-        "])"
+def _bab_keterbatasan(data: ReportData) -> str:
+    return chapters.chapter_limitations(
+        no_rebar_plots=data.no_rebar_plots, no_envelope=data.no_envelope
     )
 
 
-def build_pdf_report(run_dir: Path, data: ReportData) -> Path:
-    """Bangun `.typ`, kompilasi ke PDF, dan kembalikan jalur PDF-nya."""
+def compile_document(
+    source: str,
+    typ_path: Path,
+    pdf_path: Path,
+    *,
+    root: Path,
+    rerun_hint: str,
+    label: str,
+) -> None:
+    """Tulis `.typ` lalu kompilasi ke PDF, dengan kegagalan yang dapat ditindaklanjuti.
+
+    Sumber `.typ` ditulis LEBIH DULU dan tidak pernah dihapus: pada kompilasi yang gagal,
+    ia satu-satunya yang membuat penyebabnya dapat ditelusuri.
+
+    `rerun_hint` adalah perintah yang menghasilkan dokumen ini. Ia diparameterkan karena
+    pesan galat yang menyuruh menjalankan ulang perintah yang KELIRU akan menuntun
+    pengguna menimpa dokumen lain.
+    """
     from shell_kit.pdf import PdfCompileError, compile_to_pdf
 
-    mulai = time.perf_counter()
-    figs = FigureStore(run_dir, started_at=data.started_at)
-    sumber = render_source(data, figs)
-
-    typ_path = run_dir / config.FILE_PDF_SOURCE
-    pdf_path = run_dir / config.FILE_PDF_REPORT
-    typ_path.write_text(sumber, encoding="utf-8")
+    typ_path.write_text(source, encoding="utf-8")
 
     try:
-        _, warnings = compile_to_pdf(str(typ_path), str(pdf_path), root=str(run_dir))
+        _, warnings = compile_to_pdf(str(typ_path), str(pdf_path), root=str(root))
     except PdfCompileError as exc:
         raise PdfReportError(
-            f"Typst gagal mengompilasi laporan.\n{exc}\n"
+            f"Typst gagal mengompilasi {label}.\n{exc}\n"
             f"  Sumbernya DIPERTAHANKAN di: {typ_path}\n"
-            "  Perbaiki penyebabnya lalu jalankan ulang `pilecap-report --pdf`."
+            f"  Perbaiki penyebabnya lalu jalankan ulang `{rerun_hint}`."
         ) from exc
     except PermissionError as exc:
         raise PdfReportError(
             f"Tidak dapat menulis {pdf_path.name}: berkasnya sedang dibuka program lain "
             "(penampil PDF mengunci berkas di Windows).\n"
-            "  Tutup berkasnya lalu jalankan ulang `pilecap-report --pdf`."
+            f"  Tutup berkasnya lalu jalankan ulang `{rerun_hint}`."
         ) from exc
 
     for w in warnings:
         _log.warning("typst: %s", str(w).replace("\n", " "))
     _peringatkan_gambar(warnings)
+
+
+def build_pdf_report(run_dir: Path, data: ReportData) -> Path:
+    """Bangun `.typ`, kompilasi ke PDF, dan kembalikan jalur PDF-nya."""
+    mulai = time.perf_counter()
+    figs = FigureStore(run_dir, started_at=data.started_at)
+
+    typ_path = run_dir / config.FILE_PDF_SOURCE
+    pdf_path = run_dir / config.FILE_PDF_REPORT
+    compile_document(
+        render_source(data, figs),
+        typ_path,
+        pdf_path,
+        root=run_dir,
+        rerun_hint="pilecap-report --pdf",
+        label="laporan",
+    )
 
     if figs.missing:
         _log.warning(

@@ -474,3 +474,22 @@ def test_launcher_meneruskan_folder_kerja_lewat_environment(monkeypatch):
     launcher.launch()
 
     assert launcher.CWD_ENV in diteruskan["env"]
+
+
+def test_setiap_help_field_dapat_dikonversi_ke_typst():
+    """Prosa `help=` kini juga dicetak di panduan PDF, bukan hanya di formulir.
+
+    Konverter Typst sengaja MENOLAK konstruksi yang tidak dikenalnya, sehingga satu
+    kalimat bantuan yang memakai konstruksi asing akan menggagalkan pembuatan panduan.
+    Memeriksanya di sini membuat kegagalan itu muncul saat schema disunting, bukan saat
+    panduan hendak diterbitkan.
+    """
+    from pilecap_fem.reporting_pdf import typst_kit as tk
+    from pilecap_fem.ui import schema
+
+    for bagian in schema.SECTIONS:
+        if bagian.help:
+            tk.from_markdown(bagian.help)
+    for f in schema.ALL_FIELDS:
+        if f.help:
+            tk.from_markdown(f.help)

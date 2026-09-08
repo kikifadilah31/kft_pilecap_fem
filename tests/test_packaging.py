@@ -31,13 +31,15 @@ from pilecap_fem.validators import InputError
 REPO = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO / "pyproject.toml"
 
-#: Keempat command PRD Bagian 14.
+#: Seluruh command yang dipasang. Keempat yang pertama adalah command PRD Bagian 14;
+#: `pilecap-ui` dan `pilecap-manual` menyusul kemudian.
 EXPECTED_SCRIPTS = {
     "pilecap-mesh": "pilecap_fem.cli_pilecap_mesh:entry_point",
     "pilecap-analyze": "pilecap_fem.cli_pilecap_analyze:entry_point",
     "pilecap-report": "pilecap_fem.cli_pilecap_report:entry_point",
     "pilecap-run": "pilecap_fem.cli_pilecap_run:entry_point",
     "pilecap-ui": "pilecap_fem.ui.launcher:entry_point",
+    "pilecap-manual": "pilecap_fem.cli_pilecap_manual:entry_point",
 }
 
 #: `pilecap-ui` sengaja TIDAK menerima argumen baris perintah -- seluruh masukan diisi
@@ -100,7 +102,7 @@ def test_versi_muncul_di_manifest_provenance():
 # ---------------------------------------------------------------------------
 
 
-def test_keempat_entry_point_terdaftar_dan_dapat_dipanggil():
+def test_setiap_entry_point_terdaftar_dan_dapat_dipanggil():
     """Dibaca dari metadata paket TERPASANG, bukan dari daftar yang diketik ulang."""
     scripts = {
         ep.name: ep.value
@@ -403,6 +405,7 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
         "cli_pilecap_analyze",
         "cli_pilecap_report",
         "cli_pilecap_run",
+        "cli_pilecap_manual",
         "fem_engine",
         "math_engine",
         "postproc_engine",
@@ -417,6 +420,12 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
     for module in ("__init__", "chapters", "document", "figures", "model", "theory", "typst_kit"):
         path = f"pilecap_fem/reporting_pdf/{module}.py"
         assert path in names, f"modul laporan PDF tidak ikut terkemas ({path})"
+
+    # Panduan HARUS ikut di dalam wheel, bukan hanya ada di repo: pengguna yang menerima
+    # wheel saja justru yang paling membutuhkan panduan sesuai versi terpasangnya.
+    for module in ("__init__", "chapters", "config_reference", "document"):
+        path = f"pilecap_fem/manual/{module}.py"
+        assert path in names, f"modul panduan tidak ikut terkemas ({path})"
 
     for name in config.EXAMPLE_NAMES:
         for relative in ("pilecap_config.json", "expected/golden.json"):

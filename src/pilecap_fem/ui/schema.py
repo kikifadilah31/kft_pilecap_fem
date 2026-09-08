@@ -203,7 +203,7 @@ SECTIONS: tuple[Section, ...] = (
         icon=":material/straighten:",
         help="Seluruh angka di formulir ini ditulis dalam satuan yang dipilih di sini, dan "
         "label tiap field langsung ikut berubah. Di dalam mesin hitung semuanya diubah ke SI "
-        "(N, m, Pa); Anda tidak perlu mengonversi apa pun sendiri. Yang WAJIB Anda pastikan: "
+        "(N, m, Pa); Anda tidak perlu mengonversi apa pun sendiri. Yang **wajib** Anda pastikan: "
         "pilihan di sini harus cocok dengan angka yang benar-benar Anda ketik -- salah pilih "
         "adalah satu-satunya kesalahan di formulir ini yang tidak dapat dideteksi tool, "
         "karena 1200 mm dan 1200 m sama-sama angka yang sah.",
@@ -255,7 +255,7 @@ SECTIONS: tuple[Section, ...] = (
                 min_value=0.0,
                 help="Tebal pelat, dipakai untuk kekakuan lentur, tinggi efektif tulangan, "
                 "dan kapasitas geser. Ini besaran paling berpengaruh di seluruh model: "
-                "kekakuan lentur pelat sebanding dengan tebal PANGKAT TIGA, sehingga tebal "
+                "kekakuan lentur pelat sebanding dengan tebal **pangkat tiga**, sehingga tebal "
                 "yang meleset 10% menggeser lendutan sekitar 30%.",
             ),
             Field(
@@ -282,7 +282,7 @@ SECTIONS: tuple[Section, ...] = (
                 "pair",
                 [0.0, 0.0],
                 unit="length",
-                help="Koordinat TITIK PUSAT pilecap persegi, bukan sudutnya. Titik ini "
+                help="Koordinat **titik pusat** pilecap persegi, bukan sudutnya. Titik ini "
                 "menentukan letak pilecap terhadap grid pile dan pier, jadi ketiganya harus "
                 "memakai sistem koordinat yang sama. Biarkan [0, 0] bila Anda menempatkan "
                 "semuanya relatif terhadap pusat pilecap.",
@@ -294,8 +294,8 @@ SECTIONS: tuple[Section, ...] = (
         icon=":material/circle:",
         illustration="skema-tumpuan-beban.svg",
         override_entity="pile",
-        help="Tiang pancang/bor yang memikul pilecap. Di model ini pile BUKAN tumpuan: "
-        "reaksinya (`Pz` dari `pile_reactions.csv`) diterapkan sebagai BEBAN KE ATAS pada "
+        help="Tiang pancang/bor yang memikul pilecap. Di model ini pile **bukan** tumpuan: "
+        "reaksinya (`Pz` dari `pile_reactions.csv`) diterapkan sebagai **beban ke atas** pada "
         "daerah lingkaran kepala tiang, sementara pier-lah yang dijepit. Karena reaksi pile "
         "sudah Anda ketahui dari analisis struktur atas, cara ini membuat keseimbangan gaya "
         "dapat diperiksa persis -- itulah cek VC-0 yang dijalankan setiap run.",
@@ -377,9 +377,9 @@ SECTIONS: tuple[Section, ...] = (
         icon=":material/view_column:",
         illustration="tumpang-tindih-pile-pier.svg",
         override_entity="pier",
-        help="Kolom/pilar yang berdiri di atas pilecap. Di model ini pier menjadi TUMPUAN: "
+        help="Kolom/pilar yang berdiri di atas pilecap. Di model ini pier menjadi **tumpuan**: "
         "seluruh node di dalam daerah pier dijepit penuh (6 derajat kebebasan), menahan "
-        "beban yang didorong pile dari bawah. Momen desain dibaca di MUKA pier, sesuai "
+        "beban yang didorong pile dari bawah. Momen desain dibaca di **muka** pier, sesuai "
         "praktik SNI, karena momen tepat di sumbu tumpuan bersifat singular pada model pelat.",
         fields=(
             Field(
@@ -451,12 +451,12 @@ SECTIONS: tuple[Section, ...] = (
                 optional=True,
                 min_value=0.0,
                 max_value=1.0,
-                help="Kosongkan (bawaan) bila pile TIDAK boleh menindih pier — run akan "
+                help="Kosongkan (bawaan) bila pile **tidak** boleh menindih pier — run akan "
                 "ditolak bila ternyata menindih. Diisi = Anda mengizinkannya sampai fraksi "
                 "ini (mis. 0,15 = paling banyak 15% luas pile berada di dalam pier). "
-                "KONSEKUENSI: bagian yang berada di dalam pier TIDAK melenturkan pelat — "
+                "**Konsekuensi:** bagian yang berada di dalam pier **tidak** melenturkan pelat — "
                 "pier dimodelkan jepit sempurna, jadi gaya di sana tersalur langsung ke "
-                "pier (aksi strut) dan kapasitasnya HARUS Anda cek terpisah; tool tidak "
+                "pier (aksi strut) dan kapasitasnya **harus** Anda cek terpisah; tool tidak "
                 "menghitungnya. Untuk geometri seperti ini angka desain juga menjadi "
                 "sensitif terhadap kehalusan mesh. Besarnya dilaporkan terpisah di calc "
                 "sheet (komponen strut vs komponen diskretisasi).",
@@ -467,7 +467,7 @@ SECTIONS: tuple[Section, ...] = (
         title="Material",
         icon=":material/layers:",
         help="Properti beton pilecap. Pelat dimodelkan elastis linier: satu nilai E dan satu "
-        "Poisson untuk seluruh pelat. Retak, rangkak, dan susut TIDAK dimodelkan -- bila Anda "
+        "Poisson untuk seluruh pelat. Retak, rangkak, dan susut **tidak** dimodelkan -- bila Anda "
         "ingin memperhitungkan penurunan kekakuan akibat retak, turunkan sendiri nilai E yang "
         "Anda isi dan tuliskan alasannya di kolom asal nilai E.",
         fields=(
@@ -480,7 +480,7 @@ SECTIONS: tuple[Section, ...] = (
                 min_value=0.0,
                 help="Kuat tekan beton yang disyaratkan pada umur 28 hari (silinder). "
                 "Dipakai untuk kapasitas lentur dan geser menurut SNI 2847:2019, dan untuk "
-                "menamai material pada berkas ekspor Midas. TIDAK dipakai menghitung E -- "
+                "menamai material pada berkas ekspor Midas. **Tidak** dipakai menghitung E -- "
                 "E Anda isi sendiri di bawah.",
             ),
             Field(
@@ -493,7 +493,7 @@ SECTIONS: tuple[Section, ...] = (
                 help="Modulus elastisitas beton -- ukuran kekakuannya. Menentukan besar "
                 "lendutan, tetapi hampir tidak memengaruhi momen desain pada model ini "
                 "karena tumpuannya statis tertentu terhadap beban yang sudah diketahui. "
-                "Tool TIDAK menghitung E dari f'c: rumusnya belum dikonfirmasi pasalnya, "
+                "Tool **tidak** menghitung E dari f'c: rumusnya belum dikonfirmasi pasalnya, "
                 "dan angka tanpa sumber dilarang. Nilai lazim beton normal fc30: sekitar "
                 "25.000-27.000 MPa.",
             ),
@@ -502,7 +502,7 @@ SECTIONS: tuple[Section, ...] = (
                 "Asal nilai E",
                 "text",
                 "",
-                help="WAJIB DIISI -- run akan ditolak bila kosong. Tuliskan dari mana angka E "
+                help="**Wajib diisi** -- run akan ditolak bila kosong. Tuliskan dari mana angka E "
                 "di atas berasal, karena inilah satu-satunya jejak yang membuat nilai itu "
                 "dapat diperiksa orang lain. Dicetak apa adanya di calc_sheet.md dan "
                 'run_manifest.json. Mis. "SNI 2847:2019 Ps. 19.2.2.1 untuk wc=2400" atau '
@@ -528,7 +528,7 @@ SECTIONS: tuple[Section, ...] = (
                 unit="kN/m^3",
                 optional=True,
                 min_value=0.0,
-                help="Berat beton per satuan volume, lazimnya 24 kN/m3. HANYA dipakai bila "
+                help="Berat beton per satuan volume, lazimnya 24 kN/m3. **Hanya** dipakai bila "
                 'Anda mencentang "Sertakan berat sendiri pilecap" di bagian Analisis; bila '
                 "tidak, angka ini tidak memengaruhi hasil sama sekali. Boleh dikosongkan.",
             ),
@@ -542,7 +542,7 @@ SECTIONS: tuple[Section, ...] = (
         "lama analisisnya -- dan hubungannya tidak linier: memperkecil ukuran jadi setengah "
         "membuat jumlah elemen menjadi empat kali. Bawaan di sini sudah menghasilkan mesh "
         "yang halus untuk pilecap berukuran lazim. Kontrak numerik tool ini menuntut seluruh "
-        "elemen berupa SEGI EMPAT; bila gmsh terpaksa menyisipkan segitiga, run dihentikan "
+        "elemen berupa **segi empat**; bila gmsh terpaksa menyisipkan segitiga, run dihentikan "
         "alih-alih diam-diam memakai elemen bermutu lebih rendah.",
         fields=(
             Field(
@@ -656,10 +656,10 @@ SECTIONS: tuple[Section, ...] = (
                 "ShellMITC4",
                 choices_fn=_shell_elements,
                 help="Rumusan matematis tiap elemen pelat. `ShellMITC4` adalah elemen 4 "
-                "titik berformulasi MITC yang memperhitungkan DEFORMASI GESER MELINTANG "
+                "titik berformulasi MITC yang memperhitungkan **deformasi geser melintang** "
                 "(teori pelat tebal Mindlin-Reissner). Dipilih sebagai bawaan karena pilecap "
                 "umumnya tebal terhadap bentangnya; teori pelat tipis (Kirchhoff) mengabaikan "
-                "geser melintang dan akan MEREMEHKAN lendutan pada pelat setebal ini. "
+                "geser melintang dan akan **meremehkan** lendutan pada pelat setebal ini. "
                 "`ShellDKGQ` adalah elemen pelat tipis tersebut, dan `ShellNLDKGQ` versinya "
                 "dengan nonlinieritas geometri -- keduanya tidak diperlukan pada analisis "
                 "elastis linier di sini.",
@@ -693,8 +693,8 @@ SECTIONS: tuple[Section, ...] = (
                 "bool",
                 False,
                 help="Menambahkan berat pilecap sendiri (tebal x berat jenis) sebagai beban "
-                "merata ke bawah. HATI-HATI dengan hitungan ganda: pada banyak alur kerja, "
-                "reaksi pile yang keluar dari analisis struktur atas SUDAH memuat berat "
+                "merata ke bawah. **Hati-hati** dengan hitungan ganda: pada banyak alur kerja, "
+                "reaksi pile yang keluar dari analisis struktur atas **sudah** memuat berat "
                 "pilecap. Centang hanya bila Anda yakin Pz pada CSV reaksi belum memuatnya, "
                 "dan ingat bahwa mencentangnya membuat jumlah beban tidak lagi sama dengan "
                 "jumlah Pz (PRD Bagian 17 item 6 masih terbuka).",
@@ -713,7 +713,7 @@ SECTIONS: tuple[Section, ...] = (
                 "Standar",
                 "text",
                 "SNI 2847:2019 (lewat shell-kit)",
-                help="Label standar yang dicetak di laporan. Ini CATATAN, bukan sakelar: "
+                help="Label standar yang dicetak di laporan. Ini **catatan**, bukan sakelar: "
                 "mengubah teksnya tidak mengubah rumus mana pun -- perhitungannya selalu "
                 "mengikuti SNI 2847:2019 sebagaimana diterapkan shell-kit.",
             ),
@@ -743,7 +743,7 @@ SECTIONS: tuple[Section, ...] = (
                 "Asal nilai fy",
                 "text",
                 "",
-                help="WAJIB DIISI -- run ditolak bila kosong. shell-kit menyediakan "
+                help="**Wajib diisi** -- run ditolak bila kosong. shell-kit menyediakan "
                 "DEFAULT_FY = 420 tetapi tool ini tidak memakainya diam-diam: mutu baja "
                 'menentukan seluruh luas tulangan. Mis. "BjTS 420B, SNI 2052:2017" atau '
                 '"sertifikat mill pabrik X".',
@@ -793,7 +793,7 @@ SECTIONS: tuple[Section, ...] = (
         icon=":material/linear_scale:",
         illustration="mode-desain-tulangan.svg",
         help="Dari luas tulangan yang dibutuhkan (As), tool memilih batang yang benar-benar "
-        "dapat dipasang. Anda menetapkan SATU dari dua hal -- spasi atau batangnya -- dan "
+        "dapat dipasang. Anda menetapkan **satu** dari dua hal -- spasi atau batangnya -- dan "
         "tool menghitung sisanya. Hasilnya digambar sebagai peta diameter dan peta spasi per "
         "elemen, bukan hanya angka As.",
         fields=(
@@ -803,14 +803,14 @@ SECTIONS: tuple[Section, ...] = (
                 "select",
                 config.REBAR_BASIS_DEFAULT,
                 choices=config.REBAR_BASES,
-                help="Dari mana angka desain TULANGAN LENTUR diambil -- sengkang tidak "
+                help="Dari mana angka desain **tulangan lentur** diambil -- sengkang tidak "
                 "terpengaruh sama sekali (lihat calc sheet bagian 7b). Berlaku untuk "
-                "SELURUH kombinasi "
+                "**seluruh** kombinasi "
                 "sekaligus, termasuk envelope. "
                 "`element` (bawaan) memakai nilai tiap elemen apa adanya -- algoritma asli "
                 "shell-kit. Kontur menjadi deliverable utamanya, dan Anda yang menentukan "
                 "pembagian zona penulangan saat mendetail. Nilai puncaknya di tepi pier "
-                "bersifat SINGULAR: membesar terus setiap mesh diperhalus (terukur ~16% "
+                "bersifat **singular**: membesar terus setiap mesh diperhalus (terukur ~16% "
                 "saat mesh 300 -> 150 mm), jadi hasilnya bergantung ukuran mesh yang Anda "
                 "pilih. Arahnya konservatif -- tulangan bertambah, bukan berkurang. "
                 "`strip` mengintegrasi momen sepanjang potongan di muka pier: konvergen "
@@ -826,7 +826,7 @@ SECTIONS: tuple[Section, ...] = (
                 choices=validators.REBAR_MODES,
                 help="spacing_fixed: Anda tetapkan spasi, tool memilih diameter. "
                 "diameter_fixed: Anda tetapkan batang, tool menghitung spasi. "
-                "Sumbu yang BERBEDA dari metode hitung di atas: yang ini menentukan batang "
+                "Sumbu yang **berbeda** dari metode hitung di atas: yang ini menentukan batang "
                 "yang dipasang, bukan dari mana angka As berasal.",
             ),
             Field(
@@ -900,7 +900,7 @@ SECTIONS: tuple[Section, ...] = (
                 help="Di titik mana momen desain dibaca. `pier_face` = di muka pier, sesuai "
                 "praktik SNI dan pilihan yang benar untuk desain. `peak` = nilai terbesar di "
                 "mana pun, yang pada model pelat muncul tepat di tumpuan dan bersifat "
-                "SINGULAR: angkanya membesar terus setiap kali mesh diperhalus, sehingga "
+                "**Singular**: angkanya membesar terus setiap kali mesh diperhalus, sehingga "
                 "bukan momen desain -- tool menandainya demikian di laporan. `both` mencetak "
                 "keduanya untuk perbandingan.",
             ),
@@ -909,7 +909,7 @@ SECTIONS: tuple[Section, ...] = (
     Section(
         title="Desain - sengkang",
         icon=":material/grid_4x4:",
-        help="Sengkang adalah tulangan VERTIKAL yang menembus tebal pilecap untuk menahan "
+        help="Sengkang adalah tulangan **vertikal** yang menembus tebal pilecap untuk menahan "
         "geser, dipasang sebagai kisi dengan dua spasi: memanjang dan melintang. Tool "
         "menghitung kebutuhan Av/s dari geser hasil analisis, lalu menerjemahkannya menjadi "
         "diameter sengkang pada kisi yang Anda tetapkan. Kedua spasi bersama-sama menentukan "
@@ -947,7 +947,7 @@ SECTIONS: tuple[Section, ...] = (
                 help="Membatasi pilihan pada diameter tertentu saja, mis. bila di lapangan "
                 "hanya tersedia D13 dan D16. Kosongkan untuk memakai daftar bawaan shell-kit "
                 "(D10 sampai D25). Daerah yang butuh lebih besar daripada diameter terbesar "
-                "yang diizinkan ditandai TIDAK MEMADAI di plot, bukan dibulatkan diam-diam.",
+                "yang diizinkan ditandai **tidak memadai** di plot, bukan dibulatkan diam-diam.",
             ),
         ),
     ),

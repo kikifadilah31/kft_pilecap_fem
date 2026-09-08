@@ -25,15 +25,19 @@ __all__ = [
     "PREAMBLE",
     "TypstMarkupError",
     "callout",
+    "code_block",
     "equation",
     "esc",
     "figure",
     "from_markdown",
     "heading",
+    "page_footer",
     "pagebreak",
+    "preamble",
     "ref",
     "slug",
     "table",
+    "url",
 ]
 
 
@@ -51,9 +55,7 @@ class TypstMarkupError(ValueError):
 # kompilasi dengan `ignore_system_fonts=True` menghasilkan berkas yang IDENTIK byte demi
 # byte, yang membuktikan dokumen ini tidak menyentuh font sistem sama sekali.
 
-PREAMBLE: Final[str] = """\
-// Dihasilkan oleh pilecap-fem. JANGAN diedit tangan -- berkas ini ditimpa setiap
-// `pilecap-report --pdf` dijalankan. Sumber angkanya ada di calc_sheet.md dan CSV.
+_PREAMBLE_BODY: Final[str] = """\
 
 #set page(paper: "a4", margin: (x: 2cm, y: 2.4cm))
 #set text(font: "New Computer Modern", size: 10pt, lang: "id")
@@ -89,6 +91,42 @@ PREAMBLE: Final[str] = """\
   [#text(weight: "bold", fill: warna.darken(20%))[#judul] \\ #isi],
 )
 """
+
+
+def preamble(*, regenerated_by: str, source_note: str) -> str:
+    """Preamble Typst, lengkap dengan komentar kepala yang jujur soal asal berkas.
+
+    `regenerated_by` diparameterkan karena dokumen yang berbeda dihasilkan perintah yang
+    berbeda. Komentar yang menyebut perintah keliru bukan sekadar tidak rapi: ia menuntun
+    pembaca menjalankan perintah yang menimpa dokumen LAIN, atau menyimpulkan berkas ini
+    ditulis tangan padahal tidak.
+    """
+    return (
+        "// Dihasilkan oleh pilecap-fem. JANGAN diedit tangan -- berkas ini ditimpa setiap\n"
+        f"// `{regenerated_by}` dijalankan. {source_note}\n" + _PREAMBLE_BODY
+    )
+
+
+PREAMBLE: Final[str] = preamble(
+    regenerated_by="pilecap-report --pdf",
+    source_note="Sumber angkanya ada di calc_sheet.md dan CSV.",
+)
+
+
+def page_footer(*, version: str, note: str) -> str:
+    """Footer tiap halaman: identitas tool + peringatan singkat + nomor halaman.
+
+    Dipasang SETELAH sampul supaya halaman sampul tetap bersih.
+    """
+    return (
+        "#set page(footer: context [\n"
+        "  #set text(size: 7.5pt, fill: luma(90))\n"
+        f"  pilecap-fem v{version} -- {note}\n"
+        "  #h(1fr)\n"
+        '  #counter(page).display("1 / 1", both: true)\n'
+        "])"
+    )
+
 
 #: Warna callout per jenis admonition GitHub.
 _CALLOUT_STYLE: Final[dict[str, tuple[str, str]]] = {
@@ -354,6 +392,56 @@ def figure(rel_path: str, caption: str, *, width: str = "100%") -> str:
             "Typst hanya menerima '/' -- pakai Path.as_posix()."
         )
     return f'#figure(\n  image("{rel_path}", width: {width}),\n  caption: [{_inline(caption)}],\n)'
+
+
+def _string_literal(text: str) -> str:
+    """Bungkus teks menjadi string literal Typst yang aman."""
+    isi = (
+        str(text)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+    )
+    return f'"{isi}"'
+
+
+def code_block(text: str) -> str:
+    """Blok perintah yang WAJIB dapat disalin dan dijalankan apa adanya.
+
+    Dirender sebagai `raw`, bukan prosa yang di-escape. Alasannya sama dengan raw span
+    pada `esc()`: tipografi Typst mengubah `--` menjadi en dash, sehingga
+    `--python 3.12` yang disalin pembaca menjadi perintah yang TIDAK berjalan. Pada bab
+    instalasi, seluruh isinya justru perintah semacam itu.
+
+    `from_markdown` sengaja tetap MENOLAK blok kode berpagar: blok perintah adalah
+    keputusan penyusun dokumen, bukan sesuatu yang boleh menyelinap dari prosa liabilitas.
+    """
+    return (
+        "#block(\n"
+        "  width: 100%,\n"
+        "  fill: luma(245),\n"
+        "  inset: 8pt,\n"
+        "  radius: 2pt,\n"
+        "  breakable: true,\n"
+        f"  raw(block: true, {_string_literal(text)}),\n"
+        ")"
+    )
+
+
+def url(target: str, text: str | None = None) -> str:
+    """Tautan web yang dapat diklik.
+
+    Tanpa `text`, URL-nya sendiri dicetak sebagai `raw` supaya `-`, `_`, dan `--` di
+    dalamnya tidak dimiringkan atau diubah menjadi en dash -- URL yang salah cetak tidak
+    dapat diketik ulang pembaca yang justru paling membutuhkannya.
+    """
+    if not target.startswith(("http://", "https://")):
+        raise TypstMarkupError(f"tautan harus http(s): {target!r}")
+    literal = _string_literal(target)
+    if text is None:
+        return f"#link({literal})[#raw({literal})]"
+    return f"#link({literal})[{_inline(text)}]"
 
 
 def callout(kind: str, body: str, *, title: str | None = None) -> str:

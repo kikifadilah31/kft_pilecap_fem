@@ -2,6 +2,97 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.12.0] — 2026-09-08 — panduan mandiri `pilecap-manual`
+
+Diminta pengguna: satu dokumen lengkap tentang tool ini -- asumsi, keterbatasan, cara
+pakai, sampai keluaran -- untuk dikirim ke calon pengguna yang **tidak dapat membaca
+README di GitHub atau tidak paham GitHub sama sekali**, dan ke eksekutif perusahaan yang
+menilai adopsi.
+
+### Added — command keenam `pilecap-manual`
+
+```bash
+pilecap-manual --out docs/manual        # -> panduan_pilecap_fem.typ + .pdf
+```
+
+DIUKUR pada v0.12.0: **39 halaman, 0,74 MB, 0,5 detik**, nol warning Typst. Ukurannya
+disengaja: hanya 7 ilustrasi (6 SVG vektor + 1 PNG), bukan ratusan kontur seperti laporan
+run, karena kanal edarnya adalah surel.
+
+Kerangkanya: ringkasan eksekutif yang tuntas dan berhenti di ±halaman 5 (apa yang
+dikerjakan, apa yang **tidak**, tingkat pertanggungjawaban, bukti validasi, kebutuhan
+penerapan, pernyataan tanggung jawab), pemasangan langkah demi langkah untuk orang yang
+belum pernah membuka terminal, contoh bawaan, penyiapan data, referensi **seluruh 60 field
+dalam 11 bagian**, dasar teori, keluaran, bukti dan validasi, keterbatasan, tanggung jawab,
+dan dua lampiran.
+
+Dokumen ini **dihasilkan dari kode**, bukan ditulis tangan. Alasannya bukan selera: proyek
+ini sudah berulang kali digigit dokumentasi yang tertinggal (tabel perbandingan README,
+caption plot, rujukan "Bagian 7", catatan sengkang). Versi, daftar field, pasal SNI,
+keterbatasan, item terbuka, dan pin dependency ditarik hidup-hidup saat dokumen dibangun.
+Prosa authored yang berpasangan dengan data hidup dikunci ke himpunan kunci hidupnya
+(`EXAMPLE_NAMES`, `FILE_PATTERNS`, `OPEN_BLOCKERS`, entry point), sehingga penambahan baru
+**meledak saat panduan dibangun** alih-alih hilang diam-diam. Terbukti bekerja saat
+pengembangan: kunci `FILE_PATTERNS` yang salah ketik menghentikan build, bukan menghasilkan
+tabel yang kurang dua baris.
+
+`pilecap-manual` ikut di dalam wheel, bukan sekadar skrip repo. Itu akar perbaikan untuk
+risiko PDF beku: penerima wheel dapat menghasilkan panduan yang cocok dengan versi yang
+benar-benar ia pasang. Sampul, footer setiap halaman, dan bab pemasangan menyuruh pembaca
+mencocokkan `pilecap-run --version` dengan nomor di sampul.
+
+Paket `pilecap_fem/manual/` sengaja terpisah dari `reporting_pdf/`: paket itu memegang
+invarian bahwa seluruh isinya adalah penyusunan ulang SATU run, dan generator tanpa run di
+dalamnya akan melemahkan satu-satunya invarian yang melindungi dokumen bertanda tangan.
+Arah impornya satu arah, dijaga `test_reporting_pdf_tidak_mengimpor_manual`.
+
+### Fixed — nomor subbab yang di-hardcode di dalam prosa `theory.py`
+
+`chapter_theory` menulis "konvensi yang ditetapkan pada Subbab 2.2" -- benar hanya selama
+bab itu kebetulan menjadi Bab 2. Di panduan ia Bab 6, sehingga rujukannya salah. Ini kelas
+kesalahan yang **sama persis** dengan rujukan "Bagian 7" yang diperbaiki di v0.11.3, dan
+perbaikannya juga sama: label `<teori-konvensi-tanda>` plus rujukan yang dapat diklik.
+Laporan run ikut terperbaiki.
+
+Akar pencegahannya bukan perbaikan itu sendiri melainkan
+`test_setiap_rujukan_silang_di_panduan_punya_label_tujuannya` beserta kembarannya untuk
+laporan run: keduanya menuntut setiap `#link(<label>)` punya heading tujuannya. Dua dokumen
+kini memakai ulang bab yang sama, sehingga sebuah bab dapat merujuk label yang hanya ada di
+salah satunya -- kegagalan yang tidak terlihat sampai PDF-nya dibuka orang. Test itu juga
+yang memaksa panduan benar-benar menyediakan `<lampiran-provenance>` dan
+`<bab-keterbatasan>`, dua tujuan yang dirujuk `chapter_theory` keluar dari dirinya.
+
+### Changed — penekanan HURUF KAPITAL di prosa `ui/schema.py` menjadi `**tebal**`
+
+31 penekanan pada 21 field dan 8 bagian. Prosa `help=` ditulis ketika ia hanya tampil di
+formulir Streamlit; kini ia juga tercetak di panduan PDF, tempat proyek ini sudah
+memutuskan (v0.11.1) bahwa kapital mendadak diganti tebal berwarna. Akronim teknis (MITC,
+DOF, DKGQ, ACI, BjTS, `DEFAULT_FY`) sengaja dibiarkan -- di sana kapital memang ejaannya.
+Formulir ikut membaik: Streamlit merender `**tebal**` sebagaimana mestinya.
+
+### Changed — `chapter_limitations` tidak lagi menerima `ReportData`
+
+Seluruh isinya statis kecuali catatan opsi yang dilewati, sehingga kini bertanda tangan
+`chapter_limitations(*, no_rebar_plots=False, no_envelope=False)` dan dapat dipakai apa
+adanya oleh panduan. Logika kompilasi Typst diekstrak menjadi
+`reporting_pdf.document.compile_document()`, sehingga panduan mewarisi perlakuan yang sama
+terhadap kegagalan: sumber `.typ` selalu ditulis lebih dulu, PDF yang terkunci penampil
+dikenali, setiap warning dicatat. Komentar kepala preamble dan footer halaman
+diparameterkan -- komentar yang menyebut perintah keliru menuntun pembaca menimpa dokumen
+lain. DIVERIFIKASI: `.typ` laporan run yang dihasilkan ulang identik byte demi byte
+kecuali dua baris rujukan yang memang diperbaiki.
+
+### Added — `typst_kit.code_block()` dan `typst_kit.url()`
+
+Bab instalasi seluruhnya berisi perintah, sedangkan `from_markdown` sengaja **menolak**
+blok kode berpagar. `code_block()` merendernya sebagai `raw`, dengan alasan yang sama
+seperti raw span pada `esc()`: tipografi Typst mengubah `--` menjadi en dash, sehingga
+`--python 3.12` yang disalin pembaca menjadi perintah yang tidak berjalan.
+
+`config.wheel_url()` menjadi satu-satunya sumber alamat unduhan, dan
+`test_url_wheel_di_panduan_sama_dengan_yang_di_readme` menagih README agar cocok --
+menjadikan suntingan tiap rilis diperiksa, bukan diingat.
+
 ## [0.11.3] — 2026-08-26 — `--pdf` gagal pada pile yang tumpang tindih dengan pier
 
 Dilaporkan pengguna: `TypstMarkupError: heading Markdown di dalam blok prosa` pada baris

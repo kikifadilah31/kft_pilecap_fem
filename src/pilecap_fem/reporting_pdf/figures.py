@@ -124,7 +124,7 @@ class FigureStore:
         salinan = self.print_dir / name
         if not salinan.exists() or salinan.stat().st_mtime < src.stat().st_mtime:
             shutil.copy2(src, salinan)
-        return FigureRef(self._prepare(salinan), caption)
+        return FigureRef(self._prepare_stabil(salinan), caption)
 
     # -- internal ----------------------------------------------------------
 
@@ -133,6 +133,25 @@ class FigureStore:
         self.missing.append(item)
         _log.warning("gambar %s tidak ada: %s", name, reason)
         return item
+
+    def _prepare_stabil(self, path: Path) -> str:
+        """Sama seperti `_prepare`, tetapi nama berkas hasilnya STABIL.
+
+        `downscale_figure` memberi awalan hash yang diturunkan dari jalur absolut
+        sumbernya, sehingga gambar yang sama memperoleh nama berbeda di setiap folder
+        keluaran. Pada laporan run itu tidak terasa -- foldernya memang baru setiap kali.
+
+        Pada ilustrasi tidak: ilustrasi dipakai panduan, yang sumber `.typ`-nya di-commit
+        dan di-diff antarversi. Nama yang berubah-ubah membuat setiap diff memuat satu
+        perubahan palsu, dan perubahan palsu yang rutin adalah cara tercepat membuat orang
+        berhenti membaca diff.
+        """
+        rel = self._prepare(path)
+        hasil = (self.run_dir / rel).resolve()
+        if hasil.name == path.name:
+            return rel
+        hasil.replace(path)
+        return path.resolve().relative_to(self.run_dir.resolve()).as_posix()
 
     def _prepare(self, path: Path) -> str:
         """Downscale bila perlu, lalu kembalikan jalur relatif gaya POSIX."""

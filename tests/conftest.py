@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -78,3 +79,25 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 @pytest.fixture(scope="session")
 def regen_golden(request: pytest.FixtureRequest) -> bool:
     return bool(request.config.getoption("--regen-golden"))
+
+
+#: Stempel waktu yang ditanam Typst di setiap PDF (`/ModDate`, `/CreationDate`).
+_STEMPEL_WAKTU = re.compile(rb"/(?:Mod|Creation)Date\(D:[^)]*\)")
+
+
+def pdf_tanpa_stempel_waktu(data: bytes) -> bytes:
+    """PDF dengan stempel waktunya dibuang, supaya dua kompilasi dapat dibandingkan.
+
+    Typst menanam `/ModDate` dan `/CreationDate` dari jam dinding. Dua kompilasi yang
+    kebetulan berada di sisi berbeda dari pergantian detik karena itu SELALU berbeda byte,
+    berapa pun samanya isi dokumen. Tanpa menormalkannya, test yang membandingkan dua
+    kompilasi sesungguhnya menguji jam, bukan apa yang hendak diujinya -- dan ia lolos
+    hanya selama dokumennya cukup kecil untuk dikompilasi dua kali dalam satu detik.
+    """
+    return _STEMPEL_WAKTU.sub(b"", data)
+
+
+@pytest.fixture
+def tanpa_stempel_waktu():
+    """Fungsi penormal stempel waktu PDF, dipakai test yang membandingkan dua kompilasi."""
+    return pdf_tanpa_stempel_waktu

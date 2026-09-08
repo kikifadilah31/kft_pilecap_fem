@@ -968,7 +968,14 @@ def _arah_muka(nama_berkas: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def chapter_limitations(data: ReportData) -> str:
+def chapter_limitations(*, no_rebar_plots: bool = False, no_envelope: bool = False) -> str:
+    """Asumsi dan keterbatasan.
+
+    Tidak menerima `ReportData`: seluruh isinya statis (`config.KNOWN_LIMITATIONS`,
+    `reporter.open_blockers_block()`) kecuali catatan opsi yang dilewati. Karena itu bab
+    ini dapat dipakai apa adanya oleh panduan mandiri, yang tidak punya run sama sekali --
+    dan `chapter_theory` memang merujuk ke sini lewat label `bab-keterbatasan`.
+    """
     bagian = [
         tk.heading(1, "Asumsi dan keterbatasan", label="bab-keterbatasan"),
         _md(
@@ -979,11 +986,11 @@ def chapter_limitations(data: ReportData) -> str:
         tk.heading(2, "Item yang belum dikonfirmasi"),
         _md(reporter.open_blockers_block()),
     ]
-    if data.no_rebar_plots or data.no_envelope:
+    if no_rebar_plots or no_envelope:
         dilewati = []
-        if data.no_rebar_plots:
+        if no_rebar_plots:
             dilewati.append("`--no-rebar-plots`: seluruh gambar tulangan tidak dihasilkan")
-        if data.no_envelope:
+        if no_envelope:
             dilewati.append("`--no-envelope`: bab envelope tidak berisi hasil")
         bagian.append(
             tk.callout(
