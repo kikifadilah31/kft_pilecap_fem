@@ -444,6 +444,30 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
         path = f"pilecap_fem/docs_img/{berkas}"
         assert path in names, f"ilustrasi {berkas} tidak ikut terkemas ({path})"
 
+    # Panduan menanam gambar DI LUAR `Section.illustration` juga -- perbandingan VC-6 dan
+    # contoh basis desain. Diperiksa dari sumber panduan yang benar-benar dihasilkan, bukan
+    # dari daftar yang diketik ulang di sini: daftar kedua akan tertinggal begitu sebuah
+    # gambar ditambahkan, dan kegagalannya hanya menimpa pengguna wheel berupa kotak
+    # "GAMBAR TIDAK TERSEDIA" pada bab yang seharusnya membuktikan angkanya dapat dipercaya.
+    import re
+    import tempfile
+
+    from pilecap_fem.manual import document as manual_document
+    from pilecap_fem.reporting_pdf.figures import FigureStore
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sumber = manual_document.render_source(FigureStore(Path(tmp), started_at=0.0))
+    for berkas in sorted(set(re.findall(r'image\("_figur_pdf/([^"]+)"', sumber))):
+        path = f"pilecap_fem/docs_img/{berkas}"
+        assert path in names, f"gambar panduan {berkas} tidak ikut terkemas ({path})"
+
+    # Tabel Lampiran C panduan DIBACA dari berkas ini, bukan dirujuk lewat `image(...)`,
+    # sehingga pemeriksaan gambar di atas tidak menangkapnya. Tanpa berkas ini
+    # `pilecap-manual` gagal total -- dan hanya pada pengguna wheel, karena di repo
+    # `config.illustrations_dir()` jatuh kembali ke `docs/img/` yang memuatnya.
+    path = "pilecap_fem/docs_img/vc6-ringkasan.json"
+    assert path in names, f"ringkasan VC-6 untuk Lampiran C tidak ikut terkemas ({path})"
+
     assert any(n.endswith("LICENSE") for n in names), "LICENSE tidak ikut terkemas"
 
 

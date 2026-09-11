@@ -37,3 +37,8 @@ PRD_pilecap_fem.md
 # PDF-nya tidak: ia ~0,8 MB per rilis, dihasilkan ulang dengan satu perintah, dan
 # diedarkan sebagai release asset di samping wheel.
 docs/manual/*.pdf
+# PNG di `_figur_pdf/` juga turunan: ia salinan `docs/img/` yang diperkecil, dan sejak
+# perbandingan VC-6 lengkap ditambahkan jumlahnya membuat setiap gambar tersimpan dua kali
+# di repo. SVG tetap di-commit (7 berkas, ~24 KB) supaya bagian ilustrasi sumber `.typ`
+# tetap dapat dikompilasi tanpa menjalankan apa pun.
+docs/manual/_figur_pdf/*.png

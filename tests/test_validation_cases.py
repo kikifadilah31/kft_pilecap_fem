@@ -623,8 +623,10 @@ def test_vc6_resultan_elemen_cocok_dengan_midas(vc6_hasil, kasus: str, combo: st
     terbukti seragam pada seluruh elemen, bukan faktor penyetel -- lihat SUMBER.md 4.1.
 
     Simpangan titik-per-titik maksimum sengaja TIDAK di-gate: ex02 `q_y` mencapai 7,7% pada
-    SATU elemen di singularitas tepi pier, tempat kedua formulasi elemen (ShellMITC4 vs
-    QUAD4 hibrida Midas) memang paling sah berbeda. Angkanya tetap dicetak.
+    SATU elemen, dan elemen itu DIUKUR berada 44 mm di luar tepi cakram pile P6 -- bukan di
+    tepi pier, sebagaimana docstring ini keliru menyatakannya sampai v0.12.0. Di situ beban
+    tekanan pile berhenti mendadak, dan kedua formulasi elemen (ShellMITC4 vs QUAD4 hibrida
+    Midas) memang paling sah berbeda. Angkanya tetap dicetak.
     """
     mesh, _, hasil, _ = vc6_hasil[(kasus, combo)]
     rows = validation_helpers.load_midas_centroid(VC6_DATA / kasus / "midas_force_global.csv", slug)

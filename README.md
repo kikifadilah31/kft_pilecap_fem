@@ -24,7 +24,7 @@ dipasang dari wheel rilis) diambil lewat HTTPS biasa.
 **PC tanpa git — pasang dari wheel rilis, disematkan ke versi tertentu:**
 
 ```bash
-uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.12.0/pilecap_fem-0.12.0-py3-none-any.whl
+uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.0/pilecap_fem-0.13.0-py3-none-any.whl
 ```
 
 **PC yang sudah punya git — jalankan langsung dari sumber, tanpa memasang apa pun:**
@@ -45,12 +45,12 @@ Lima hal yang perlu diketahui:
   menyebutkan persoalannya dan perintah yang benar — bukan error DLL yang membingungkan.
 - **Jalur wheel selalu tersemat ke satu versi** — nomor versinya ada di URL sendiri, jadi
   tidak perlu (dan tidak bisa) "selalu ambil terbaru" lewat jalur ini. Untuk versi lain,
-  ganti `v0.12.0` dan nama berkasnya menjadi versi yang dituju di
+  ganti `v0.13.0` dan nama berkasnya menjadi versi yang dituju di
   [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases) — lihat
   juga "Upgrade ke versi terbaru" di bawah.
 - **`--from` wajib** pada `uvx` karena nama paket (`pilecap-fem`) berbeda dari nama
   command yang dijalankan.
-- **Sematkan tag versi** (`@v0.12.0`) pada jalur git untuk pekerjaan yang hasilnya akan
+- **Sematkan tag versi** (`@v0.13.0`) pada jalur git untuk pekerjaan yang hasilnya akan
   diperiksa kemudian. `run_manifest.json` merekam `tool_version`; dengan tag, versi itu
   dapat ditarik kembali persis. Tanpa tag, instalasi selalu mengambil `main` terbaru.
 - **Unduhan pertama ~60 MB** (gmsh saja 40 MB), lalu di-cache `uv`.
@@ -68,10 +68,10 @@ pilecap-run --version
 yang lebih baru, dengan `--force` karena nama tool-nya (`pilecap-fem`) sudah terpasang:
 
 ```bash
-uv tool install --python 3.12 --force https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.12.0/pilecap_fem-0.12.0-py3-none-any.whl
+uv tool install --python 3.12 --force https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.0/pilecap_fem-0.13.0-py3-none-any.whl
 ```
 
-Ganti `v0.12.0` dan nama berkasnya sesuai versi yang dituju di
+Ganti `v0.13.0` dan nama berkasnya sesuai versi yang dituju di
 [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases). Tanpa
 `--force`, `uv` menolak memasang di atas tool dengan nama yang sama.
 
@@ -1012,6 +1012,35 @@ Kesesuaian yang terukur (RMS terhadap nilai puncak, 4 contoh × 2 kombinasi):
 | Reaksi tumpuan `Rz` | 0,539% | 0,999596 |
 | Momen **puncak** (penentu tulangan) | 0,515% | — |
 
+### Selisihnya per elemen, bukan hanya angka ringkasnya
+
+Satu angka RMS dapat menyembunyikan banyak hal, jadi selisih tiap elemen disajikan apa
+adanya. Gambar dihasilkan `tools/plot_vc6_perbandingan.py`, yang memakai ulang pembaca
+Midas dan rekonsiliasi tanda **yang sama persis** dengan gate VC-6 — bukan jalur kedua yang
+bisa menyimpang diam-diam.
+
+![Selisih per elemen terhadap Midas Civil](docs/img/vc6-sebaran-m_xx-1_2D_1_6L.png)
+
+Panel kiri: selisih tiap elemen terhadap besar nilainya. Yang penting bukan sempitnya
+sebaran, melainkan bahwa titiknya **terpusat di garis nol tanpa kemiringan** — kekeliruan
+sistematis akan menarik titik ke satu sisi seiring membesarnya nilai. Panel kanan membaca
+sebaran yang sama secara kumulatif: **separuh elemen menyimpang < 0,03%**, 99% < 1%.
+
+Yang belum dijawab angka ringkas: **di mana** selisih terbesar berada. Peta berikut
+menunjukkannya untuk keempat contoh sekaligus, satu panel masing-masing:
+
+![Letak selisih per elemen](docs/img/vc6-peta-m_xx-1_2D_1_6L.png)
+
+Simpangan terbesar berkumpul persis di **tepi cakram pile** — tempat beban tekanan berhenti
+mendadak — dan di sekitar pier. Di situlah ShellMITC4 dan QUAD4 hibrida Midas memang paling
+sah berbeda. Di seluruh bidang pelat lainnya, tempat angka desain sebenarnya diambil,
+selisihnya nyaris tidak terlihat.
+
+> Letak elemen terburuk **diukur, bukan diperkirakan**: labelnya diturunkan dari
+> `geometry.json`, dan pada keempat contoh ia jatuh di tepi cakram **pile**, bukan pier.
+> Sampai v0.12.0 docstring VC-6 keliru menyebutnya "singularitas tepi pier" — kekeliruan
+> yang justru terungkap karena label itu berhenti diketik tangan.
+
 `ex04` menguji apa yang tidak disentuh tiga lainnya — **jalur tumpang tindih pile–pier**.
 Yang terbukti di sana, masing-masing terhadap implementasi independen: himpunan node jepit
 Midas **sama persis** dengan milik tool ini (479 node, termasuk node lensa — nol selisih di
@@ -1036,6 +1065,98 @@ Sebagai efek samping, `Σ FZ` reaksi Midas sama dengan `Σ Pz` masukan sampai ~9
 berarti — ini memvalidasi **ekspor `model.mct`** secara end-to-end, satu-satunya cek yang
 menyentuh sisi Midas yang sesungguhnya. Rincian lengkap: `tests/data/vc6/SUMBER.md`.
 
+
+#### Seluruh gaya dalam, kedua kombinasi beban
+
+Kedua gambar di atas menyajikan `m_xx` pada kombinasi gravitasi. Set lengkapnya —
+**5 gaya × 2 kombinasi × 4 contoh** — ada di bawah ini, dikelompokkan per gaya.
+Seluruhnya dihasilkan `tools/plot_vc6_perbandingan.py` dari data yang sama dengan gate
+VC-6, dan angkanya tersedia sebagai tabel di **Lampiran C panduan**.
+
+<details>
+<summary><b>Momen lentur arah X</b> — <code>m_xx</code></summary>
+
+**Kombinasi 1.2D+1.6L**
+
+![Sebaran selisih m_xx, 1.2D+1.6L](docs/img/vc6-sebaran-m_xx-1_2D_1_6L.png)
+
+![Letak selisih m_xx, 1.2D+1.6L](docs/img/vc6-peta-m_xx-1_2D_1_6L.png)
+
+**Kombinasi 1.2D+1.0W**
+
+![Sebaran selisih m_xx, 1.2D+1.0W](docs/img/vc6-sebaran-m_xx-1_2D_1_0W.png)
+
+![Letak selisih m_xx, 1.2D+1.0W](docs/img/vc6-peta-m_xx-1_2D_1_0W.png)
+
+</details>
+
+<details>
+<summary><b>Momen lentur arah Y</b> — <code>m_yy</code></summary>
+
+**Kombinasi 1.2D+1.6L**
+
+![Sebaran selisih m_yy, 1.2D+1.6L](docs/img/vc6-sebaran-m_yy-1_2D_1_6L.png)
+
+![Letak selisih m_yy, 1.2D+1.6L](docs/img/vc6-peta-m_yy-1_2D_1_6L.png)
+
+**Kombinasi 1.2D+1.0W**
+
+![Sebaran selisih m_yy, 1.2D+1.0W](docs/img/vc6-sebaran-m_yy-1_2D_1_0W.png)
+
+![Letak selisih m_yy, 1.2D+1.0W](docs/img/vc6-peta-m_yy-1_2D_1_0W.png)
+
+</details>
+
+<details>
+<summary><b>Momen puntir</b> — <code>m_xy</code></summary>
+
+**Kombinasi 1.2D+1.6L**
+
+![Sebaran selisih m_xy, 1.2D+1.6L](docs/img/vc6-sebaran-m_xy-1_2D_1_6L.png)
+
+![Letak selisih m_xy, 1.2D+1.6L](docs/img/vc6-peta-m_xy-1_2D_1_6L.png)
+
+**Kombinasi 1.2D+1.0W**
+
+![Sebaran selisih m_xy, 1.2D+1.0W](docs/img/vc6-sebaran-m_xy-1_2D_1_0W.png)
+
+![Letak selisih m_xy, 1.2D+1.0W](docs/img/vc6-peta-m_xy-1_2D_1_0W.png)
+
+</details>
+
+<details>
+<summary><b>Geser melintang arah X</b> — <code>q_x</code></summary>
+
+**Kombinasi 1.2D+1.6L**
+
+![Sebaran selisih q_x, 1.2D+1.6L](docs/img/vc6-sebaran-q_x-1_2D_1_6L.png)
+
+![Letak selisih q_x, 1.2D+1.6L](docs/img/vc6-peta-q_x-1_2D_1_6L.png)
+
+**Kombinasi 1.2D+1.0W**
+
+![Sebaran selisih q_x, 1.2D+1.0W](docs/img/vc6-sebaran-q_x-1_2D_1_0W.png)
+
+![Letak selisih q_x, 1.2D+1.0W](docs/img/vc6-peta-q_x-1_2D_1_0W.png)
+
+</details>
+
+<details>
+<summary><b>Geser melintang arah Y</b> — <code>q_y</code></summary>
+
+**Kombinasi 1.2D+1.6L**
+
+![Sebaran selisih q_y, 1.2D+1.6L](docs/img/vc6-sebaran-q_y-1_2D_1_6L.png)
+
+![Letak selisih q_y, 1.2D+1.6L](docs/img/vc6-peta-q_y-1_2D_1_6L.png)
+
+**Kombinasi 1.2D+1.0W**
+
+![Sebaran selisih q_y, 1.2D+1.0W](docs/img/vc6-sebaran-q_y-1_2D_1_0W.png)
+
+![Letak selisih q_y, 1.2D+1.0W](docs/img/vc6-peta-q_y-1_2D_1_0W.png)
+
+</details>
 ## Yang perlu diketahui: mesh tidak reproducible bit demi bit
 
 DIUKUR pada gmsh 4.15.2, dua run dengan input dan versi yang sama: jumlah node & elemen

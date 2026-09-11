@@ -17,6 +17,7 @@ from pilecap_fem.reporting_pdf.figures import FigureStore
 __all__ = [
     "appendix_capacity",
     "appendix_commands",
+    "appendix_comparison",
     "chapter_evidence",
     "chapter_executive",
     "chapter_first_run",
@@ -850,7 +851,7 @@ def chapter_output() -> str:
 # ---------------------------------------------------------------------------
 
 
-def chapter_evidence() -> str:
+def chapter_evidence(figs: FigureStore) -> str:
     """Bab 8 -- VC-6, non-determinisme mesh, dan pin dependency."""
     b = [tk.heading(1, "Bukti dan validasi", label="bab-bukti")]
 
@@ -878,6 +879,55 @@ def chapter_evidence() -> str:
             ],
             align=["left", "right", "right"],
             caption="Kesesuaian terukur terhadap Midas Civil pada seluruh contoh bawaan.",
+        )
+    )
+
+    b.append(tk.heading(2, "Selisihnya per elemen, bukan hanya angka ringkasnya"))
+    b.append(
+        _md(
+            "Satu angka RMS dapat menyembunyikan banyak hal, sehingga selisih tiap elemen "
+            "disajikan apa adanya di bawah ini.\n\n"
+            "Panel kiri memperlihatkan selisih tiap elemen terhadap besar nilainya. Yang "
+            "perlu dilihat bukan sempitnya sebaran, melainkan bahwa titik-titiknya "
+            "**terpusat di garis nol tanpa kemiringan**: seandainya salah satu program "
+            "keliru secara sistematis, titik-titik itu akan menyimpang ke satu sisi seiring "
+            "membesarnya nilai. Panel kanan membaca sebaran yang sama secara kumulatif — "
+            "**separuh elemen menyimpang kurang dari 0,03%**, dan 99% di bawah 1%."
+        )
+    )
+    b.append(
+        figs.illustration(
+            nama_gambar_vc6("sebaran", "m_xx", KOMBINASI_VC6[0][1]),
+            "Selisih per elemen terhadap Midas Civil pada keempat contoh bawaan: "
+            "struktur selisihnya (kiri) dan sebaran kumulatifnya (kanan).",
+        ).to_typst()
+    )
+    b.append(
+        _md(
+            "Angka ringkas belum menjawab pertanyaan yang paling menentukan: **di mana** "
+            "selisih terbesar berada. Bila ia derau yang menyebar, sebarannya merata; bila "
+            "ada kekeliruan sistematis, ia berkumpul di satu zona.\n\n"
+            "Peta berikut menjawabnya untuk kasus yang **paling buruk** — bukan yang paling "
+            "rapi. Selisih terbesar berkumpul persis di **tepi cakram tiang dan sekitar "
+            "pier**, yaitu tempat beban dan tumpuan berhenti mendadak sehingga kedua "
+            "formulasi elemen memang paling sah berbeda. Di seluruh bidang pelat lainnya, "
+            "tempat angka desain sebenarnya diambil, selisihnya nyaris tidak terlihat."
+        )
+    )
+    b.append(
+        figs.illustration(
+            nama_gambar_vc6("peta", "m_xx", KOMBINASI_VC6[0][1]),
+            "Letak selisih pada contoh terburuk: simpangan terbesar terkonsentrasi di "
+            "tepi cakram tiang, bukan menyebar di seluruh pelat.",
+        ).to_typst(width="88%")
+    )
+
+    b.append(
+        _md(
+            "Kedua gambar di atas menyajikan momen `m_xx` pada kombinasi gravitasi saja. "
+            "Gambar yang setara untuk **kelima gaya dalam pada kedua kombinasi beban** "
+            "disajikan lengkap pada "
+            "[Lampiran C](#lampiran-perbandingan), beserta tabel angkanya."
         )
     )
 
@@ -1091,6 +1141,148 @@ def _versi_shell_kit() -> str:
         return md.version("shell-kit")
     except md.PackageNotFoundError:  # pragma: no cover -- pemasangan tidak lengkap
         return "?"
+
+
+#: Kombinasi beban VC-6: (nama tampilan, slug berkas). Kembar dari `VC6_KOMBINASI` di
+#: `tests/test_validation_cases.py`. Paket tidak boleh mengimpor `tests/`, sehingga
+#: daftarnya ditulis di sini dan `test_lampiran_perbandingan_memuat_setiap_gaya_dan_kombinasi`
+#: yang menagih kesamaannya -- kombinasi baru menggagalkan test, bukan hilang dari lampiran.
+KOMBINASI_VC6: tuple[tuple[str, str], ...] = (
+    ("1.2D+1.6L", "1_2D_1_6L"),
+    ("1.2D+1.0W", "1_2D_1_0W"),
+)
+
+#: Gaya dalam yang dibandingkan, beserta keterangannya bagi pembaca non-FEM.
+MEDAN_VC6: tuple[tuple[str, str], ...] = (
+    ("m_xx", "Momen lentur arah X"),
+    ("m_yy", "Momen lentur arah Y"),
+    ("m_xy", "Momen puntir"),
+    ("q_x", "Geser melintang arah X"),
+    ("q_y", "Geser melintang arah Y"),
+)
+
+#: Contoh bawaan beserta nama pendeknya, dipakai pada tabel Lampiran C.
+_KASUS_VC6: tuple[str, ...] = ("ex01", "ex02", "ex03", "ex04")
+
+
+def nama_gambar_vc6(jenis: str, medan: str, slug: str) -> str:
+    """Nama berkas gambar perbandingan VC-6.
+
+    Kembar dari `nama_berkas()` di `tools/plot_vc6_perbandingan.py`; dijaga
+    `test_setiap_gambar_vc6_yang_dirujuk_panduan_ada_berkasnya`.
+    """
+    return f"vc6-{jenis}-{medan}-{slug}.png"
+
+
+def _ringkasan_vc6() -> dict:
+    """Angka RMS/p50/p99/maksimum, dibaca dari berkas yang ditulis skrip pembuat gambar.
+
+    TIDAK dihitung ulang di sini, dan tidak diketik: data VC-6 tidak ikut ke dalam wheel,
+    sehingga panduan tidak dapat menghitungnya sendiri di komputer pengguna. Membacanya dari
+    berkas yang sama dengan yang menghasilkan gambarnya membuat tabel dan gambar tidak dapat
+    menyimpang satu sama lain.
+    """
+    import json
+
+    jalur = config.illustrations_dir() / "vc6-ringkasan.json"
+    isi: dict = json.loads(jalur.read_text(encoding="utf-8"))
+    return isi
+
+
+def appendix_comparison(figs: FigureStore) -> str:
+    """Lampiran C -- perbandingan lengkap per elemen terhadap Midas Civil.
+
+    Bab 8 sengaja hanya memuat satu gaya pada satu kombinasi: menanam kedua puluh gambar di
+    sana akan mengubur narasi buktinya. Yang lengkap ditaruh di sini, tempat pembaca yang
+    memang hendak memeriksa dapat menelusurinya satu per satu.
+    """
+    ringkas = _ringkasan_vc6()
+    b = [
+        tk.heading(
+            1,
+            "Lampiran C -- perbandingan lengkap terhadap Midas Civil",
+            label="lampiran-perbandingan",
+        )
+    ]
+    b.append(
+        _md(
+            "Lampiran ini menyajikan perbandingan per elemen untuk **kelima gaya dalam** "
+            "pada **kedua kombinasi beban**, terhadap keempat contoh bawaan. Seluruhnya "
+            "berasal dari perhitungan yang sama dengan yang dipakai syarat rilis, sehingga "
+            "angka di sini identik dengan yang diperiksa saat versi ini diterbitkan."
+        )
+    )
+
+    b.append(tk.heading(2, "Cara membaca gambar di lampiran ini"))
+    b.append(
+        _md(
+            "Setiap gaya disajikan dengan dua gambar.\n\n"
+            "1. **Struktur dan sebaran selisih.** Panel kiri memplot selisih tiap elemen "
+            "terhadap besar nilainya; yang dibaca bukan sempitnya sebaran, melainkan bahwa "
+            "titiknya terpusat di garis nol **tanpa kemiringan** -- kekeliruan sistematis "
+            "akan menarik titik ke satu sisi seiring membesarnya nilai. Panel kanan "
+            'menjawab "berapa persen elemen yang selisihnya di bawah sekian": pilih satu '
+            "tinggi, geser ke kanan sampai menyentuh kurva, lalu baca angkanya di sumbu "
+            "bawah. **Kurva yang lebih ke kiri berarti lebih rapat kesesuaiannya.**\n"
+            "2. **Letak selisih pada denah.** Satu panel per contoh. Gambar ini membedakan "
+            '"cocok" dari "kebetulan cocok rata-rata": selisih yang berupa derau '
+            "tersebar merata, sedangkan kekeliruan sistematis berkumpul di satu zona. "
+            "Skala warnanya **ditetapkan per panel**, karena puncak antarcontoh berbeda "
+            "sampai sepuluh kali lipat."
+        )
+    )
+    b.append(
+        tk.callout(
+            "NOTE",
+            _md(
+                "Selisih selalu dinyatakan terhadap **nilai puncak**, bukan terhadap nilai "
+                "di titik itu sendiri. Di dekat garis nol momen kedua program sama-sama "
+                "benar, tetapi rasio per titiknya tak terhingga sehingga tidak bermakna."
+            ),
+        )
+    )
+
+    for combo, slug in KOMBINASI_VC6:
+        b.append(tk.heading(2, f"Kombinasi {combo}"))
+        for medan, keterangan in MEDAN_VC6:
+            b.append(tk.heading(3, f"{keterangan} (`{medan}`)"))
+            angka = ringkas[combo][medan]
+            b.append(
+                tk.table(
+                    ["Contoh", "Elemen", "RMS", "Separuh di bawah", "99% di bawah", "Maksimum"],
+                    [
+                        [
+                            f"`{kasus}`",
+                            f"{angka[kasus]['n_elemen']:,}".replace(",", "."),
+                            _persen(angka[kasus]["rms"]),
+                            _persen(angka[kasus]["p50"]),
+                            _persen(angka[kasus]["p99"]),
+                            _persen(angka[kasus]["maks"]),
+                        ]
+                        for kasus in _KASUS_VC6
+                    ],
+                    align=["left", "right", "right", "right", "right", "right"],
+                    caption=f"Selisih `{medan}` terhadap Midas Civil, kombinasi {combo}.",
+                )
+            )
+            b.append(
+                figs.illustration(
+                    nama_gambar_vc6("sebaran", medan, slug),
+                    f"Struktur dan sebaran selisih `{medan}`, kombinasi {combo}.",
+                ).to_typst()
+            )
+            b.append(
+                figs.illustration(
+                    nama_gambar_vc6("peta", medan, slug),
+                    f"Letak selisih `{medan}` pada denah keempat contoh, kombinasi {combo}.",
+                ).to_typst(width="92%")
+            )
+    return "\n\n".join(b)
+
+
+def _persen(nilai: float) -> str:
+    """Persentase gaya Indonesia, tiga desimal."""
+    return f"{nilai:.3f}".replace(".", ",") + "%"
 
 
 #: Perintah yang tersedia beserta perannya. Dikunci ke entry point di `pyproject.toml`

@@ -38,7 +38,7 @@
 
 #set page(footer: context [
   #set text(size: 7.5pt, fill: luma(90))
-  pilecap-fem v0.12.0 -- alat bantu perhitungan; wajib diperiksa dan disetujui engineer yang bertanggung jawab
+  pilecap-fem v0.13.0 -- alat bantu perhitungan; wajib diperiksa dan disetujui engineer yang bertanggung jawab
   #h(1fr)
   #counter(page).display("1 / 1", both: true)
 ])
@@ -50,7 +50,7 @@
   #text(size: 13pt)[Analisis pilecap berbasis metode elemen hingga,
   dari data masukan sampai penulangan menurut SNI 2847:2019]
   #v(14mm)
-  #text(size: 16pt, weight: 700)[Versi 0.12.0]
+  #text(size: 16pt, weight: 700)[Versi 0.13.0]
   #v(3mm)
   #text(size: 10pt)[Sistem satuan internal: SI (N, m, Pa)]
 ]
@@ -165,7 +165,7 @@ Selisih terbesar yang terukur pada momen puncak -- besaran yang menentukan tulan
 == Pernyataan tanggung jawab
 
 #kotak([HATI-HATI], rgb("#b91c1c"))[
-#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.12.0 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
+#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.13.0 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
 ]
 
 #pagebreak()
@@ -237,7 +237,7 @@ Satu perintah, disalin utuh termasuk alamat panjang di ujungnya.
   inset: 8pt,
   radius: 2pt,
   breakable: true,
-  raw(block: true, "uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.12.0/pilecap_fem-0.12.0-py3-none-any.whl"),
+  raw(block: true, "uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.0/pilecap_fem-0.13.0-py3-none-any.whl"),
 )
 
 Bagian-bagian perintah tersebut berarti sebagai berikut.
@@ -269,7 +269,7 @@ Bagian `--python 3.12` tidak boleh dihilangkan. Pustaka solver yang dipakai pera
   raw(block: true, "pilecap-run --version"),
 )
 
-Perintah itu harus menampilkan nomor versi. Bila yang muncul adalah #tegas[0.12.0], panduan ini memang panduan untuk perangkat lunak yang baru Anda pasang. Bila berbeda, mintalah panduan untuk versi tersebut -- daftar field dan keterbatasan dapat berbeda antarversi.
+Perintah itu harus menampilkan nomor versi. Bila yang muncul adalah #tegas[0.13.0], panduan ini memang panduan untuk perangkat lunak yang baru Anda pasang. Bila berbeda, mintalah panduan untuk versi tersebut -- daftar field dan keterbatasan dapat berbeda antarversi.
 
 == Bila gagal
 
@@ -297,10 +297,10 @@ Perintahnya sama dengan pemasangan, ditambah `--force`. Tanpa itu `uv` melihat b
   inset: 8pt,
   radius: 2pt,
   breakable: true,
-  raw(block: true, "uv tool install --force --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.12.0/pilecap_fem-0.12.0-py3-none-any.whl"),
+  raw(block: true, "uv tool install --force --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.0/pilecap_fem-0.13.0-py3-none-any.whl"),
 )
 
-Alamat pada perintah di atas menunjuk versi #tegas[0.12.0]. Untuk versi lain, bagian nomor versinya diganti. Seluruh rilis beserta alamatnya tersedia pada halaman berikut.
+Alamat pada perintah di atas menunjuk versi #tegas[0.13.0]. Untuk versi lain, bagian nomor versinya diganti. Seluruh rilis beserta alamatnya tersedia pada halaman berikut.
 
 #link("https://github.com/kikifadilah31/kft_pilecap_fem/releases")[#raw("https://github.com/kikifadilah31/kft_pilecap_fem/releases")]
 
@@ -369,7 +369,7 @@ Fitur ini perlu dipasang sekali dengan menambahkan bagian `[ui]` pada perintah p
   inset: 8pt,
   radius: 2pt,
   breakable: true,
-  raw(block: true, "uv tool install --force --python 3.12 \"pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.12.0/pilecap_fem-0.12.0-py3-none-any.whl\""),
+  raw(block: true, "uv tool install --force --python 3.12 \"pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.0/pilecap_fem-0.13.0-py3-none-any.whl\""),
 )
 
 Setelah itu formulirnya dibuka dengan satu perintah.
@@ -1377,6 +1377,28 @@ Perbandingan ini berjalan sebagai #tegas[syarat rilis]: versi yang gagal memenuh
   caption: [Kesesuaian terukur terhadap Midas Civil pada seluruh contoh bawaan.],
 )
 
+== Selisihnya per elemen, bukan hanya angka ringkasnya
+
+Satu angka RMS dapat menyembunyikan banyak hal, sehingga selisih tiap elemen disajikan apa adanya di bawah ini.
+
+Panel kiri memperlihatkan selisih tiap elemen terhadap besar nilainya. Yang perlu dilihat bukan sempitnya sebaran, melainkan bahwa titik-titiknya #tegas[terpusat di garis nol tanpa kemiringan]: seandainya salah satu program keliru secara sistematis, titik-titik itu akan menyimpang ke satu sisi seiring membesarnya nilai. Panel kanan membaca sebaran yang sama secara kumulatif — #tegas[separuh elemen menyimpang kurang dari 0,03%], dan 99% di bawah 1%.
+
+#figure(
+  image("_figur_pdf/vc6-sebaran-m_xx-1_2D_1_6L.png", width: 100%),
+  caption: [Selisih per elemen terhadap Midas Civil pada keempat contoh bawaan: struktur selisihnya (kiri) dan sebaran kumulatifnya (kanan).],
+)
+
+Angka ringkas belum menjawab pertanyaan yang paling menentukan: #tegas[di mana] selisih terbesar berada. Bila ia derau yang menyebar, sebarannya merata; bila ada kekeliruan sistematis, ia berkumpul di satu zona.
+
+Peta berikut menjawabnya untuk kasus yang #tegas[paling buruk] — bukan yang paling rapi. Selisih terbesar berkumpul persis di #tegas[tepi cakram tiang dan sekitar pier], yaitu tempat beban dan tumpuan berhenti mendadak sehingga kedua formulasi elemen memang paling sah berbeda. Di seluruh bidang pelat lainnya, tempat angka desain sebenarnya diambil, selisihnya nyaris tidak terlihat.
+
+#figure(
+  image("_figur_pdf/vc6-peta-m_xx-1_2D_1_6L.png", width: 88%),
+  caption: [Letak selisih pada contoh terburuk: simpangan terbesar terkonsentrasi di tepi cakram tiang, bukan menyebar di seluruh pelat.],
+)
+
+Kedua gambar di atas menyajikan momen `m_xx` pada kombinasi gravitasi saja. Gambar yang setara untuk #tegas[kelima gaya dalam pada kedua kombinasi beban] disajikan lengkap pada #link(<lampiran-perbandingan>)[Lampiran C], beserta tabel angkanya.
+
 == Tiga hal yang perlu dibaca jujur
 
 #enum(
@@ -1516,7 +1538,7 @@ Item berikut BELUM dikonfirmasi, sehingga pengecekan terkait #tegas[tidak dilaku
 = Tanggung jawab dan lisensi <bab-tanggung-jawab>
 
 #kotak([HATI-HATI], rgb("#b91c1c"))[
-#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.12.0 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
+#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.13.0 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
 ]
 
 Pernyataan di atas berlaku bagi setiap keluaran perangkat lunak ini, dan dicetak apa adanya pada setiap lembar perhitungan, setiap ringkasan, dan setiap laporan PDF yang dihasilkannya.
@@ -1542,7 +1564,7 @@ Perhitungan kapasitas penampang tidak dikerjakan sendiri oleh perangkat lunak in
   [Butir], [Nilai],
   [Standar acuan], [SNI 2847:2019],
   [Pustaka kapasitas], [`shell-kit` v3.3.0],
-  [Perangkat lunak ini], [`pilecap-fem` v0.12.0],
+  [Perangkat lunak ini], [`pilecap-fem` v0.13.0],
 ),
   caption: [Sumber perhitungan kapasitas.],
 )
@@ -1628,4 +1650,280 @@ Panduan ini dapat dibuat ulang kapan saja untuk versi yang sedang terpasang. Gun
   radius: 2pt,
   breakable: true,
   raw(block: true, "pilecap-manual --out panduan"),
+)
+
+= Lampiran C -- perbandingan lengkap terhadap Midas Civil <lampiran-perbandingan>
+
+Lampiran ini menyajikan perbandingan per elemen untuk #tegas[kelima gaya dalam] pada #tegas[kedua kombinasi beban], terhadap keempat contoh bawaan. Seluruhnya berasal dari perhitungan yang sama dengan yang dipakai syarat rilis, sehingga angka di sini identik dengan yang diperiksa saat versi ini diterbitkan.
+
+== Cara membaca gambar di lampiran ini
+
+Setiap gaya disajikan dengan dua gambar.
+
+#enum(
+  start: 1,
+  [
+#tegas[Struktur dan sebaran selisih.] Panel kiri memplot selisih tiap elemen terhadap besar nilainya; yang dibaca bukan sempitnya sebaran, melainkan bahwa titiknya terpusat di garis nol #tegas[tanpa kemiringan] -- kekeliruan sistematis akan menarik titik ke satu sisi seiring membesarnya nilai. Panel kanan menjawab "berapa persen elemen yang selisihnya di bawah sekian": pilih satu tinggi, geser ke kanan sampai menyentuh kurva, lalu baca angkanya di sumbu bawah. #tegas[Kurva yang lebih ke kiri berarti lebih rapat kesesuaiannya.]
+  ],
+  [
+#tegas[Letak selisih pada denah.] Satu panel per contoh. Gambar ini membedakan "cocok" dari "kebetulan cocok rata-rata": selisih yang berupa derau tersebar merata, sedangkan kekeliruan sistematis berkumpul di satu zona. Skala warnanya #tegas[ditetapkan per panel], karena puncak antarcontoh berbeda sampai sepuluh kali lipat.
+  ],
+)
+
+#kotak([CATATAN], rgb("#1d4ed8"))[
+Selisih selalu dinyatakan terhadap #tegas[nilai puncak], bukan terhadap nilai di titik itu sendiri. Di dekat garis nol momen kedua program sama-sama benar, tetapi rasio per titiknya tak terhingga sehingga tidak bermakna.
+]
+
+== Kombinasi 1.2D+1.6L
+
+=== Momen lentur arah X (`m_xx`)
+
+#figure(
+  table(
+  columns: 6,
+  align: (left, right, right, right, right, right),
+  [Contoh], [Elemen], [RMS], [Separuh di bawah], [99% di bawah], [Maksimum],
+  [`ex01`], [1.835], [0,132%], [0,024%], [0,581%], [1,593%],
+  [`ex02`], [6.844], [0,024%], [0,004%], [0,090%], [0,428%],
+  [`ex03`], [4.808], [0,055%], [0,009%], [0,191%], [1,437%],
+  [`ex04`], [3.162], [0,063%], [0,013%], [0,254%], [0,801%],
+),
+  caption: [Selisih `m_xx` terhadap Midas Civil, kombinasi 1.2D+1.6L.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-sebaran-m_xx-1_2D_1_6L.png", width: 100%),
+  caption: [Struktur dan sebaran selisih `m_xx`, kombinasi 1.2D+1.6L.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-peta-m_xx-1_2D_1_6L.png", width: 92%),
+  caption: [Letak selisih `m_xx` pada denah keempat contoh, kombinasi 1.2D+1.6L.],
+)
+
+=== Momen lentur arah Y (`m_yy`)
+
+#figure(
+  table(
+  columns: 6,
+  align: (left, right, right, right, right, right),
+  [Contoh], [Elemen], [RMS], [Separuh di bawah], [99% di bawah], [Maksimum],
+  [`ex01`], [1.835], [0,114%], [0,022%], [0,480%], [1,500%],
+  [`ex02`], [6.844], [0,043%], [0,007%], [0,197%], [0,613%],
+  [`ex03`], [4.808], [0,048%], [0,008%], [0,174%], [1,368%],
+  [`ex04`], [3.162], [0,134%], [0,023%], [0,598%], [2,323%],
+),
+  caption: [Selisih `m_yy` terhadap Midas Civil, kombinasi 1.2D+1.6L.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-sebaran-m_yy-1_2D_1_6L.png", width: 100%),
+  caption: [Struktur dan sebaran selisih `m_yy`, kombinasi 1.2D+1.6L.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-peta-m_yy-1_2D_1_6L.png", width: 92%),
+  caption: [Letak selisih `m_yy` pada denah keempat contoh, kombinasi 1.2D+1.6L.],
+)
+
+=== Momen puntir (`m_xy`)
+
+#figure(
+  table(
+  columns: 6,
+  align: (left, right, right, right, right, right),
+  [Contoh], [Elemen], [RMS], [Separuh di bawah], [99% di bawah], [Maksimum],
+  [`ex01`], [1.835], [0,144%], [0,019%], [0,561%], [1,971%],
+  [`ex02`], [6.844], [0,057%], [0,010%], [0,228%], [0,958%],
+  [`ex03`], [4.808], [0,080%], [0,013%], [0,307%], [2,007%],
+  [`ex04`], [3.162], [0,102%], [0,016%], [0,382%], [2,067%],
+),
+  caption: [Selisih `m_xy` terhadap Midas Civil, kombinasi 1.2D+1.6L.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-sebaran-m_xy-1_2D_1_6L.png", width: 100%),
+  caption: [Struktur dan sebaran selisih `m_xy`, kombinasi 1.2D+1.6L.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-peta-m_xy-1_2D_1_6L.png", width: 92%),
+  caption: [Letak selisih `m_xy` pada denah keempat contoh, kombinasi 1.2D+1.6L.],
+)
+
+=== Geser melintang arah X (`q_x`)
+
+#figure(
+  table(
+  columns: 6,
+  align: (left, right, right, right, right, right),
+  [Contoh], [Elemen], [RMS], [Separuh di bawah], [99% di bawah], [Maksimum],
+  [`ex01`], [1.835], [0,164%], [0,024%], [0,604%], [2,386%],
+  [`ex02`], [6.844], [0,120%], [0,010%], [0,479%], [2,338%],
+  [`ex03`], [4.808], [0,109%], [0,019%], [0,461%], [1,511%],
+  [`ex04`], [3.162], [0,091%], [0,016%], [0,395%], [1,040%],
+),
+  caption: [Selisih `q_x` terhadap Midas Civil, kombinasi 1.2D+1.6L.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-sebaran-q_x-1_2D_1_6L.png", width: 100%),
+  caption: [Struktur dan sebaran selisih `q_x`, kombinasi 1.2D+1.6L.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-peta-q_x-1_2D_1_6L.png", width: 92%),
+  caption: [Letak selisih `q_x` pada denah keempat contoh, kombinasi 1.2D+1.6L.],
+)
+
+=== Geser melintang arah Y (`q_y`)
+
+#figure(
+  table(
+  columns: 6,
+  align: (left, right, right, right, right, right),
+  [Contoh], [Elemen], [RMS], [Separuh di bawah], [99% di bawah], [Maksimum],
+  [`ex01`], [1.835], [0,162%], [0,022%], [0,650%], [2,093%],
+  [`ex02`], [6.844], [0,265%], [0,019%], [1,046%], [7,747%],
+  [`ex03`], [4.808], [0,094%], [0,016%], [0,408%], [1,657%],
+  [`ex04`], [3.162], [0,114%], [0,017%], [0,521%], [1,377%],
+),
+  caption: [Selisih `q_y` terhadap Midas Civil, kombinasi 1.2D+1.6L.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-sebaran-q_y-1_2D_1_6L.png", width: 100%),
+  caption: [Struktur dan sebaran selisih `q_y`, kombinasi 1.2D+1.6L.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-peta-q_y-1_2D_1_6L.png", width: 92%),
+  caption: [Letak selisih `q_y` pada denah keempat contoh, kombinasi 1.2D+1.6L.],
+)
+
+== Kombinasi 1.2D+1.0W
+
+=== Momen lentur arah X (`m_xx`)
+
+#figure(
+  table(
+  columns: 6,
+  align: (left, right, right, right, right, right),
+  [Contoh], [Elemen], [RMS], [Separuh di bawah], [99% di bawah], [Maksimum],
+  [`ex01`], [1.835], [0,104%], [0,020%], [0,471%], [1,229%],
+  [`ex02`], [6.844], [0,019%], [0,003%], [0,073%], [0,372%],
+  [`ex03`], [4.808], [0,053%], [0,009%], [0,180%], [1,484%],
+  [`ex04`], [3.162], [0,050%], [0,009%], [0,181%], [0,700%],
+),
+  caption: [Selisih `m_xx` terhadap Midas Civil, kombinasi 1.2D+1.0W.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-sebaran-m_xx-1_2D_1_0W.png", width: 100%),
+  caption: [Struktur dan sebaran selisih `m_xx`, kombinasi 1.2D+1.0W.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-peta-m_xx-1_2D_1_0W.png", width: 92%),
+  caption: [Letak selisih `m_xx` pada denah keempat contoh, kombinasi 1.2D+1.0W.],
+)
+
+=== Momen lentur arah Y (`m_yy`)
+
+#figure(
+  table(
+  columns: 6,
+  align: (left, right, right, right, right, right),
+  [Contoh], [Elemen], [RMS], [Separuh di bawah], [99% di bawah], [Maksimum],
+  [`ex01`], [1.835], [0,083%], [0,017%], [0,371%], [0,994%],
+  [`ex02`], [6.844], [0,045%], [0,007%], [0,212%], [0,780%],
+  [`ex03`], [4.808], [0,048%], [0,007%], [0,176%], [1,427%],
+  [`ex04`], [3.162], [0,108%], [0,017%], [0,415%], [1,936%],
+),
+  caption: [Selisih `m_yy` terhadap Midas Civil, kombinasi 1.2D+1.0W.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-sebaran-m_yy-1_2D_1_0W.png", width: 100%),
+  caption: [Struktur dan sebaran selisih `m_yy`, kombinasi 1.2D+1.0W.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-peta-m_yy-1_2D_1_0W.png", width: 92%),
+  caption: [Letak selisih `m_yy` pada denah keempat contoh, kombinasi 1.2D+1.0W.],
+)
+
+=== Momen puntir (`m_xy`)
+
+#figure(
+  table(
+  columns: 6,
+  align: (left, right, right, right, right, right),
+  [Contoh], [Elemen], [RMS], [Separuh di bawah], [99% di bawah], [Maksimum],
+  [`ex01`], [1.835], [0,110%], [0,015%], [0,418%], [1,596%],
+  [`ex02`], [6.844], [0,045%], [0,009%], [0,179%], [0,917%],
+  [`ex03`], [4.808], [0,078%], [0,013%], [0,294%], [2,002%],
+  [`ex04`], [3.162], [0,086%], [0,012%], [0,326%], [1,858%],
+),
+  caption: [Selisih `m_xy` terhadap Midas Civil, kombinasi 1.2D+1.0W.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-sebaran-m_xy-1_2D_1_0W.png", width: 100%),
+  caption: [Struktur dan sebaran selisih `m_xy`, kombinasi 1.2D+1.0W.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-peta-m_xy-1_2D_1_0W.png", width: 92%),
+  caption: [Letak selisih `m_xy` pada denah keempat contoh, kombinasi 1.2D+1.0W.],
+)
+
+=== Geser melintang arah X (`q_x`)
+
+#figure(
+  table(
+  columns: 6,
+  align: (left, right, right, right, right, right),
+  [Contoh], [Elemen], [RMS], [Separuh di bawah], [99% di bawah], [Maksimum],
+  [`ex01`], [1.835], [0,141%], [0,019%], [0,548%], [2,380%],
+  [`ex02`], [6.844], [0,104%], [0,008%], [0,397%], [2,385%],
+  [`ex03`], [4.808], [0,102%], [0,017%], [0,428%], [1,516%],
+  [`ex04`], [3.162], [0,072%], [0,013%], [0,303%], [0,766%],
+),
+  caption: [Selisih `q_x` terhadap Midas Civil, kombinasi 1.2D+1.0W.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-sebaran-q_x-1_2D_1_0W.png", width: 100%),
+  caption: [Struktur dan sebaran selisih `q_x`, kombinasi 1.2D+1.0W.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-peta-q_x-1_2D_1_0W.png", width: 92%),
+  caption: [Letak selisih `q_x` pada denah keempat contoh, kombinasi 1.2D+1.0W.],
+)
+
+=== Geser melintang arah Y (`q_y`)
+
+#figure(
+  table(
+  columns: 6,
+  align: (left, right, right, right, right, right),
+  [Contoh], [Elemen], [RMS], [Separuh di bawah], [99% di bawah], [Maksimum],
+  [`ex01`], [1.835], [0,149%], [0,017%], [0,628%], [2,197%],
+  [`ex02`], [6.844], [0,225%], [0,014%], [0,801%], [7,552%],
+  [`ex03`], [4.808], [0,099%], [0,016%], [0,404%], [1,833%],
+  [`ex04`], [3.162], [0,093%], [0,014%], [0,406%], [1,048%],
+),
+  caption: [Selisih `q_y` terhadap Midas Civil, kombinasi 1.2D+1.0W.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-sebaran-q_y-1_2D_1_0W.png", width: 100%),
+  caption: [Struktur dan sebaran selisih `q_y`, kombinasi 1.2D+1.0W.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-peta-q_y-1_2D_1_0W.png", width: 92%),
+  caption: [Letak selisih `q_y` pada denah keempat contoh, kombinasi 1.2D+1.0W.],
 )

@@ -82,19 +82,36 @@ def regen_golden(request: pytest.FixtureRequest) -> bool:
 
 
 #: Stempel waktu yang ditanam Typst di setiap PDF (`/ModDate`, `/CreationDate`).
-_STEMPEL_WAKTU = re.compile(rb"/(?:Mod|Creation)Date\(D:[^)]*\)")
+#: Segalanya di dalam PDF yang diturunkan dari JAM DINDING, bukan dari isi dokumen.
+#:
+#: Ada TIGA, dan ketiganya harus dibuang bersama -- membuang sebagian saja menghasilkan test
+#: yang lolos hampir selalu lalu gagal sesekali, yang lebih menyesatkan daripada test yang
+#: selalu gagal:
+#:
+#: 1. `/ModDate` dan `/CreationDate` pada kamus Info.
+#: 2. Blok XMP (`xmp:ModifyDate`, `xmp:CreateDate`) -- stempel yang sama dalam bentuk XML.
+#: 3. Sidik dokumen -- `/ID`, `xmpMM:InstanceID`, `xmpMM:DocumentID` -- yang Typst turunkan
+#:    dari isi BERIKUT stempel waktunya, sehingga ikut berubah meskipun dokumennya identik.
+_STEMPEL_WAKTU: tuple[re.Pattern[bytes], ...] = (
+    re.compile(rb"/(?:Mod|Creation)Date\(D:[^)]*\)"),
+    re.compile(rb"<xmp:(?:Modify|Create)Date>[^<]*</xmp:(?:Modify|Create)Date>"),
+    re.compile(rb"<xmpMM:(?:Instance|Document)ID>[^<]*</xmpMM:(?:Instance|Document)ID>"),
+    re.compile(rb"/ID\s*\[(?:\s*\([^)]*\)\s*|\s*<[^>]*>\s*)+\]"),
+)
 
 
 def pdf_tanpa_stempel_waktu(data: bytes) -> bytes:
     """PDF dengan stempel waktunya dibuang, supaya dua kompilasi dapat dibandingkan.
 
-    Typst menanam `/ModDate` dan `/CreationDate` dari jam dinding. Dua kompilasi yang
-    kebetulan berada di sisi berbeda dari pergantian detik karena itu SELALU berbeda byte,
-    berapa pun samanya isi dokumen. Tanpa menormalkannya, test yang membandingkan dua
-    kompilasi sesungguhnya menguji jam, bukan apa yang hendak diujinya -- dan ia lolos
-    hanya selama dokumennya cukup kecil untuk dikompilasi dua kali dalam satu detik.
+    Dua kompilasi yang kebetulan berada di sisi berbeda dari pergantian detik SELALU
+    berbeda byte, berapa pun samanya isi dokumen. Tanpa menormalkannya, test yang
+    membandingkan dua kompilasi sesungguhnya menguji jam, bukan apa yang hendak diujinya --
+    dan ia lolos hanya selama dokumennya cukup kecil untuk dikompilasi dua kali dalam satu
+    detik. Panduan yang bertambah besar membuat batas itu terlampaui.
     """
-    return _STEMPEL_WAKTU.sub(b"", data)
+    for pola in _STEMPEL_WAKTU:
+        data = pola.sub(b"", data)
+    return data
 
 
 @pytest.fixture

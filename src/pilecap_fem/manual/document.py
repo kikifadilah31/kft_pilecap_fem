@@ -50,11 +50,12 @@ def render_source(figs: FigureStore, degradasi: list[str] | None = None) -> str:
         config_reference.chapter_config(figs, catat),
         theory.chapter_theory(figs),
         chapters.chapter_output(),
-        chapters.chapter_evidence(),
+        chapters.chapter_evidence(figs),
         bab_laporan.chapter_limitations(),
         chapters.chapter_responsibility(),
         chapters.appendix_capacity(),
         chapters.appendix_commands(),
+        chapters.appendix_comparison(figs),
     ]
     return "\n\n".join(b for b in bagian if b)
 

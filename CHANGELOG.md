@@ -2,6 +2,126 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.13.0] — 2026-09-11 — perbandingan VC-6 lengkap: 5 gaya x 2 kombinasi
+
+Diminta pengguna: ketiga jenis diagram perbandingan, untuk SELURUH contoh bawaan dan
+SELURUH gaya dalam, terhadap model pembanding Midas.
+
+### Added — 20 gambar perbandingan + Lampiran C panduan
+
+`tools/plot_vc6_perbandingan.py` kini menghasilkan, untuk tiap kombinasi beban x tiap gaya
+(`m_xx`, `m_yy`, `m_xy`, `q_x`, `q_y`): gambar sebaran (struktur selisih + kurva kumulatif,
+keempat contoh bertumpuk) dan peta kisi 2x2 letak selisih. Total 20 gambar plus
+`vc6-ringkasan.json`.
+
+DIUKUR pada v0.13.0: 21 berkas, **2,61 MB** seluruhnya; panduan **57 halaman, 5,54 MB**,
+dibangun 0,7 detik. Jauh di bawah perkiraan 10-15 MB berkat tiga penghematan yang tidak
+membuang satu elemen pun dari gambar: dihasilkan tepat pada `PDF_IMAGE_MAX_PX` sehingga
+tidak ada byte yang dibayar dua kali, palet PNG dikuantisasi, dan `docs/manual/_figur_pdf/`
+berhenti di-commit karena isinya turunan `docs/img/`.
+
+Panduan mendapat **Lampiran C**; Bab 8 sengaja TIDAK berubah isinya -- tetap satu gaya pada
+satu kombinasi, plus penunjuk. Menanam kedua puluh gambar di sana akan mengubur narasi
+buktinya, dan jalur baca eksekutif (Bab 1, berhenti di halaman 5) harus tetap utuh.
+
+Tabel angka di Lampiran C dibaca dari `vc6-ringkasan.json` yang ditulis skrip yang sama
+dengan yang menghasilkan gambarnya. Data VC-6 tidak ikut ke dalam wheel sehingga panduan
+tidak dapat menghitungnya sendiri; membacanya dari berkas yang sama membuat tabel dan
+gambar tidak dapat menyimpang satu sama lain.
+
+Peta memakai skala warna **per panel**, bukan bersama: puncak antarcontoh berbeda sampai
+sepuluh kali lipat, dan skala bersama akan membuat tiga panel tampak kosong.
+
+### Fixed — test font sesungguhnya masih menguji jam
+
+v0.12.1 menormalkan `/ModDate` dan `/CreationDate`, dan itu tidak cukup. Typst juga menanam
+stempel yang sama sebagai XMP (`xmp:ModifyDate`, `xmp:CreateDate`) DAN menurunkan tiga sidik
+dokumen darinya (`/ID`, `xmpMM:InstanceID`, `xmpMM:DocumentID`). Panduan yang membesar
+membuat dua kompilasinya kerap jatuh di detik berbeda, sehingga test gagal sekitar sekali
+dari tiga kali dijalankan -- kegagalan sesekali yang jauh lebih menyesatkan daripada
+kegagalan tetap. DIVERIFIKASI dengan memaksa jeda melewati pergantian detik: setelah
+normalisasi lengkap, keluarannya identik byte demi byte.
+
+### Fixed — dua klaim yang salah karena angkanya diketik, bukan dihitung
+
+* Tabel Lampiran C sempat mencetak RMS `ex03` sebagai 0,056% sedangkan pengukuran langsung
+  0,055%: nilainya dibulatkan dua kali, sekali saat ditulis ke JSON lalu sekali lagi saat
+  dicetak. Ringkasan kini menyimpan enam desimal sehingga pembulatan hanya terjadi di
+  tempat pencetakan.
+* Kenaikan versi 0.12.0 -> 0.12.1 mengganti seluruh kemunculan "0.12.0" di README, termasuk
+  di dalam catatan sejarah yang berbunyi "Sampai v0.12.0 docstring VC-6 keliru..." --
+  sehingga catatan itu berubah menyatakan dirinya sendiri masih keliru. Dikembalikan.
+
+Sebagai efek samping, peta keempat contoh memperlihatkan hal yang menguatkan koreksi
+v0.12.1: pada SELURUH contoh, elemen dengan simpangan terbesar jatuh di tepi cakram **pile**
+(P1, P6, P3, P4), bukan tepi pier.
+
+### Changed — keterbacaan gambar
+
+Pengguna perlu bertanya bagaimana membaca kurva kumulatifnya. Judul panel karena itu diganti
+menjadi pertanyaan yang ia jawab ("Berapa persen elemen yang selisihnya di bawah sekian?"),
+ditambah satu anak panah contoh baca yang angkanya dihitung, dan satu paragraf cara membaca
+di pembuka Lampiran C.
+
+## [0.12.1] — 2026-09-08 — selisih VC-6 per elemen dapat dilihat, bukan hanya diringkas
+
+> **Tidak dirilis terpisah.** Versi ini tidak pernah diberi tag maupun wheel; seluruh
+> isinya ikut diterbitkan dalam **0.13.0**. Entrinya dipertahankan karena mencatat
+> perbaikan yang berdiri sendiri -- klaim keliru "tepi pier" pada docstring VC-6.
+
+Ditanyakan pengguna: apa arti kolom "RMS terburuk", dan dapatkah selisih per elemen
+terhadap Midas Civil digambarkan supaya dapat dibandingkan sendiri.
+
+### Added — `tools/plot_vc6_perbandingan.py` dan dua gambar perbandingan
+
+Satu angka RMS dapat menyembunyikan dua hal yang justru menentukan kepercayaan: apakah
+selisihnya terpusat di nol tanpa kemiringan sistematis, dan DI MANA simpangan terbesarnya
+berada. Dua gambar baru menjawab keduanya, dan kini ditanam di README serta bab
+"Bukti dan validasi" panduan.
+
+`vc6-perbandingan-sebaran.png` -- panel kiri memplot selisih tiap elemen terhadap besar
+nilainya; yang dibaca bukan sempitnya sebaran melainkan bahwa titiknya terpusat di garis
+nol tanpa kemiringan. Panel kanan membaca sebaran yang sama secara kumulatif: DIUKUR,
+separuh elemen menyimpang < 0,03% dan 99% < 1%.
+
+Rancangan panel kiri sempat berupa scatter "Midas vs kami". Itu dibuang: pada ketelitian
+setinggi ini seluruh titiknya runtuh ke garis `y = x`, sehingga gambarnya memakan separuh
+ruang tanpa memberi tahu apa pun selain "cocok".
+
+`vc6-perbandingan-peta.png` -- letak selisih pada denah, memakai kasus PALING BURUK
+(`ex02`, `q_y`, simpangan maksimum 7,75%), bukan yang paling rapi. Simpangan terbesar
+terkonsentrasi di tepi cakram pile dan sekitar pier, tempat beban dan tumpuan berhenti
+mendadak; di seluruh bidang pelat lainnya -- tempat angka desain sebenarnya diambil --
+selisihnya nyaris tidak terlihat.
+
+Skripnya memakai ulang `validation_helpers` yang dipakai test, bukan pembaca Midas kedua.
+Menulis pembaca kedua berarti dua jalur yang dapat menyimpang diam-diam, dan gambar yang
+menyatakan kesesuaian LEBIH BAIK daripada yang sesungguhnya diuji jauh lebih buruk daripada
+tidak ada gambar. Ia skrip, bukan bagian paket, karena `tests/data/vc6/` tidak ikut ke
+dalam wheel; gambarnya dihasilkan sekali lalu di-commit ke `docs/img/`.
+
+### Fixed — VC-6 keliru menyebut elemen terburuk berada di tepi pier
+
+Docstring `test_vc6_resultan_elemen_cocok_dengan_midas` menyatakan simpangan 7,7% pada
+`ex02 q_y` terjadi "di singularitas tepi pier". DIUKUR, elemen itu berada **44 mm di luar
+tepi cakram pile P6**, sedangkan tepi pier 205 mm jauhnya.
+
+Kekeliruan ini ditemukan justru karena label pada gambar peta DITURUNKAN dari
+`geometry.json` alih-alih diketik: label yang diketik tangan lebih dulu ditulis "tepi pier"
+mengikuti docstring, lalu angka yang dihitung membantahnya. Label itu kini selalu diturunkan,
+sehingga tidak dapat lagi menyimpang bila kasus atau medan yang dipetakan diganti.
+
+### Changed — test wheel menjaga SELURUH gambar yang ditanam panduan
+
+Sebelumnya hanya berkas `Section.illustration` yang diperiksa, sehingga gambar di luar itu
+(perbandingan VC-6, contoh basis desain) dapat luput dari pengemasan. Daftarnya kini
+diturunkan dari sumber panduan yang benar-benar dihasilkan, bukan diketik ulang di test --
+daftar kedua akan tertinggal begitu sebuah gambar ditambahkan, dan kegagalannya hanya
+menimpa pengguna wheel berupa kotak "GAMBAR TIDAK TERSEDIA" pada bab yang seharusnya
+membuktikan angkanya dapat dipercaya.
+
+Panduan kini 41 halaman, 1,78 MB (dari 40 halaman / 1,16 MB pada 0.12.0).
+
 ## [0.12.0] — 2026-09-08 — panduan mandiri `pilecap-manual`
 
 Diminta pengguna: satu dokumen lengkap tentang tool ini -- asumsi, keterbatasan, cara

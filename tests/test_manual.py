@@ -54,6 +54,7 @@ def test_panduan_memuat_seluruh_bab_wajib(sumber: str):
         "Tanggung jawab dan lisensi",
         "Lampiran A",
         "Lampiran B",
+        "Lampiran C",
     ):
         assert f"= {judul}" in sumber, f"bab {judul!r} hilang dari panduan"
 
@@ -353,3 +354,66 @@ def test_gambar_perbandingan_basis_desain_ikut_di_panduan(sumber: str):
     """
     assert "contoh-diameter-element-vs-strip.png" in sumber
     assert "identik piksel demi piksel" in sumber
+
+
+def test_lampiran_perbandingan_memuat_setiap_gaya_dan_kombinasi(sumber: str):
+    """Cakupan Lampiran C harus SAMA PERSIS dengan yang benar-benar diuji gate VC-6.
+
+    Paket tidak boleh mengimpor `tests/`, sehingga daftar kombinasi dan gaya ditulis di
+    `manual/chapters.py` dan test inilah yang menagih kesamaannya. Tanpa ini, gaya atau
+    kombinasi baru akan diuji gate tetapi hilang diam-diam dari lampiran yang seharusnya
+    menjadi buktinya.
+    """
+    from test_validation_cases import VC6_KOMBINASI
+
+    assert bab.KOMBINASI_VC6 == VC6_KOMBINASI, "daftar kombinasi panduan menyimpang dari VC-6"
+    assert {m for m, _ in bab.MEDAN_VC6} == {"m_xx", "m_yy", "m_xy", "q_x", "q_y"}
+
+    for combo, slug in bab.KOMBINASI_VC6:
+        assert f"Kombinasi {combo}" in sumber, f"kombinasi {combo} hilang dari Lampiran C"
+        for medan, _ in bab.MEDAN_VC6:
+            for jenis in ("sebaran", "peta"):
+                berkas = bab.nama_gambar_vc6(jenis, medan, slug)
+                assert berkas in sumber, f"gambar {berkas} tidak dirujuk panduan"
+
+
+def test_setiap_gambar_vc6_yang_dirujuk_panduan_ada_berkasnya():
+    """Ke-20 gambar harus benar-benar ada, bukan menjadi kotak "GAMBAR TIDAK TERSEDIA".
+
+    Gambar dihasilkan `tools/plot_vc6_perbandingan.py` lalu di-commit; panduan hanya
+    menanamnya. Berkas yang hilang menghasilkan dokumen yang tetap terbit dengan lubang
+    tepat di bab yang seharusnya membuktikan angkanya dapat dipercaya.
+    """
+    folder = config.illustrations_dir()
+    for _combo, slug in bab.KOMBINASI_VC6:
+        for medan, _ in bab.MEDAN_VC6:
+            for jenis in ("sebaran", "peta"):
+                berkas = folder / bab.nama_gambar_vc6(jenis, medan, slug)
+                assert berkas.is_file(), f"{berkas.name} belum dihasilkan; jalankan tools/"
+
+
+def test_ringkasan_vc6_mencakup_seluruh_kasus():
+    """Angka tabel Lampiran C dibaca dari berkas, bukan diketik.
+
+    Berkas itu ditulis skrip yang sama dengan yang menghasilkan gambarnya, sehingga tabel
+    dan gambar tidak dapat menyimpang satu sama lain.
+    """
+    import json
+
+    ringkas = json.loads(
+        (config.illustrations_dir() / "vc6-ringkasan.json").read_text(encoding="utf-8")
+    )
+    n = 0
+    for combo, _slug in bab.KOMBINASI_VC6:
+        for medan, _ in bab.MEDAN_VC6:
+            for kasus in ("ex01", "ex02", "ex03", "ex04"):
+                butir = ringkas[combo][medan][kasus]
+                assert butir["n_elemen"] > 0
+                assert 0.0 <= butir["p50"] <= butir["p99"] <= butir["maks"]
+                n += 1
+    assert n == 40, f"ringkasan memuat {n} kasus, seharusnya 40"
+
+
+def test_bab_bukti_menunjuk_ke_lampiran_perbandingan(sumber: str):
+    """Bab 8 sengaja ringkas; pembaca harus diberi tahu di mana yang lengkap."""
+    assert "#link(<lampiran-perbandingan>)" in sumber
