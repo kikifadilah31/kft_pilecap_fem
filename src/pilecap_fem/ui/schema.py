@@ -453,7 +453,8 @@ SECTIONS: tuple[Section, ...] = (
                 max_value=1.0,
                 help="Kosongkan (bawaan) bila pile **tidak** boleh menindih pier — run akan "
                 "ditolak bila ternyata menindih. Diisi = Anda mengizinkannya sampai fraksi "
-                "ini (mis. 0,15 = paling banyak 15% luas pile berada di dalam pier). "
+                "ini (mis. 0,15 = paling banyak 15% luas pile berada di dalam pier; **1,0** untuk "
+                "pile yang seluruhnya berada di bawah pier, seperti pile tengah grup 3x3). "
                 "**Konsekuensi:** bagian yang berada di dalam pier **tidak** melenturkan pelat — "
                 "pier dimodelkan jepit sempurna, jadi gaya di sana tersalur langsung ke "
                 "pier (aksi strut) dan kapasitasnya **harus** Anda cek terpisah; tool tidak "

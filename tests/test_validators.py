@@ -198,6 +198,41 @@ def test_rule7a_tepat_di_ambang_lolos():
     validators.validate_mesh_vs_geometry(cfg, make_geom())
 
 
+def test_rule7a_angka_bulat_tepat_di_ambang_lolos_meski_pembulatan_floating_point():
+    """D600 dengan mesh 100 mm TEPAT memenuhi D/h = 6 -- dan dulu DITOLAK.
+
+    Di floating point, 0,6 / 0,1 = 5,999999999999999. Test `tepat_di_ambang` di atas tidak
+    menangkapnya karena 0,8 / (0,8/6) kebetulan dibulatkan ke arah yang aman; yang ini
+    memakai pasangan angka bulat yang benar-benar diketik pengguna dan benar-benar gagal.
+    Pesan galatnya waktu itu menyarankan "turunkan ke <= 100 mm" -- nilai yang sudah dipakai.
+    """
+    cfg = base_cfg()
+    cfg["mesh"]["size_global"] = 0.1
+    piles = tuple(
+        Pile(pile_id=f"P{i + 1}", x=x, y=y, diameter=0.6)
+        for i, (x, y) in enumerate([(-1.2, -1.2), (1.2, -1.2), (-1.2, 1.2), (1.2, 1.2)])
+    )
+    assert config.MIN_ELEM_PER_PILE_DIAMETER > 0.6 / 0.1, "prasyarat test: pembulatan harus terjadi"
+    validators.validate_mesh_vs_geometry(cfg, make_geom(piles=piles))
+
+
+def test_rule7a_saran_ukuran_mesh_selalu_meloloskan_aturannya():
+    """Batas atas dibulatkan KE BAWAH. Pembulatan biasa akan menyarankan 109 mm untuk D651,6,
+    padahal 0,6516 / 0,109 = 5,98 < 6 -- saran yang tetap ditolak.
+    """
+    cfg = base_cfg()
+    cfg["mesh"]["size_global"] = 0.5
+    piles = tuple(
+        Pile(pile_id=f"P{i + 1}", x=x, y=y, diameter=0.6516)
+        for i, (x, y) in enumerate([(-1.2, -1.2), (1.2, -1.2), (-1.2, 1.2), (1.2, 1.2)])
+    )
+    with pytest.raises(InputError) as excinfo:
+        validators.validate_mesh_vs_geometry(cfg, make_geom(piles=piles))
+    saran_mm = int(str(excinfo.value).split("<= ")[1].split(" mm")[0])
+    cfg["mesh"]["size_global"] = saran_mm / 1000.0
+    validators.validate_mesh_vs_geometry(cfg, make_geom(piles=piles))
+
+
 def test_rule7a_mode_graded_memakai_size_local_pile():
     """PRD menulis rule 7a terhadap `size_global`, rumusan yang mengasumsikan mode uniform.
 
@@ -445,12 +480,57 @@ def test_id_mengandung_pemisah_group_lens_ditolak():
         validators.validate_geometry(make_geom(piles=piles, piers=piers), max_overlap_fraction=0.9)
 
 
-@pytest.mark.parametrize("nilai", [0.0, 1.0, -0.1, 1.5])
+@pytest.mark.parametrize("nilai", [0.0, -0.1, 1.5, 1.0001])
 def test_max_pile_overlap_fraction_di_luar_rentang_ditolak(nilai: float):
     cfg = base_cfg()
     cfg["pier"]["max_pile_overlap_fraction"] = nilai
-    with pytest.raises(InputError, match="harus di antara 0 dan 1"):
+    with pytest.raises(InputError, match="lebih dari 0 dan paling besar 1"):
         validators.validate_config_geometry_params(cfg, ALL_JSON)
+
+
+def test_max_pile_overlap_fraction_satu_diterima():
+    """1,0 SAH: pile yang seluruhnya berada di bawah pier.
+
+    Sampai v0.13.1 nilai ini ditolak, sehingga konfigurasi yang sangat lazim -- grup 3x3
+    dengan pile tengah tepat di bawah kolom -- tidak dapat dianalisis dengan config apa pun:
+    kosong ditolak karena ada tumpang tindih, 0,99 ditolak karena tumpang tindihnya 100%,
+    dan 1,0 ditolak oleh pemeriksaan rentang ini.
+    """
+    cfg = base_cfg()
+    cfg["pier"]["max_pile_overlap_fraction"] = 1.0
+    validators.validate_config_geometry_params(cfg, ALL_JSON)
+
+
+def _geom_pile_di_bawah_pier() -> GeometryModel:
+    """Pile D800 berpusat tepat di tengah pier 1,2 x 1,2 -> seluruh cakram di dalam pier."""
+    piles = (Pile(pile_id="P1", x=0.0, y=0.0, diameter=0.8),)
+    piers = (
+        Pier(pier_id="PIER1", shape="rectangular", centerline=(0.0, 0.0), width_x=1.2, width_y=1.2),
+    )
+    return make_geom(piles=piles, piers=piers)
+
+
+def test_pile_seluruhnya_di_bawah_pier_diterima_dengan_batas_satu():
+    peringatan = validators.validate_geometry(_geom_pile_di_bawah_pier(), max_overlap_fraction=1.0)
+    assert peringatan and "TUMPANG TINDIH" in peringatan[0]
+
+
+def test_saran_menaikkan_batas_selalu_dapat_diikuti():
+    """Pesan galat tidak boleh menyarankan nilai yang tetap ditolak.
+
+    Dua jalan buntu yang pernah ada: menyarankan "naikkan batasnya" untuk tumpang tindih
+    100% padahal 1,0 ditolak; dan -- bila dibulatkan biasa -- menyarankan 0.07 untuk
+    tumpang tindih 7,2%, nilai yang juga tetap ditolak.
+    """
+    with pytest.raises(GeometryError) as penuh:
+        validators.validate_geometry(_geom_pile_di_bawah_pier(), max_overlap_fraction=0.99)
+    assert "1.00" in str(penuh.value)
+
+    with pytest.raises(GeometryError) as sebagian:
+        validators.validate_geometry(_geom_overlap(), max_overlap_fraction=0.05)
+    saran = float(str(sebagian.value).split("paling sedikit ")[1].split()[0])
+    assert saran >= 0.0721, f"saran {saran} tidak meloloskan tumpang tindih 7,21%"
+    validators.validate_geometry(_geom_overlap(), max_overlap_fraction=saran)
 
 
 def test_max_pile_overlap_fraction_tidak_dikonversi_satuan(tmp_path):

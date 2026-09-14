@@ -24,7 +24,7 @@ dipasang dari wheel rilis) diambil lewat HTTPS biasa.
 **PC tanpa git — pasang dari wheel rilis, disematkan ke versi tertentu:**
 
 ```bash
-uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.0/pilecap_fem-0.13.0-py3-none-any.whl
+uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.2/pilecap_fem-0.13.2-py3-none-any.whl
 ```
 
 **PC yang sudah punya git — jalankan langsung dari sumber, tanpa memasang apa pun:**
@@ -45,12 +45,12 @@ Lima hal yang perlu diketahui:
   menyebutkan persoalannya dan perintah yang benar — bukan error DLL yang membingungkan.
 - **Jalur wheel selalu tersemat ke satu versi** — nomor versinya ada di URL sendiri, jadi
   tidak perlu (dan tidak bisa) "selalu ambil terbaru" lewat jalur ini. Untuk versi lain,
-  ganti `v0.13.0` dan nama berkasnya menjadi versi yang dituju di
+  ganti `v0.13.2` dan nama berkasnya menjadi versi yang dituju di
   [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases) — lihat
   juga "Upgrade ke versi terbaru" di bawah.
 - **`--from` wajib** pada `uvx` karena nama paket (`pilecap-fem`) berbeda dari nama
   command yang dijalankan.
-- **Sematkan tag versi** (`@v0.13.0`) pada jalur git untuk pekerjaan yang hasilnya akan
+- **Sematkan tag versi** (`@v0.13.2`) pada jalur git untuk pekerjaan yang hasilnya akan
   diperiksa kemudian. `run_manifest.json` merekam `tool_version`; dengan tag, versi itu
   dapat ditarik kembali persis. Tanpa tag, instalasi selalu mengambil `main` terbaru.
 - **Unduhan pertama ~60 MB** (gmsh saja 40 MB), lalu di-cache `uv`.
@@ -68,10 +68,10 @@ pilecap-run --version
 yang lebih baru, dengan `--force` karena nama tool-nya (`pilecap-fem`) sudah terpasang:
 
 ```bash
-uv tool install --python 3.12 --force https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.0/pilecap_fem-0.13.0-py3-none-any.whl
+uv tool install --python 3.12 --force https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.2/pilecap_fem-0.13.2-py3-none-any.whl
 ```
 
-Ganti `v0.13.0` dan nama berkasnya sesuai versi yang dituju di
+Ganti `v0.13.2` dan nama berkasnya sesuai versi yang dituju di
 [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases). Tanpa
 `--force`, `uv` menolak memasang di atas tool dengan nama yang sama.
 
@@ -892,6 +892,20 @@ dipakai sebagai penduga.
 tercatat di `run_manifest.json` sebagai keputusan Anda, dan peringatannya muncul di log,
 manifest, `SUMMARY.md`, calc sheet, serta **kop setiap gambar**.
 
+**Pile yang seluruhnya berada di bawah pier** — misalnya pile tengah grup 3×3 tepat di
+bawah kolom — diizinkan dengan `pier.max_pile_overlap_fraction = 1.0` (sejak v0.13.2;
+sebelumnya konfigurasi ini tidak dapat dijalankan dengan nilai berapa pun). Ia adalah batas
+yang sah dari model di atas, bukan kasus terpisah: seluruh cakram menjadi lensa, **100%
+`Pz`-nya tercatat sebagai `pz_strut`** dan tersalur langsung ke pier, sementara pelat tidak
+menerima lentur sedikit pun dari pile itu. Neraca VC-0 tetap utuh. Dua konsekuensi yang
+wajib Anda baca:
+
+- **Seluruh beban pile itu berada di luar pemeriksaan tool.** Kapasitas tumpu dan strutnya
+  — sering pile dengan beban terbesar, karena berada tepat di bawah kolom — sepenuhnya
+  tanggung jawab engineer.
+- **`a/d` minimum tercetak 0,000** pada pile itu: ia memang tidak punya bentang geser. Rasio
+  itu disajikan tanpa vonis, sama seperti rasio lainnya.
+
 **Pile yang hanya bersinggungan** dengan muka pier (luas irisan tepat nol) **selalu
 ditolak**, dengan atau tanpa opsi ini: di sana tidak ada lensa untuk diukur, sehingga
 seluruh beban yang terserap adalah artefak diskretisasi murni tanpa satu pun komponen
@@ -1057,6 +1071,13 @@ Tiga hal yang perlu dibaca jujur:
   skala — seluruhnya lebih besar daripada selisih terukur, sehingga yang terbukti hanyalah
   "tidak berbeda sejauh yang dapat diukur". Hanya ex02 yang bebas dari batasan ini. Yang
   membuktikan ketelitian adalah jalur resultan elemen dan reaksi.
+  Di tempat pembulatan tidak mendominasi, terlihat pula **bias kecil yang sistematis**:
+  Midas melendut 0,08% (ex02) dan 0,15% (ex03) lebih besar, sebanding dengan lendutannya.
+  Pembulatan material saat ekspor sudah disingkirkan sebagai penyebab (keempat contoh
+  memakai E dan ν yang sama, biasnya berbeda); **penyebab sebenarnya belum
+  teridentifikasi**. Ia tidak muncul pada momen karena pada analisis linier perbedaan
+  kekakuan tidak mengubah gaya yang ditentukan keseimbangan — lihat
+  `tests/data/vc6/SUMBER.md` Bagian 5.3.
 - **Kesesuaian ex04 tidak membuktikan bahwa idealisasi jepit-sempurna itu benar.** Kedua
   program memakai idealisasi yang sama, jadi perbandingannya tidak dapat menilai asumsinya.
   Kapasitas strut tetap wajib dicek terpisah.
@@ -1069,7 +1090,7 @@ menyentuh sisi Midas yang sesungguhnya. Rincian lengkap: `tests/data/vc6/SUMBER.
 #### Seluruh gaya dalam, kedua kombinasi beban
 
 Kedua gambar di atas menyajikan `m_xx` pada kombinasi gravitasi. Set lengkapnya —
-**5 gaya × 2 kombinasi × 4 contoh** — ada di bawah ini, dikelompokkan per gaya.
+**5 gaya dan lendutan × 2 kombinasi × 4 contoh** — ada di bawah ini, dikelompokkan per besaran.
 Seluruhnya dihasilkan `tools/plot_vc6_perbandingan.py` dari data yang sama dengan gate
 VC-6, dan angkanya tersedia sebagai tabel di **Lampiran C panduan**.
 
@@ -1157,6 +1178,30 @@ VC-6, dan angkanya tersedia sebagai tabel di **Lampiran C panduan**.
 ![Letak selisih q_y, 1.2D+1.0W](docs/img/vc6-peta-q_y-1_2D_1_0W.png)
 
 </details>
+<details>
+<summary><b>Lendutan vertikal</b> — <code>uz</code> per node</summary>
+
+Dibaca berbeda dari gaya dalam. Selisih dinyatakan dalam **µm**, karena batas
+ketelitiannya absolut: ekspor Midas membulatkan ke 1 µm, sehingga selisih di bawah
+0,5 µm (pita abu-abu) tidak dapat dibedakan dari nol. Peta memakai skala warna
+**bersama** — skala per panel akan membesarkan derau pembulatan ex04 menjadi pola yang
+tampak seperti ketidakcocokan. Kemiringan titik ex02/ex03 pada panel kiri adalah bias
+sistematis yang diuraikan di atas, bukan derau.
+
+**Kombinasi 1.2D+1.6L**
+
+![Sebaran selisih uz, 1.2D+1.6L](docs/img/vc6-sebaran-uz-1_2D_1_6L.png)
+
+![Letak selisih uz, 1.2D+1.6L](docs/img/vc6-peta-uz-1_2D_1_6L.png)
+
+**Kombinasi 1.2D+1.0W**
+
+![Sebaran selisih uz, 1.2D+1.0W](docs/img/vc6-sebaran-uz-1_2D_1_0W.png)
+
+![Letak selisih uz, 1.2D+1.0W](docs/img/vc6-peta-uz-1_2D_1_0W.png)
+
+</details>
+
 ## Yang perlu diketahui: mesh tidak reproducible bit demi bit
 
 DIUKUR pada gmsh 4.15.2, dua run dengan input dan versi yang sama: jumlah node & elemen

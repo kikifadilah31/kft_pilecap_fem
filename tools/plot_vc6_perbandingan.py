@@ -42,6 +42,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 from PIL import Image
 
 REPO = Path(__file__).resolve().parents[1]
@@ -98,12 +99,28 @@ def nama_berkas(jenis: str, medan: str, slug: str) -> str:
 
 
 def _muat(kasus: str, combo: str, slug: str):
-    """Hasil kami + hasil Midas untuk satu kasus & kombinasi, sudah sejajar per elemen."""
-    mesh, _, kami, _ = _vc6_jalankan(kasus, combo)
+    """Hasil kami + hasil Midas untuk satu kasus & kombinasi, sudah sejajar.
+
+    Mengembalikan resultan per ELEMEN dan lendutan per NODE. Keduanya diambil dengan cara
+    yang sama persis seperti gate VC-6: resultan dari baris centroid ekspor global, lendutan
+    dari `midas_nodal` yang menolak berkas yang isinya ternyata bukan lendutan.
+    """
+    mesh, mentah, kami, _ = _vc6_jalankan(kasus, combo)
     rows = vh.load_midas_centroid(VC6_DATA / kasus / "midas_force_global.csv", slug)
     if list(rows.index) != [int(t) for t in mesh.elem_tags]:
         raise SystemExit(f"{kasus}: penomoran elemen Midas tidak lagi 1:1 dengan mesh tersimpan")
-    return mesh, kami, vh.midas_resultants_si(rows)
+
+    jenis, tabel = vh.midas_nodal(VC6_DATA / kasus / "midas_displacement.csv", slug)
+    if jenis != "displacement":
+        raise SystemExit(f"{kasus}: berkas lendutan ternyata berisi {jenis}")
+    tag_ke_indeks = {int(t): i for i, t in enumerate(mesh.node_tags)}
+    indeks = [tag_ke_indeks[int(t)] for t in tabel.index]
+    lendutan = {
+        "xy": mesh.node_xy[indeks],
+        "kami": mentah.displacements[indeks, 2],
+        "midas": tabel["DZ(m)"].to_numpy(dtype=np.float64),
+    }
+    return mesh, kami, vh.midas_resultants_si(rows), lendutan
 
 
 def _selisih_relatif(midas: np.ndarray, kami: np.ndarray) -> np.ndarray:
@@ -361,6 +378,184 @@ def gambar_peta(data: dict, medan: str, combo: str, slug: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Gambar 3 & 4 -- lendutan per node
+# ---------------------------------------------------------------------------
+
+#: Galat pembulatan ekspor lendutan Midas [mikrometer].
+#:
+#: `midas_displacement.csv` menulis 6 desimal dalam METER, sehingga langkahnya 1 µm dan
+#: galat pembulatan tiap nilainya paling besar setengah langkah. Selisih yang lebih kecil
+#: dari ini dapat dijelaskan SELURUHNYA oleh pembulatan -- tidak dapat dibedakan dari nol.
+#: Lihat `tests/data/vc6/SUMBER.md` Bagian 5.2.
+PEMBULATAN_UM = 0.5
+
+
+def _selisih_um(midas: np.ndarray, kami: np.ndarray) -> np.ndarray:
+    """Selisih lendutan per node dalam mikrometer.
+
+    Sengaja BUKAN persen terhadap puncak seperti gambar gaya. Batas ketelitian jalur ini
+    absolut -- 0,5 µm pada setiap contoh -- sedangkan persen terhadap puncak membuat batas
+    itu berbeda-beda per contoh (0,02% pada ex02, 0,45% pada ex04). Dalam mikrometer, satu
+    pita pembulatan berlaku untuk keempat contoh sekaligus dan dapat digambar sebagai satu
+    pita.
+    """
+    return (midas - kami) * 1e6
+
+
+def gambar_sebaran_lendutan(data: dict, combo: str, slug: str) -> Path:
+    """Struktur & sebaran selisih lendutan, dengan pita pembulatan ekspor Midas.
+
+    Pita itu yang membuat gambar ini jujur. Tanpa dia, selisih ex04 -- yang 91% nodenya
+    berada di bawah galat pembulatan -- akan terbaca sebagai ketidakcocokan, padahal yang
+    terukur hanyalah batas ketelitian berkas pembandingnya.
+    """
+    fig, (kiri, kanan) = plt.subplots(
+        1, 2, figsize=(_LEBAR_SEBARAN, 4.6), facecolor=TEMA.background
+    )
+
+    kiri.axhspan(-PEMBULATAN_UM, PEMBULATAN_UM, color=TEMA.grid, alpha=0.7, zorder=0)
+    for kasus in VC6_KASUS:
+        ld = data[kasus]["lendutan"]
+        kiri.scatter(
+            ld["midas"] / float(np.max(np.abs(ld["kami"]))),
+            _selisih_um(ld["midas"], ld["kami"]),
+            s=3,
+            alpha=0.35,
+            linewidths=0,
+            color=WARNA[kasus],
+        )
+    kiri.axhline(0.0, color=TEMA.text, linewidth=0.9, linestyle="--", zorder=5)
+    kiri.set_xlabel("lendutan Midas Civil / puncak", color=TEMA.text, fontsize=8.5)
+    kiri.set_ylabel("selisih  [µm]", color=TEMA.text, fontsize=8.5)
+    kiri.set_title(
+        "Selisih per node; pita abu-abu = pembulatan ekspor Midas",
+        color=TEMA.text,
+        fontsize=9.5,
+    )
+    _gaya_sumbu(kiri)
+    pegangan = [
+        Line2D([], [], marker="o", linestyle="", markersize=5, color=WARNA[k], label=JUDUL_KASUS[k])
+        for k in VC6_KASUS
+    ]
+    pegangan.append(
+        Line2D([], [], linewidth=7, color=TEMA.grid, label=f"±{_angka(PEMBULATAN_UM, 1)} µm")
+    )
+    # Kanan-bawah: pada lendutan selisih hampir selalu positif di nilai besar, sehingga
+    # sudut itu kosong. Sudut kiri-atas justru tempat titik ex02/ex03 naik.
+    kiri.legend(handles=pegangan, fontsize=7, loc="lower right", framealpha=0.9, ncol=2)
+
+    for kasus in VC6_KASUS:
+        ld = data[kasus]["lendutan"]
+        selisih = np.sort(np.abs(_selisih_um(ld["midas"], ld["kami"])))
+        pangsa = np.arange(1, selisih.size + 1) / selisih.size * 100.0
+        kanan.plot(selisih, pangsa, color=WARNA[kasus], linewidth=1.6, label=JUDUL_KASUS[kasus])
+
+    kanan.axvspan(1e-4, PEMBULATAN_UM, color=TEMA.grid, alpha=0.7, zorder=0)
+    kanan.axvline(PEMBULATAN_UM, color=TEMA.text, linewidth=0.9, linestyle="--")
+    for garis, teks in ((50, "separuh node"), (95, "95% node")):
+        kanan.axhline(garis, color=TEMA.grid, linewidth=0.8, linestyle=":")
+        kanan.text(1.2e-4, garis + 1.2, teks, fontsize=6.5, color=TEMA.text, va="bottom")
+
+    kanan.set_xscale("log")
+    kanan.set_xlim(1e-4, 10)
+    kanan.set_ylim(0, 103)
+    kanan.set_xlabel("|selisih| per node  [µm]  (skala logaritmik)", color=TEMA.text, fontsize=8.5)
+    kanan.set_ylabel("persentase node di bawahnya  [%]", color=TEMA.text, fontsize=8.5)
+    kanan.set_title(
+        "Berapa persen node yang selisihnya di bawah sekian?", color=TEMA.text, fontsize=9.5
+    )
+    _gaya_sumbu(kanan)
+    # Pita diterangkan lewat legenda, bukan teks mengambang: letak kurva berubah tiap
+    # kombinasi, sehingga teks yang ditempatkan tetap akan menabrak salah satunya.
+    pegangan_kanan, _ = kanan.get_legend_handles_labels()
+    pegangan_kanan.append(
+        Patch(color=TEMA.grid, label="pembulatan ekspor:\ntidak dapat dibedakan dari nol")
+    )
+    # Kiri-atas di dalam pita kosong: seluruh kurva masih di bawah 20% di rentang itu.
+    kanan.legend(
+        handles=pegangan_kanan,
+        fontsize=6.8,
+        loc="upper left",
+        bbox_to_anchor=(0.01, 0.90),
+        framealpha=0.92,
+    )
+
+    fig.suptitle(
+        f"Selisih lendutan $u_z$ per node terhadap Midas Civil - kombinasi {combo}",
+        color=TEMA.text,
+        fontsize=11.5,
+        fontweight="bold",
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    return _simpan(fig, KELUARAN / nama_berkas("sebaran", "uz", slug), _LEBAR_SEBARAN)
+
+
+def gambar_peta_lendutan(data: dict, combo: str, slug: str) -> Path:
+    """Kisi 2x2 letak selisih lendutan pada denah, dengan skala warna BERSAMA.
+
+    Kebalikan dari peta gaya, dan disengaja. Pada gaya, skala per panel perlu karena puncak
+    antarcontoh berbeda sampai sepuluh kali lipat. Pada lendutan justru berbahaya: selisih
+    ex04 hampir seluruhnya derau pembulatan (maks 0,7 µm), dan skala per panel akan
+    membesarkannya menjadi pola berwarna tajam yang terbaca seperti ketidakcocokan
+    sungguhan. Skala bersama dalam mikrometer menampilkan tiap panel apa adanya.
+    """
+    # Lebih tinggi daripada peta gaya: judul panelnya dua baris (jumlah node + pangsa di
+    # dalam pembulatan), dan tanpa ruang tambahan label sumbu x panel atas menabrak judul
+    # panel di bawahnya.
+    fig, sumbu = plt.subplots(2, 2, figsize=(_LEBAR_PETA, 10.4), facecolor=TEMA.background)
+    satuan = io_utils.display_unit("length")
+    batas = max(
+        float(
+            np.percentile(np.abs(_selisih_um(d["lendutan"]["midas"], d["lendutan"]["kami"])), 99.5)
+        )
+        for d in data.values()
+    )
+
+    for ax, kasus in zip(sumbu.ravel(), VC6_KASUS, strict=True):
+        ld = data[kasus]["lendutan"]
+        selisih = _selisih_um(ld["midas"], ld["kami"])
+        x, y = ld["xy"][:, 0], ld["xy"][:, 1]
+        sc = ax.scatter(
+            io_utils.to_display(x, "length"),
+            io_utils.to_display(y, "length"),
+            c=selisih,
+            s=4,
+            cmap=TEMA.cmap_force,
+            vmin=-batas,
+            vmax=batas,
+            linewidths=0,
+        )
+        dalam = float(np.mean(np.abs(selisih) <= PEMBULATAN_UM)) * 100
+        bar = fig.colorbar(sc, ax=ax, shrink=0.82)
+        bar.set_label("selisih [µm]", color=TEMA.text, fontsize=7)
+        bar.ax.tick_params(colors=TEMA.text, labelsize=6.5)
+        for tepi in (-PEMBULATAN_UM, PEMBULATAN_UM):
+            bar.ax.axhline(tepi, color=TEMA.text, linewidth=0.8, linestyle="--")
+
+        ax.set_xlabel(f"x  [{satuan}]", color=TEMA.text, fontsize=8)
+        ax.set_ylabel(f"y  [{satuan}]", color=TEMA.text, fontsize=8)
+        ax.set_title(
+            f"{JUDUL_KASUS[kasus]} - {_angka(len(selisih))} node\n"
+            f"{_angka(dalam, 1)}% node di dalam pembulatan ekspor",
+            color=TEMA.text,
+            fontsize=8.5,
+        )
+        ax.set_aspect("equal")
+        _gaya_sumbu(ax)
+
+    fig.suptitle(
+        f"Letak selisih lendutan $u_z$ pada denah - kombinasi {combo}\n"
+        f"skala warna BERSAMA; garis putus pada skala = pembulatan ekspor Midas "
+        f"(±{_angka(PEMBULATAN_UM, 1)} µm)",
+        color=TEMA.text,
+        fontsize=11,
+        fontweight="bold",
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    return _simpan(fig, KELUARAN / nama_berkas("peta", "uz", slug), _LEBAR_PETA)
+
+
+# ---------------------------------------------------------------------------
 # Ringkasan angka
 # ---------------------------------------------------------------------------
 
@@ -390,6 +585,21 @@ def ringkasan(semua: dict) -> Path:
                     "maks": round(float(np.max(np.abs(s))), 6),
                     "n_elemen": int(s.size),
                 }
+        for kasus in VC6_KASUS:
+            ld = data[kasus]["lendutan"]
+            s = _selisih_relatif(ld["midas"], ld["kami"])
+            d_um = _selisih_um(ld["midas"], ld["kami"])
+            keluaran.setdefault(combo, {}).setdefault("uz", {})[kasus] = {
+                # Besaran bersama dengan gaya, supaya dapat dibandingkan dengan gate.
+                "rms": round(float(np.sqrt(np.mean(s**2))), 6),
+                # Besaran KHUSUS lendutan: dalam mikrometer, karena batas ketelitiannya
+                # absolut, bukan relatif terhadap puncak.
+                "uz_maks_mm": round(float(np.max(np.abs(ld["kami"]))) * 1e3, 6),
+                "maks_um": round(float(np.max(np.abs(d_um))), 6),
+                "p50_um": round(float(np.percentile(np.abs(d_um), 50)), 6),
+                "dalam_pembulatan": round(float(np.mean(np.abs(d_um) <= PEMBULATAN_UM)) * 100, 6),
+                "n_node": int(d_um.size),
+            }
     jalur = KELUARAN / "vc6-ringkasan.json"
     jalur.write_text(json.dumps(keluaran, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return jalur
@@ -404,11 +614,12 @@ def main() -> int:
     for combo, slug in VC6_KOMBINASI:
         data: dict = {}
         for kasus in VC6_KASUS:
-            mesh, kami, midas = _muat(kasus, combo, slug)
+            mesh, kami, midas, lendutan = _muat(kasus, combo, slug)
             data[kasus] = {
                 "mesh": mesh,
                 "kami": {m: getattr(kami, m) for m in MEDAN},
                 "midas": midas,
+                "lendutan": lendutan,
             }
         semua[(combo, slug)] = data
 
@@ -417,6 +628,8 @@ def main() -> int:
         for medan in MEDAN:
             dibuat.append(gambar_sebaran(data, medan, combo, slug))
             dibuat.append(gambar_peta(data, medan, combo, slug))
+        dibuat.append(gambar_sebaran_lendutan(data, combo, slug))
+        dibuat.append(gambar_peta_lendutan(data, combo, slug))
     dibuat.append(ringkasan(semua))
 
     total = sum(p.stat().st_size for p in dibuat)

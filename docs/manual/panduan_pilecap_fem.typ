@@ -38,7 +38,7 @@
 
 #set page(footer: context [
   #set text(size: 7.5pt, fill: luma(90))
-  pilecap-fem v0.13.0 -- alat bantu perhitungan; wajib diperiksa dan disetujui engineer yang bertanggung jawab
+  pilecap-fem v0.13.2 -- alat bantu perhitungan; wajib diperiksa dan disetujui engineer yang bertanggung jawab
   #h(1fr)
   #counter(page).display("1 / 1", both: true)
 ])
@@ -50,7 +50,7 @@
   #text(size: 13pt)[Analisis pilecap berbasis metode elemen hingga,
   dari data masukan sampai penulangan menurut SNI 2847:2019]
   #v(14mm)
-  #text(size: 16pt, weight: 700)[Versi 0.13.0]
+  #text(size: 16pt, weight: 700)[Versi 0.13.2]
   #v(3mm)
   #text(size: 10pt)[Sistem satuan internal: SI (N, m, Pa)]
 ]
@@ -165,7 +165,7 @@ Selisih terbesar yang terukur pada momen puncak -- besaran yang menentukan tulan
 == Pernyataan tanggung jawab
 
 #kotak([HATI-HATI], rgb("#b91c1c"))[
-#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.13.0 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
+#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.13.2 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
 ]
 
 #pagebreak()
@@ -237,7 +237,7 @@ Satu perintah, disalin utuh termasuk alamat panjang di ujungnya.
   inset: 8pt,
   radius: 2pt,
   breakable: true,
-  raw(block: true, "uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.0/pilecap_fem-0.13.0-py3-none-any.whl"),
+  raw(block: true, "uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.2/pilecap_fem-0.13.2-py3-none-any.whl"),
 )
 
 Bagian-bagian perintah tersebut berarti sebagai berikut.
@@ -269,7 +269,7 @@ Bagian `--python 3.12` tidak boleh dihilangkan. Pustaka solver yang dipakai pera
   raw(block: true, "pilecap-run --version"),
 )
 
-Perintah itu harus menampilkan nomor versi. Bila yang muncul adalah #tegas[0.13.0], panduan ini memang panduan untuk perangkat lunak yang baru Anda pasang. Bila berbeda, mintalah panduan untuk versi tersebut -- daftar field dan keterbatasan dapat berbeda antarversi.
+Perintah itu harus menampilkan nomor versi. Bila yang muncul adalah #tegas[0.13.2], panduan ini memang panduan untuk perangkat lunak yang baru Anda pasang. Bila berbeda, mintalah panduan untuk versi tersebut -- daftar field dan keterbatasan dapat berbeda antarversi.
 
 == Bila gagal
 
@@ -297,10 +297,10 @@ Perintahnya sama dengan pemasangan, ditambah `--force`. Tanpa itu `uv` melihat b
   inset: 8pt,
   radius: 2pt,
   breakable: true,
-  raw(block: true, "uv tool install --force --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.0/pilecap_fem-0.13.0-py3-none-any.whl"),
+  raw(block: true, "uv tool install --force --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.2/pilecap_fem-0.13.2-py3-none-any.whl"),
 )
 
-Alamat pada perintah di atas menunjuk versi #tegas[0.13.0]. Untuk versi lain, bagian nomor versinya diganti. Seluruh rilis beserta alamatnya tersedia pada halaman berikut.
+Alamat pada perintah di atas menunjuk versi #tegas[0.13.2]. Untuk versi lain, bagian nomor versinya diganti. Seluruh rilis beserta alamatnya tersedia pada halaman berikut.
 
 #link("https://github.com/kikifadilah31/kft_pilecap_fem/releases")[#raw("https://github.com/kikifadilah31/kft_pilecap_fem/releases")]
 
@@ -369,7 +369,7 @@ Fitur ini perlu dipasang sekali dengan menambahkan bagian `[ui]` pada perintah p
   inset: 8pt,
   radius: 2pt,
   breakable: true,
-  raw(block: true, "uv tool install --force --python 3.12 \"pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.0/pilecap_fem-0.13.0-py3-none-any.whl\""),
+  raw(block: true, "uv tool install --force --python 3.12 \"pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.2/pilecap_fem-0.13.2-py3-none-any.whl\""),
 )
 
 Setelah itu formulirnya dibuka dengan satu perintah.
@@ -688,7 +688,7 @@ Nilai yang sah: `fixed`.
 
 === `pier.max_pile_overlap_fraction` -- Batas tumpang tindih pile-pier
 
-Kosongkan (bawaan) bila pile #tegas[tidak] boleh menindih pier — run akan ditolak bila ternyata menindih. Diisi = Anda mengizinkannya sampai fraksi ini (mis. 0,15 = paling banyak 15% luas pile berada di dalam pier). #tegas[Konsekuensi:] bagian yang berada di dalam pier #tegas[tidak] melenturkan pelat — pier dimodelkan jepit sempurna, jadi gaya di sana tersalur langsung ke pier (aksi strut) dan kapasitasnya #tegas[harus] Anda cek terpisah; tool tidak menghitungnya. Untuk geometri seperti ini angka desain juga menjadi sensitif terhadap kehalusan mesh. Besarnya dilaporkan terpisah di calc sheet (komponen strut vs komponen diskretisasi).
+Kosongkan (bawaan) bila pile #tegas[tidak] boleh menindih pier — run akan ditolak bila ternyata menindih. Diisi = Anda mengizinkannya sampai fraksi ini (mis. 0,15 = paling banyak 15% luas pile berada di dalam pier; #tegas[1,0] untuk pile yang seluruhnya berada di bawah pier, seperti pile tengah grup 3x3). #tegas[Konsekuensi:] bagian yang berada di dalam pier #tegas[tidak] melenturkan pelat — pier dimodelkan jepit sempurna, jadi gaya di sana tersalur langsung ke pier (aksi strut) dan kapasitasnya #tegas[harus] Anda cek terpisah; tool tidak menghitungnya. Untuk geometri seperti ini angka desain juga menjadi sensitif terhadap kehalusan mesh. Besarnya dilaporkan terpisah di calc sheet (komponen strut vs komponen diskretisasi).
 
 Nilainya harus antara `0.0` dan `1.0`.
 
@@ -1407,7 +1407,7 @@ Kedua gambar di atas menyajikan momen `m_xx` pada kombinasi gravitasi saja. Gamb
 #tegas[Konvensi tanda geser Midas berlawanan] dengan konvensi perangkat lunak ini. Perbedaan itu direkonsiliasi secara eksplisit, bukan disembunyikan, dan buktinya seragam pada seluruh elemen yang dibandingkan.
   ],
   [
-#tegas[Jalur lendutan adalah yang paling lemah.] Ekspor Midas hanya menyimpan enam angka desimal dalam meter, dan pada pilecap yang kaku resolusi itu lebih besar daripada selisih yang diukur. Yang terbukti di jalur ini hanyalah "tidak berbeda sejauh yang dapat diukur". Yang benar-benar membuktikan ketelitian adalah jalur resultan elemen dan reaksi.
+#tegas[Jalur lendutan adalah yang paling lemah.] Ekspor Midas hanya menyimpan enam angka desimal dalam meter, dan pada pilecap yang kaku resolusi itu lebih besar daripada selisih yang diukur. Yang terbukti di jalur ini hanyalah "tidak berbeda sejauh yang dapat diukur". Pada contoh yang lendutannya cukup besar untuk lolos dari batas itu, terlihat pula #tegas[bias kecil yang sistematis]: Midas melendut 0,08-0,15% lebih besar. Bias itu tidak muncul pada gaya dalam, dan memang tidak dapat: pada analisis elastis linier, perbedaan kekakuan mengubah lendutan tetapi tidak mengubah gaya yang ditentukan keseimbangan. Rinciannya ada pada #link(<lampiran-perbandingan>)[Lampiran C]. Yang benar-benar membuktikan ketelitian adalah jalur resultan elemen dan reaksi.
   ],
   [
 #tegas[Kesesuaian pada kasus tiang yang menindih pier tidak membuktikan bahwa idealisasi jepit-sempurna itu benar.] Kedua program memakai idealisasi yang sama, sehingga perbandingannya tidak dapat menilai asumsi tersebut. Kapasitas strut tetap wajib diperiksa terpisah.
@@ -1538,7 +1538,7 @@ Item berikut BELUM dikonfirmasi, sehingga pengecekan terkait #tegas[tidak dilaku
 = Tanggung jawab dan lisensi <bab-tanggung-jawab>
 
 #kotak([HATI-HATI], rgb("#b91c1c"))[
-#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.13.0 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
+#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.13.2 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
 ]
 
 Pernyataan di atas berlaku bagi setiap keluaran perangkat lunak ini, dan dicetak apa adanya pada setiap lembar perhitungan, setiap ringkasan, dan setiap laporan PDF yang dihasilkannya.
@@ -1564,7 +1564,7 @@ Perhitungan kapasitas penampang tidak dikerjakan sendiri oleh perangkat lunak in
   [Butir], [Nilai],
   [Standar acuan], [SNI 2847:2019],
   [Pustaka kapasitas], [`shell-kit` v3.3.0],
-  [Perangkat lunak ini], [`pilecap-fem` v0.13.0],
+  [Perangkat lunak ini], [`pilecap-fem` v0.13.2],
 ),
   caption: [Sumber perhitungan kapasitas.],
 )
@@ -1801,6 +1801,47 @@ Selisih selalu dinyatakan terhadap #tegas[nilai puncak], bukan terhadap nilai di
   caption: [Letak selisih `q_y` pada denah keempat contoh, kombinasi 1.2D+1.6L.],
 )
 
+=== Lendutan vertikal (`uz`)
+
+#kotak([PERINGATAN], rgb("#b45309"))[
+Jalur ini dibaca dengan #tegas[dua batasan] yang tidak berlaku pada gaya dalam.
+
+#enum(
+  start: 1,
+  [
+#tegas[Pembulatan ekspor.] Midas menulis lendutan dengan enam desimal dalam meter, sehingga setiap nilainya dapat meleset sampai 0,5 µm. Selisih yang lebih kecil dari itu tidak dapat dibedakan dari nol. Pada contoh yang kaku, sebagian besar node berada di dalam batas ini.
+  ],
+  [
+#tegas[Bias kecil yang sistematis.] Pada contoh yang lendutannya cukup besar untuk lolos dari batas pembulatan, Midas melendut #tegas[sedikit lebih besar], sebanding dengan lendutannya -- sekitar 0,08% (`ex02`) dan 0,15% (`ex03`). Pada `ex01` dan `ex04` bias itu tidak dapat dipastikan karena tertelan pembulatan. Satu penyebab sudah disingkirkan: keempat contoh memakai modulus elastisitas dan rasio Poisson yang sama, tetapi biasnya berbeda, sehingga pembulatan material saat ekspor tidak dapat menjelaskannya. #tegas[Penyebab sebenarnya belum teridentifikasi.]
+  ],
+)
+
+Bias ini berada sepuluh kali di bawah batas syarat rilis, dan tidak menyentuh angka desain: tulangan dihitung dari momen, bukan dari lendutan, dan momen tidak berubah oleh perbedaan kekakuan pada analisis elastis linier.
+]
+
+#figure(
+  table(
+  columns: 6,
+  align: (left, right, right, right, right, right),
+  [Contoh], [Node], [Lendutan maks], [RMS], [Selisih maks], [Dalam pembulatan],
+  [`ex01`], [1.913], [0,225 mm], [0,216%], [1,22 µm], [65,4%],
+  [`ex02`], [6.994], [2,640 mm], [0,043%], [2,36 µm], [19,1%],
+  [`ex03`], [4.949], [1,929 mm], [0,045%], [2,51 µm], [48,6%],
+  [`ex04`], [3.267], [0,110 mm], [0,258%], [0,72 µm], [90,9%],
+),
+  caption: [Selisih lendutan `uz` terhadap Midas Civil, kombinasi 1.2D+1.6L.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-sebaran-uz-1_2D_1_6L.png", width: 100%),
+  caption: [Struktur dan sebaran selisih lendutan `uz` dalam mikrometer, kombinasi 1.2D+1.6L. Pita abu-abu adalah batas pembulatan ekspor Midas.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-peta-uz-1_2D_1_6L.png", width: 92%),
+  caption: [Letak selisih lendutan `uz` pada denah, kombinasi 1.2D+1.6L. Skala warnanya dibuat bersama untuk keempat contoh -- skala per panel akan membesarkan derau pembulatan menjadi pola yang tampak seperti ketidakcocokan.],
+)
+
 == Kombinasi 1.2D+1.0W
 
 === Momen lentur arah X (`m_xx`)
@@ -1926,4 +1967,45 @@ Selisih selalu dinyatakan terhadap #tegas[nilai puncak], bukan terhadap nilai di
 #figure(
   image("_figur_pdf/vc6-peta-q_y-1_2D_1_0W.png", width: 92%),
   caption: [Letak selisih `q_y` pada denah keempat contoh, kombinasi 1.2D+1.0W.],
+)
+
+=== Lendutan vertikal (`uz`)
+
+#kotak([PERINGATAN], rgb("#b45309"))[
+Jalur ini dibaca dengan #tegas[dua batasan] yang tidak berlaku pada gaya dalam.
+
+#enum(
+  start: 1,
+  [
+#tegas[Pembulatan ekspor.] Midas menulis lendutan dengan enam desimal dalam meter, sehingga setiap nilainya dapat meleset sampai 0,5 µm. Selisih yang lebih kecil dari itu tidak dapat dibedakan dari nol. Pada contoh yang kaku, sebagian besar node berada di dalam batas ini.
+  ],
+  [
+#tegas[Bias kecil yang sistematis.] Pada contoh yang lendutannya cukup besar untuk lolos dari batas pembulatan, Midas melendut #tegas[sedikit lebih besar], sebanding dengan lendutannya -- sekitar 0,08% (`ex02`) dan 0,15% (`ex03`). Pada `ex01` dan `ex04` bias itu tidak dapat dipastikan karena tertelan pembulatan. Satu penyebab sudah disingkirkan: keempat contoh memakai modulus elastisitas dan rasio Poisson yang sama, tetapi biasnya berbeda, sehingga pembulatan material saat ekspor tidak dapat menjelaskannya. #tegas[Penyebab sebenarnya belum teridentifikasi.]
+  ],
+)
+
+Bias ini berada sepuluh kali di bawah batas syarat rilis, dan tidak menyentuh angka desain: tulangan dihitung dari momen, bukan dari lendutan, dan momen tidak berubah oleh perbedaan kekakuan pada analisis elastis linier.
+]
+
+#figure(
+  table(
+  columns: 6,
+  align: (left, right, right, right, right, right),
+  [Contoh], [Node], [Lendutan maks], [RMS], [Selisih maks], [Dalam pembulatan],
+  [`ex01`], [1.913], [0,315 mm], [0,158%], [1,18 µm], [64,4%],
+  [`ex02`], [6.994], [3,829 mm], [0,038%], [3,43 µm], [30,2%],
+  [`ex03`], [4.949], [2,233 mm], [0,042%], [2,65 µm], [48,6%],
+  [`ex04`], [3.267], [0,171 mm], [0,181%], [0,75 µm], [87,2%],
+),
+  caption: [Selisih lendutan `uz` terhadap Midas Civil, kombinasi 1.2D+1.0W.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-sebaran-uz-1_2D_1_0W.png", width: 100%),
+  caption: [Struktur dan sebaran selisih lendutan `uz` dalam mikrometer, kombinasi 1.2D+1.0W. Pita abu-abu adalah batas pembulatan ekspor Midas.],
+)
+
+#figure(
+  image("_figur_pdf/vc6-peta-uz-1_2D_1_0W.png", width: 92%),
+  caption: [Letak selisih lendutan `uz` pada denah, kombinasi 1.2D+1.0W. Skala warnanya dibuat bersama untuk keempat contoh -- skala per panel akan membesarkan derau pembulatan menjadi pola yang tampak seperti ketidakcocokan.],
 )

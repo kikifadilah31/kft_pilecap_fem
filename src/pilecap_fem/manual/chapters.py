@@ -940,8 +940,13 @@ def chapter_evidence(figs: FigureStore) -> str:
             "2. **Jalur lendutan adalah yang paling lemah.** Ekspor Midas hanya menyimpan "
             "enam angka desimal dalam meter, dan pada pilecap yang kaku resolusi itu lebih "
             "besar daripada selisih yang diukur. Yang terbukti di jalur ini hanyalah "
-            '"tidak berbeda sejauh yang dapat diukur". Yang benar-benar membuktikan '
-            "ketelitian adalah jalur resultan elemen dan reaksi.\n"
+            '"tidak berbeda sejauh yang dapat diukur". Pada contoh yang lendutannya cukup '
+            "besar untuk lolos dari batas itu, terlihat pula **bias kecil yang sistematis**: "
+            "Midas melendut 0,08-0,15% lebih besar. Bias itu tidak muncul pada gaya dalam, "
+            "dan memang tidak dapat: pada analisis elastis linier, perbedaan kekakuan "
+            "mengubah lendutan tetapi tidak mengubah gaya yang ditentukan keseimbangan. "
+            "Rinciannya ada pada [Lampiran C](#lampiran-perbandingan). Yang benar-benar "
+            "membuktikan ketelitian adalah jalur resultan elemen dan reaksi.\n"
             "3. **Kesesuaian pada kasus tiang yang menindih pier tidak membuktikan bahwa "
             "idealisasi jepit-sempurna itu benar.** Kedua program memakai idealisasi yang "
             "sama, sehingga perbandingannya tidak dapat menilai asumsi tersebut. Kapasitas "
@@ -1277,7 +1282,77 @@ def appendix_comparison(figs: FigureStore) -> str:
                     f"Letak selisih `{medan}` pada denah keempat contoh, kombinasi {combo}.",
                 ).to_typst(width="92%")
             )
+        b.extend(_lendutan_vc6(figs, ringkas[combo]["uz"], combo, slug))
     return "\n\n".join(b)
+
+
+def _lendutan_vc6(figs: FigureStore, angka: dict, combo: str, slug: str) -> list[str]:
+    """Subbab lendutan per node, dengan dua batasan tafsirnya dinyatakan di depan.
+
+    Sengaja berbeda dari subbab gaya. Selisih lendutan dinyatakan dalam MIKROMETER, karena
+    batas ketelitian jalur ini absolut: ekspor Midas membulatkan ke 1 µm, sehingga selisih
+    di bawah 0,5 µm tidak dapat dibedakan dari nol. Persen terhadap puncak akan membuat
+    batas yang sama tampak berbeda-beda per contoh dan menyembunyikan hal itu.
+    """
+    b = [tk.heading(3, "Lendutan vertikal (`uz`)")]
+    b.append(
+        tk.callout(
+            "WARNING",
+            _md(
+                "Jalur ini dibaca dengan **dua batasan** yang tidak berlaku pada gaya dalam.\n\n"
+                "1. **Pembulatan ekspor.** Midas menulis lendutan dengan enam desimal dalam "
+                "meter, sehingga setiap nilainya dapat meleset sampai 0,5 µm. Selisih yang "
+                "lebih kecil dari itu tidak dapat dibedakan dari nol. Pada contoh yang "
+                "kaku, sebagian besar node berada di dalam batas ini.\n"
+                "2. **Bias kecil yang sistematis.** Pada contoh yang lendutannya cukup besar "
+                "untuk lolos dari batas pembulatan, Midas melendut **sedikit lebih besar**, "
+                "sebanding dengan lendutannya -- sekitar 0,08% (`ex02`) dan 0,15% (`ex03`). "
+                "Pada `ex01` dan `ex04` bias itu tidak dapat dipastikan karena tertelan "
+                "pembulatan. Satu penyebab sudah disingkirkan: keempat contoh memakai modulus "
+                "elastisitas dan rasio Poisson yang sama, tetapi biasnya berbeda, sehingga "
+                "pembulatan material saat ekspor tidak dapat menjelaskannya. **Penyebab "
+                "sebenarnya belum teridentifikasi.**\n\n"
+                "Bias ini berada sepuluh kali di bawah batas syarat rilis, dan tidak menyentuh "
+                "angka desain: tulangan dihitung dari momen, bukan dari lendutan, dan momen "
+                "tidak berubah oleh perbedaan kekakuan pada analisis elastis linier."
+            ),
+        )
+    )
+    b.append(
+        tk.table(
+            ["Contoh", "Node", "Lendutan maks", "RMS", "Selisih maks", "Dalam pembulatan"],
+            [
+                [
+                    f"`{kasus}`",
+                    f"{angka[kasus]['n_node']:,}".replace(",", "."),
+                    f"{angka[kasus]['uz_maks_mm']:.3f}".replace(".", ",")
+                    + f" {io_utils.display_unit('deflection')}",
+                    _persen(angka[kasus]["rms"]),
+                    f"{angka[kasus]['maks_um']:.2f}".replace(".", ",") + " µm",
+                    f"{angka[kasus]['dalam_pembulatan']:.1f}".replace(".", ",") + "%",
+                ]
+                for kasus in _KASUS_VC6
+            ],
+            align=["left", "right", "right", "right", "right", "right"],
+            caption=f"Selisih lendutan `uz` terhadap Midas Civil, kombinasi {combo}.",
+        )
+    )
+    b.append(
+        figs.illustration(
+            nama_gambar_vc6("sebaran", "uz", slug),
+            f"Struktur dan sebaran selisih lendutan `uz` dalam mikrometer, kombinasi {combo}. "
+            "Pita abu-abu adalah batas pembulatan ekspor Midas.",
+        ).to_typst()
+    )
+    b.append(
+        figs.illustration(
+            nama_gambar_vc6("peta", "uz", slug),
+            f"Letak selisih lendutan `uz` pada denah, kombinasi {combo}. Skala warnanya "
+            "dibuat bersama untuk keempat contoh -- skala per panel akan membesarkan derau "
+            "pembulatan menjadi pola yang tampak seperti ketidakcocokan.",
+        ).to_typst(width="92%")
+    )
+    return b
 
 
 def _persen(nilai: float) -> str:

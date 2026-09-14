@@ -149,6 +149,40 @@
         "maks": 1.376588,
         "n_elemen": 3162
       }
+    },
+    "uz": {
+      "ex01": {
+        "rms": 0.215525,
+        "uz_maks_mm": 0.225294,
+        "maks_um": 1.223998,
+        "p50_um": 0.349062,
+        "dalam_pembulatan": 65.446942,
+        "n_node": 1913
+      },
+      "ex02": {
+        "rms": 0.043295,
+        "uz_maks_mm": 2.640063,
+        "maks_um": 2.359673,
+        "p50_um": 1.018719,
+        "dalam_pembulatan": 19.116385,
+        "n_node": 6994
+      },
+      "ex03": {
+        "rms": 0.045434,
+        "uz_maks_mm": 1.92863,
+        "maks_um": 2.512826,
+        "p50_um": 0.518347,
+        "dalam_pembulatan": 48.615882,
+        "n_node": 4949
+      },
+      "ex04": {
+        "rms": 0.258009,
+        "uz_maks_mm": 0.110083,
+        "maks_um": 0.724446,
+        "p50_um": 0.19181,
+        "dalam_pembulatan": 90.9397,
+        "n_node": 3267
+      }
     }
   },
   "1.2D+1.0W": {
@@ -300,6 +334,40 @@
         "p99": 0.406492,
         "maks": 1.047537,
         "n_elemen": 3162
+      }
+    },
+    "uz": {
+      "ex01": {
+        "rms": 0.15841,
+        "uz_maks_mm": 0.314701,
+        "maks_um": 1.18368,
+        "p50_um": 0.367266,
+        "dalam_pembulatan": 64.401464,
+        "n_node": 1913
+      },
+      "ex02": {
+        "rms": 0.037785,
+        "uz_maks_mm": 3.828548,
+        "maks_um": 3.43031,
+        "p50_um": 0.868632,
+        "dalam_pembulatan": 30.21161,
+        "n_node": 6994
+      },
+      "ex03": {
+        "rms": 0.042476,
+        "uz_maks_mm": 2.23312,
+        "maks_um": 2.653381,
+        "p50_um": 0.520557,
+        "dalam_pembulatan": 48.595676,
+        "n_node": 4949
+      },
+      "ex04": {
+        "rms": 0.180904,
+        "uz_maks_mm": 0.170513,
+        "maks_um": 0.745357,
+        "p50_um": 0.212117,
+        "dalam_pembulatan": 87.174778,
+        "n_node": 3267
       }
     }
   }

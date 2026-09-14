@@ -415,8 +415,19 @@ def pile_pressures(
 
     result: list[PilePressure] = []
     for pile in geom.piles:
-        mask = mesh.group_mask(pile.group_name)
         lens_names = tuple(lens_by_pile.get(pile.pile_id, ()))
+        # Pile yang SELURUH cakramnya berada di dalam pier tidak punya bagian di luar pier,
+        # sehingga gmsh tidak membuat group `PILE_*` untuknya -- hanya group lensanya. Itu
+        # batas yang sah dari rumus di atas, bukan kerusakan: seluruh cakram adalah lensa,
+        # seluruh `Pz` terserap ke reaksi pier, dan pelat tidak menerima lentur dari pile ini.
+        # Beban tidak dapat hilang diam-diam karenanya: pemeriksaan `index.size == 0` di
+        # bawah tetap menolak pile yang tidak punya group pile MAUPUN lensa.
+        if mesh.has_group(pile.group_name):
+            mask = mesh.group_mask(pile.group_name)
+        elif lens_names:
+            mask = np.zeros(mesh.elem_group.shape, dtype=bool)
+        else:
+            mask = mesh.group_mask(pile.group_name)  # raise dengan pesan group yang tersedia
         for nama in lens_names:
             if not mesh.has_group(nama):
                 raise AnalysisError(

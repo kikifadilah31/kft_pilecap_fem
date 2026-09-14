@@ -180,6 +180,45 @@ Konsekuensi praktis untuk keempat contoh: **Jalur 2 adalah jalur terlemah dalam 
 Ia tetap berharga karena menangkap kesalahan besar (tanda terbalik, skala salah, model
 berbeda), tetapi bukan ia yang membuktikan ketelitian — itu tugas Jalur 1 dan 3.
 
+### 5.3 Bias kecil yang sistematis pada lendutan
+
+Ditemukan saat lendutan per node pertama kali **digambar** (v0.13.1), bukan saat diuji —
+gate VC-6 memeriksa RMS dan korelasi, dan keduanya tidak peka terhadap kemiringan yang
+seragam. Di tempat resolusi ekspor tidak mendominasi, Midas melendut sedikit lebih besar,
+**sebanding dengan lendutannya**. Diukur dengan regresi selisih terhadap `uz` melalui titik
+asal:
+
+| Contoh | Kombinasi | Midas lebih lentur | R² | Terbaca? |
+|--------|-----------|-------------------:|---:|----------|
+| `ex01` | 1.2D+1.6L | 0,30% | 0,18 | tidak — tertelan pembulatan |
+| `ex01` | 1.2D+1.0W | 0,30% | 0,22 | tidak — tertelan pembulatan |
+| `ex02` | 1.2D+1.6L | 0,077% | 0,32 | **ya** |
+| `ex02` | 1.2D+1.0W | 0,084% | 0,61 | **ya** |
+| `ex03` | 1.2D+1.6L | 0,152% | 0,63 | **ya** |
+| `ex03` | 1.2D+1.0W | 0,146% | 0,68 | **ya** |
+| `ex04` | 1.2D+1.6L | 0,19% | 0,06 | tidak — tertelan pembulatan |
+| `ex04` | 1.2D+1.0W | 0,21% | 0,09 | tidak — tertelan pembulatan |
+
+Kemiringan pada `ex01` dan `ex04` dicantumkan hanya agar tabelnya lengkap; dengan R² serendah
+itu angkanya tidak bermakna. Yang dapat dinyatakan: bias **teramati** pada ex02 dan ex03,
+dan **tidak dapat dipastikan** — bukan "tidak ada" — pada dua contoh lainnya.
+
+**Satu penyebab sudah disingkirkan.** Keempat contoh memakai `E = 25.000 MPa` dan `ν = 0,2`
+yang sama. Pembulatan material saat ekspor `model.mct` akan memberi kemiringan yang SAMA
+pada semua contoh, sedangkan yang terukur berbeda (0,08% vs 0,15%). **Penyebab sebenarnya
+belum teridentifikasi.** Perbedaan kekakuan kecil antara ShellMITC4 dan QUAD4 hibrida Midas
+adalah dugaan yang wajar, tetapi belum diverifikasi dan tidak boleh dikutip sebagai
+penjelasan.
+
+**Mengapa bias ini tidak bertentangan dengan Jalur 1.** Pada analisis elastis linier,
+perbedaan kekakuan mengubah lendutan tetapi tidak mengubah gaya yang ditentukan
+keseimbangan — dan resultan pelat ini sebagian besar ditentukan keseimbangan, karena
+bebannya adalah reaksi pile yang sudah diketahui. Karena itu momen tetap cocok sampai
+0,02–0,13% RMS meskipun lendutannya bergeser 0,08–0,15%.
+
+**Dampaknya terhadap desain: tidak ada.** Tulangan dihitung dari momen, bukan dari
+lendutan, dan bias ini sepuluh kali di bawah gate `VC6_RMS_LENDUTAN`.
+
 ## 6. Daftar berkas & sha256
 
 Dihitung terhadap berkas sumber di arsip pemilik proyek pada saat penyalinan

@@ -706,11 +706,19 @@ def test_vc6_lendutan_per_node_cocok_dengan_midas(vc6_hasil, kasus: str, combo: 
     hanya mencakup ex01 & ex02. Pemilik proyek memperbaikinya; riwayat itu tetap tercatat di
     SUMBER.md 5.1 supaya jejak auditnya tidak hilang.
 
-    PERINGATAN TAFSIR: ekspor Midas menulis 6 desimal dalam METER, jadi resolusinya 1 um.
-    Pada ex01 (lendutan maks 0,226 mm) itu setara 0,44% dari skala -- LEBIH BESAR daripada
-    selisih terukur 0,216%. Lulusnya test ini di ex01 karena itu hanya membuktikan "tidak
-    berbeda sejauh yang dapat diukur", bukan ketelitian 0,2%. Pada ex02 & ex03 (lendutan
-    2,6 dan 1,9 mm) batasan itu tidak lagi mengikat.
+    PERINGATAN TAFSIR 1 -- resolusi. Ekspor Midas menulis 6 desimal dalam METER, jadi
+    resolusinya 1 um. Batas itu MENGIKAT pada ex01, ex03 (tipis), dan ex04 (paling kuat);
+    hanya ex02 yang bebas darinya. Pada contoh yang terikat, lulusnya test ini hanya
+    membuktikan "tidak berbeda sejauh yang dapat diukur". Angka per kombinasi ada di
+    SUMBER.md 5.2. (Docstring ini sampai v0.13.0 menyatakan ex03 tidak terikat -- tertinggal
+    dari koreksi SUMBER.md yang dibuat saat ex04 ditambahkan.)
+
+    PERINGATAN TAFSIR 2 -- bias. Di tempat resolusi tidak mendominasi, Midas melendut
+    sedikit lebih besar secara SISTEMATIS, sebanding dengan lendutannya: ~0,08% (ex02),
+    ~0,15% (ex03). Bukan derau -- ia terlihat jelas di `vc6-sebaran-uz-*.png`. Gate ini tetap
+    lulus dengan margin sepuluh kali lipat, dan bias itu tidak muncul pada resultan elemen
+    karena pada analisis linier perbedaan kekakuan tidak mengubah gaya yang ditentukan
+    keseimbangan. Penyebabnya belum teridentifikasi; lihat SUMBER.md 5.3.
     """
     mesh, mentah, _, _ = vc6_hasil[(kasus, combo)]
     jenis, tabel = validation_helpers.midas_nodal(VC6_DATA / kasus / "midas_displacement.csv", slug)

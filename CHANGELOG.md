@@ -2,6 +2,133 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.13.2] — 2026-09-14 — pile yang seluruhnya berada di bawah pier dapat dianalisis
+
+Dilaporkan pengguna: pilecap 4800 x 4800, tebal 1500, grup pile 3 x 3 berspasi 1800 --
+pile tengahnya tepat di bawah pier -- **tidak dapat dianalisis dengan config apa pun**.
+
+### Fixed — konfigurasi yang sangat lazim terkunci di jalan buntu
+
+Pile tengah grup 3 x 3 yang tepat di bawah kolom punya fraksi tumpang tindih 100%. Tiga
+kemungkinan config, ketiganya ditolak:
+
+| `max_pile_overlap_fraction` | Ditolak karena |
+|---|---|
+| kosong | ada tumpang tindih |
+| 0.99 | tumpang tindihnya 100%, melebihi batas |
+| 1.0 | validator mensyaratkan batas **< 1** |
+
+Pesan galat baris kedua bahkan menyarankan "naikkan batasnya bila memang disengaja" --
+padahal satu-satunya nilai yang cukup ditolak baris ketiga. Field `pilecap-ui` pun sudah
+mengizinkan `max_value = 1.0`, lalu validatornya menolak nilai yang diterima formulirnya
+sendiri.
+
+Batas `< 1` ternyata tidak melindungi dari model yang tidak sah, melainkan dari **crash**.
+Pada tumpang tindih penuh, bagian cakram di luar pier kosong, sehingga gmsh tidak membuat
+group `PILE_*` sama sekali -- hanya group lensanya -- dan `fem_engine.pile_pressures`
+berhenti dengan `KeyError`. Rumus bebannya sendiri tidak perlu diubah: pada tumpang
+tindih sebagian seluruh cakram SUDAH dibebani `p = Pz / A_cakram`, termasuk lensa, dan
+bagian lensa terserap ke reaksi pier. Tumpang tindih penuh adalah batas yang sah dari model
+itu -- seluruh `Pz` menjadi strut, pelat tidak menerima lentur dari pile tersebut.
+
+Diperbaiki: validator menerima `0 < f <= 1`, dan `pile_pressures` memulai himpunan
+elemennya dari lensa bila group pile tidak ada. Beban tetap tidak dapat hilang diam-diam:
+pile yang tidak punya group pile MAUPUN lensa tetap ditolak.
+
+DIVERIFIKASI pada konfigurasi pengguna (pile D600 dan pier 1200 x 1200 diasumsikan karena
+tidak disebutkan), bukan hanya "berjalan tanpa crash":
+
+* **VC-0 lulus** pada kedua kombinasi: 9.500 kN terapan = 9.500 kN reaksi, residu 1,4e-15.
+* **P5**: fraksi 1,000, `pz_strut` = 1.500 kN (100%), `pz_ke_pelat` = 0, bocoran mesh = 0.
+* **Simetri**: momen di muka pier +650 / -650 mm = 1.324 / 1.309 kNm/m (selisih 1,1%).
+* **Hitungan tangan**: tiga pile di kolom luar (3.000 kN) dengan lengan 1,2 m memberi
+  3.600 kNm; tersebar selebar pier = 3.000 kNm/m, selebar pilecap = 750 kNm/m. FEM:
+  1.320 kNm/m, di antara keduanya sebagaimana mestinya.
+* **Pelaporan jujur**: calc sheet bagian 3a mencetak P5 dengan strut 100% dan kalimat bahwa
+  kapasitasnya wajib dicek terpisah; `a/d` minimum 0,000 tercetak tanpa vonis; laporan
+  `--pdf` terbit lengkap; tidak ada "nan" di keluaran mana pun.
+
+### Fixed — dua saran di pesan galat yang tidak dapat diikuti
+
+* **Saran batas tumpang tindih** kini menyebut nilai konkretnya dan **dibulatkan ke atas**.
+  Pembulatan biasa akan menyarankan 0.07 untuk tumpang tindih 7,2% -- nilai yang tetap
+  ditolak.
+* **Rule 7a menolak D600 dengan mesh 100 mm**, dua angka yang sangat umum. Di floating point
+  0,6 / 0,1 = 5,999999999999999 < 6, lalu pesannya menyarankan "turunkan ke <= 100 mm" --
+  nilai yang sudah dipakai. Kini perbandingannya bertoleransi relatif 1e-9, yang hanya
+  menyerap derau pembulatan, dan saran ukuran mesh dibulatkan **ke bawah** karena ia batas
+  atas (pembulatan biasa menyarankan 109 mm untuk D651,6, yang tetap ditolak).
+
+  Test `test_rule7a_tepat_di_ambang_lolos` yang sudah ada tidak menangkapnya: ia memakai
+  0,8 / (0,8/6), yang kebetulan dibulatkan ke arah yang aman. Test baru memakai pasangan
+  angka yang benar-benar diketik pengguna dan benar-benar gagal.
+
+### Changed
+
+`test_max_pile_overlap_fraction_di_luar_rentang_ditolak` sebelumnya MENGUNCI perilaku lama
+(1,0 ditolak). Ia diubah, bukan dilewati: 1,0 kini sah, sedangkan 0, negatif, dan > 1 tetap
+ditolak. README mendapat paragraf tentang pile yang seluruhnya di bawah pier, termasuk dua
+konsekuensinya -- seluruh beban pile itu di luar pemeriksaan tool, dan `a/d` = 0.
+
+## [0.13.1] — 2026-09-11 — perbandingan lendutan per node, dan bias yang ditemukannya
+
+> **Tidak dirilis terpisah.** Versi ini tidak pernah diberi tag maupun wheel; seluruh
+> isinya ikut diterbitkan dalam **0.13.2**.
+
+Ditemukan pengguna: 0.13.0 menyebut perbandingan VC-6 "lengkap", padahal hanya Jalur 1
+(resultan elemen) yang digambar. Jalur 2 -- lendutan per node -- belum ada sama sekali.
+
+### Added — gambar perbandingan lendutan `uz`
+
+`vc6-sebaran-uz-<slug>.png` dan `vc6-peta-uz-<slug>.png` untuk kedua kombinasi, plus subbab
+"Lendutan vertikal" di Lampiran C panduan dan blok tersendiri di README.
+
+Dua keputusan rancangan SENGAJA berbeda dari gambar gaya, dan keduanya diturunkan dari
+batas ketelitian jalur ini (SUMBER.md 5.2): ekspor Midas membulatkan lendutan ke 1 µm.
+
+* **Selisih dalam mikrometer, bukan persen terhadap puncak.** Batasnya absolut -- 0,5 µm
+  pada setiap contoh -- sedangkan persen terhadap puncak membuat batas yang sama tampak
+  0,02% di ex02 dan 0,45% di ex04. Dalam µm, satu pita abu-abu berlaku untuk keempat contoh.
+* **Skala warna peta BERSAMA, bukan per panel.** Kebalikan dari peta gaya. DIUKUR, 90,9%
+  node ex04 berselisih di bawah galat pembulatan; skala per panel akan membesarkan derau itu
+  menjadi pola berwarna tajam yang terbaca seperti ketidakcocokan sungguhan.
+
+Tabel lendutan di Lampiran C memuat kolom yang tidak ada pada tabel gaya: **pangsa node di
+dalam pembulatan ekspor** -- 65,4% (ex01), 19,1% (ex02), 48,6% (ex03), 90,9% (ex04) pada
+kombinasi gravitasi.
+
+### Found — bias kecil yang sistematis pada lendutan
+
+Gambar pertamanya memperlihatkan hal yang tidak tertangkap gate: di tempat pembulatan tidak
+mendominasi, **Midas melendut sedikit lebih besar, sebanding dengan lendutannya**. DIUKUR
+dengan regresi melalui titik asal: 0,077-0,084% (ex02, R² 0,32-0,61) dan 0,146-0,152%
+(ex03, R² 0,63-0,68). Pada ex01 dan ex04 R²-nya 0,06-0,22, sehingga bias di sana **tidak
+dapat dipastikan** -- bukan "tidak ada".
+
+Gate VC-6 tidak menangkapnya karena memeriksa RMS dan korelasi, dan keduanya tidak peka
+terhadap kemiringan yang seragam. Gambarlah yang menangkapnya -- panel kiri yang judulnya
+sendiri bertanya "terpusat di nol, atau miring?".
+
+Satu penyebab **disingkirkan**: keempat contoh memakai E = 25.000 MPa dan ν = 0,2 yang sama,
+sehingga pembulatan material saat ekspor akan memberi kemiringan yang sama pada semua contoh
+-- yang terukur berbeda. **Penyebab sebenarnya belum teridentifikasi**, dan dugaan tentang
+perbedaan formulasi elemen sengaja tidak dikutip sebagai penjelasan.
+
+Bias ini tidak bertentangan dengan kesesuaian momen 0,02-0,13%: pada analisis elastis
+linier, perbedaan kekakuan mengubah lendutan tetapi tidak mengubah gaya yang ditentukan
+keseimbangan. Ia sepuluh kali di bawah gate, dan tidak menyentuh angka desain -- tulangan
+dihitung dari momen. Dicatat di SUMBER.md 5.3, docstring gate lendutan, Bab 8 dan Lampiran C
+panduan, serta README.
+
+### Fixed — docstring gate lendutan tertinggal dari SUMBER.md
+
+Ia masih menyatakan batas resolusi "tidak lagi mengikat" pada ex03, padahal SUMBER.md 5.2
+sudah mengoreksinya saat ex04 ditambahkan (ex03 terikat, meski tipis). Kelas kesalahan yang
+sama dengan klaim "tepi pier" pada 0.12.1: dua tempat yang menyatakan hal yang sama, lalu
+hanya satu yang diperbarui.
+
+DIUKUR pada 0.13.1: 25 berkas perbandingan, 3,25 MB; panduan 61 halaman, 6,65 MB.
+
 ## [0.13.0] — 2026-09-11 — perbandingan VC-6 lengkap: 5 gaya x 2 kombinasi
 
 Diminta pengguna: ketiga jenis diagram perbandingan, untuk SELURUH contoh bawaan dan

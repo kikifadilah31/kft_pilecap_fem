@@ -371,7 +371,10 @@ def test_lampiran_perbandingan_memuat_setiap_gaya_dan_kombinasi(sumber: str):
 
     for combo, slug in bab.KOMBINASI_VC6:
         assert f"Kombinasi {combo}" in sumber, f"kombinasi {combo} hilang dari Lampiran C"
-        for medan, _ in bab.MEDAN_VC6:
+        # Lendutan per node adalah jalur VC-6 tersendiri, dengan batas tafsirnya sendiri.
+        # Sampai v0.13.0 ia tidak digambar sama sekali -- dan gambarnya ternyata
+        # memperlihatkan bias sistematis yang tidak tertangkap RMS maupun korelasi.
+        for medan in [m for m, _ in bab.MEDAN_VC6] + ["uz"]:
             for jenis in ("sebaran", "peta"):
                 berkas = bab.nama_gambar_vc6(jenis, medan, slug)
                 assert berkas in sumber, f"gambar {berkas} tidak dirujuk panduan"
@@ -386,7 +389,7 @@ def test_setiap_gambar_vc6_yang_dirujuk_panduan_ada_berkasnya():
     """
     folder = config.illustrations_dir()
     for _combo, slug in bab.KOMBINASI_VC6:
-        for medan, _ in bab.MEDAN_VC6:
+        for medan in [m for m, _ in bab.MEDAN_VC6] + ["uz"]:
             for jenis in ("sebaran", "peta"):
                 berkas = folder / bab.nama_gambar_vc6(jenis, medan, slug)
                 assert berkas.is_file(), f"{berkas.name} belum dihasilkan; jalankan tools/"
@@ -413,7 +416,29 @@ def test_ringkasan_vc6_mencakup_seluruh_kasus():
                 n += 1
     assert n == 40, f"ringkasan memuat {n} kasus, seharusnya 40"
 
+    for combo, _slug in bab.KOMBINASI_VC6:
+        for kasus in ("ex01", "ex02", "ex03", "ex04"):
+            butir = ringkas[combo]["uz"][kasus]
+            assert butir["n_node"] > 0
+            assert 0.0 <= butir["dalam_pembulatan"] <= 100.0
+            assert butir["maks_um"] >= butir["p50_um"] >= 0.0
+
 
 def test_bab_bukti_menunjuk_ke_lampiran_perbandingan(sumber: str):
     """Bab 8 sengaja ringkas; pembaca harus diberi tahu di mana yang lengkap."""
     assert "#link(<lampiran-perbandingan>)" in sumber
+
+
+def test_lampiran_lendutan_menyatakan_kedua_batasan_tafsirnya(sumber: str):
+    """Jalur lendutan tidak boleh disajikan seolah setara dengan jalur gaya.
+
+    Dua hal harus tercetak di panduan: bahwa sebagian besar selisihnya berada di bawah galat
+    pembulatan ekspor Midas, dan bahwa di tempat pembulatan tidak mendominasi terlihat bias
+    kecil yang sistematis yang penyebabnya belum diketahui. Gambar tanpa kedua keterangan itu
+    akan membuat pembaca menafsirkan derau sebagai ketidakcocokan -- atau sebaliknya,
+    menganggap bias sebagai derau.
+    """
+    bagian = sumber.split("=== Lendutan vertikal", 1)[1].split("\n=== ", 1)[0]
+    assert "pembulatan" in bagian.lower()
+    assert "sistematis" in bagian
+    assert "belum teridentifikasi" in bagian, "penyebab bias tidak boleh diklaim diketahui"

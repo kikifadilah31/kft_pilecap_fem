@@ -414,6 +414,79 @@ def test_beban_pada_node_jepit_tanpa_overlap_terdaftar_raise(run_kasar):
 
 
 # ---------------------------------------------------------------------------
+# Pile yang SELURUHNYA berada di bawah pier (v0.13.2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def run_penuh():
+    """Pile D800 berpusat tepat di tengah pier 1,2 x 1,2: seluruh cakram di dalam pier.
+
+    Sampai v0.13.1 konfigurasi ini tidak dapat dijalankan: validator menolak batas 1,0, dan
+    bila dilewati, `pile_pressures` crash karena gmsh tidak membuat group `PILE_P1` untuk
+    bagian di luar pier yang kosong. Keduanya ditemukan pengguna pada grup 3x3 dengan pile
+    tengah tepat di bawah kolom -- konfigurasi yang sangat lazim.
+    """
+    geom = _geom(x_pile=0.0)
+    size = 2 * R_PILE / 8
+    cfg = _cfg(size)
+    mesh = _mesh(geom, size)
+    hasil = fem_engine.analyze_combo(
+        mesh,
+        geom,
+        fem_engine.MaterialProperties.from_config(cfg),
+        fem_engine.AnalysisOptions.from_config(cfg),
+        combo="UJI",
+        pz_by_pile={"P1": PZ},
+    )
+    return mesh, geom, hasil
+
+
+def test_pile_seluruhnya_di_bawah_pier_hanya_punya_group_lensa(run_penuh):
+    """Akar crash-nya, dikunci sebagai fakta: bagian di luar pier kosong, jadi tidak ada
+    group `PILE_*`. Bila suatu saat gmsh mulai membuat group kosong, test ini memberi tahu
+    bahwa penanganan khusus di `pile_pressures` mungkin tidak lagi diperlukan.
+    """
+    mesh, geom, _ = run_penuh
+    (pile,) = geom.piles
+    assert not mesh.has_group(pile.group_name)
+    assert mesh.lens_groups(), "seluruh cakram harus menjadi lensa"
+
+
+def test_pile_seluruhnya_di_bawah_pier_seluruh_bebannya_menjadi_strut(run_penuh):
+    """Batas yang sah dari model tumpang tindih sebagian: pelat tidak menerima lentur.
+
+    Seluruh `Pz` tersalur langsung ke pier dan dilaporkan sebagai strut -- yang kapasitasnya
+    wajib dicek engineer secara terpisah. Bocoran mesh NOL, karena tidak ada tepi pier yang
+    memotong cakram.
+    """
+    _, _, hasil = run_penuh
+    (jejak,) = hasil.load_traces
+    assert jejak.overlap_fraction == pytest.approx(1.0, abs=1e-12)
+    assert jejak.pz_strut == pytest.approx(PZ, rel=1e-9)
+    assert jejak.pz_ke_pelat == pytest.approx(0.0, abs=PZ * 1e-9)
+    assert jejak.pz_bocor_mesh == pytest.approx(0.0, abs=PZ * 1e-9)
+
+
+def test_pile_seluruhnya_di_bawah_pier_neraca_tetap_utuh(run_penuh):
+    """Beban pile tidak boleh hilang dari model hanya karena group pile-nya tidak ada."""
+    _, _, hasil = run_penuh
+    assert hasil.equilibrium.passed
+    assert hasil.equilibrium.total_applied_fz == pytest.approx(PZ, rel=1e-9)
+    assert hasil.equilibrium.total_reaction_fz == pytest.approx(
+        -PZ, rel=hasil.equilibrium.force_rtol
+    )
+
+
+def test_pile_tanpa_group_pile_maupun_lensa_tetap_ditolak(run_penuh):
+    """Penanganan khusus hanya berlaku bila lensanya ADA -- beban tidak boleh hilang diam-diam."""
+    mesh, geom, _ = run_penuh
+    tanpa_lensa = dataclasses.replace(geom, overlaps=())
+    with pytest.raises(KeyError, match="tidak ada"):
+        fem_engine.pile_pressures(mesh, tanpa_lensa, {"P1": PZ})
+
+
+# ---------------------------------------------------------------------------
 # Contoh bawaan ex04
 # ---------------------------------------------------------------------------
 

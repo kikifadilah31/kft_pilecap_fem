@@ -185,12 +185,20 @@ def validate_config_geometry_params(cfg: dict, sources_present: dict[str, bool])
     batas = (cfg.get("pier") or {}).get("max_pile_overlap_fraction")
     if batas is not None:
         nilai = float(batas)
-        if not 0.0 < nilai < 1.0:
+        # 1,0 DIIZINKAN. Sampai v0.13.1 batasnya `< 1,0` dengan alasan pile yang seluruhnya
+        # berada di bawah pier membuat model pelat "tidak bermakna" -- padahal itu batas yang
+        # sah dari model tumpang tindih sebagian yang sudah diterima: seluruh cakram menjadi
+        # lensa, seluruh `Pz` terserap ke reaksi pier, pelat tidak menerima lentur dari pile
+        # itu, dan 100% bebannya dilaporkan sebagai strut yang wajib dicek terpisah. Yang
+        # sebenarnya dihindari batas lama adalah crash (`PILE_*` tidak dibuat gmsh bila bagian
+        # di luar pier kosong), dan itu sudah ditangani di `fem_engine.pile_pressures`.
+        # Konfigurasi yang terblokir karenanya sangat lazim: grup 3x3 dengan pile tengah
+        # tepat di bawah kolom.
+        if not 0.0 < nilai <= 1.0:
             raise InputError(
-                f"`pier.max_pile_overlap_fraction` = {nilai} harus di antara 0 dan 1 "
-                "(fraksi luas pile yang boleh berada di dalam footprint pier).\n"
-                "  Nilai 1,0 berarti pile boleh lenyap seluruhnya ke dalam pier, yang "
-                "membuat model pelat lentur ini tidak bermakna untuk pile tersebut."
+                f"`pier.max_pile_overlap_fraction` = {nilai} harus lebih dari 0 dan paling "
+                "besar 1 (fraksi luas pile yang boleh berada di dalam footprint pier).\n"
+                "  Isi 1.0 untuk mengizinkan pile yang seluruhnya berada di bawah pier."
             )
 
     if not sources_present["pilecap"]:
@@ -728,15 +736,22 @@ def validate_geometry(
                     "itu (PRD Bagian 5.3 rule 14).\n"
                     "  Bila ini memang dimaksudkan, isi `pier.max_pile_overlap_fraction` "
                     "di config -- itu keputusan pemodelan Anda, dan konsekuensinya "
-                    "dijelaskan di KNOWN_LIMITATIONS #10."
+                    "dijelaskan di KNOWN_LIMITATIONS #10. Isi 1.0 bila pile ini memang "
+                    "berada seluruhnya di bawah pier."
                 )
             if fraction > max_overlap_fraction:
+                # Saran menaikkan batas hanya disebut bila memang dapat diikuti. Sampai
+                # v0.13.1 pesan ini menyarankannya juga untuk pile yang tumpang tindih 100%,
+                # padahal satu-satunya nilai yang cukup -- 1,0 -- ditolak validator:
+                # pengguna diarahkan ke jalan buntu.
                 raise GeometryError(
                     f"Tumpang tindih pile {pile.pile_id} dengan pier {pier.pier_id} = "
                     f"{fraction:.1%} dari luas pile, MELEBIHI batas "
                     f"`pier.max_pile_overlap_fraction` = {max_overlap_fraction:.1%} "
                     "yang Anda tetapkan.\n"
-                    "  Naikkan batasnya bila memang disengaja, atau geser pile."
+                    f"  Naikkan batasnya ke paling sedikit {_batas_cukup(fraction)} bila memang "
+                    "disengaja -- 1.0 bila pile ini berada seluruhnya di bawah pier -- atau "
+                    "geser pile."
                 )
 
     # Tambahan multi-pier: dua pier tidak boleh tumpang tindih.
@@ -827,6 +842,16 @@ def validate_reactions(reactions: Any, geom: GeometryModel) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _batas_cukup(fraction: float) -> str:
+    """Nilai `max_pile_overlap_fraction` terkecil yang MELOLOSKAN `fraction`, untuk diketik.
+
+    Dibulatkan KE ATAS ke dua desimal. Pembulatan biasa akan menyarankan 0.07 untuk tumpang
+    tindih 7,2% -- nilai yang tetap ditolak, sehingga saran di pesan galat justru menjadi
+    jalan buntu. Ditulis dengan titik desimal karena itulah yang diketik di berkas JSON.
+    """
+    return f"{min(math.ceil(fraction * 100.0 - 1e-9) / 100.0, 1.0):.2f}"
+
+
 def validate_mesh_vs_geometry(cfg: dict, geom: GeometryModel) -> None:
     """Rule 7 & 7a -- ukuran mesh terhadap dimensi pilecap dan diameter pile.
 
@@ -848,11 +873,19 @@ def validate_mesh_vs_geometry(cfg: dict, geom: GeometryModel) -> None:
         h_at_pile = float(mesh_cfg["size_local_pile"])
         size_source = "mesh.size_local_pile"
 
+    # Kedua aturan di bawah membandingkan besaran yang diketik pengguna dalam angka bulat
+    # (mm) lalu diubah ke meter. Tepat di batasnya, pembagian dan perkalian floating point
+    # menghasilkan nilai yang menyimpang di digit ke-16: 600 mm / 100 mm menjadi
+    # 5,999999999999999, sehingga konfigurasi yang PERSIS memenuhi rule 7a ditolak -- dengan
+    # saran "turunkan ke <= 100 mm" padahal nilainya sudah 100. Toleransi relatif 1e-9 hanya
+    # menyerap derau pembulatan itu; ia tidak melonggarkan aturannya secara bermakna.
+    toleransi = 1e-9
+
     # Rule 7 -- mesh terlalu kasar untuk hasil bermakna
     xmin, ymin, xmax, ymax = geom.pilecap.bounds
     min_dimension = min(xmax - xmin, ymax - ymin)
     max_allowed = min_dimension * config.MESH_SIZE_MAX_FRACTION
-    if h > max_allowed:
+    if h > max_allowed * (1.0 + toleransi):
         raise InputError(
             f"`mesh.size_global` = {h:.4f} m terlalu kasar: melebihi "
             f"{config.MESH_SIZE_MAX_FRACTION:g} x dimensi terkecil pilecap "
@@ -864,7 +897,7 @@ def validate_mesh_vs_geometry(cfg: dict, geom: GeometryModel) -> None:
     # Rule 7a -- area pile harus terdiskretisasi memadai
     d_min = geom.min_pile_diameter
     ratio = d_min / h_at_pile
-    if ratio < config.MIN_ELEM_PER_PILE_DIAMETER:
+    if ratio < config.MIN_ELEM_PER_PILE_DIAMETER * (1.0 - toleransi):
         recommended = d_min / config.MIN_ELEM_PER_PILE_DIAMETER
         raise InputError(
             f"Area pile tidak terdiskretisasi memadai: "
@@ -872,7 +905,9 @@ def validate_mesh_vs_geometry(cfg: dict, geom: GeometryModel) -> None:
             f"{config.MIN_ELEM_PER_PILE_DIAMETER:g}.\n"
             f"  Lingkaran pile berisiko hanya terwakili ~{max(1, round(ratio)):d} elemen, "
             "sehingga distribusi tekanan menjadi tidak berarti.\n"
-            f"  Turunkan `{size_source}` ke <= {recommended * 1e3:.0f} mm "
+            # Dibulatkan KE BAWAH: ini batas atas. Pembulatan biasa dapat menyarankan
+            # nilai yang tetap ditolak (108,6 mm -> "109").
+            f"  Turunkan `{size_source}` ke <= {math.floor(recommended * 1e3 + 1e-6):d} mm "
             f"({recommended:.4f} m). (PRD Bagian 5.3 rule 7a)"
         )
     _log.debug(
