@@ -197,3 +197,40 @@ def test_isian_tak_terbaca_ditanyakan_sebelum_run(frame, tmp_path, monkeypatch):
     frame._pada_jalankan(None)
 
     assert not dipanggil, "run harus dibatalkan bila pengguna menjawab Tidak"
+
+
+def test_tinggi_baris_field_tidak_membengkak_oleh_margin(frame):
+    """Satu baris field tidak boleh jauh lebih tinggi daripada isinya.
+
+    Pernah terjadi: teks bantuan ditambahkan dengan `wx.LEFT | wx.BOTTOM` dan SATU nilai
+    border, sehingga margin bawahnya ikut sebesar pergeseran kiri (~270 px). Tinggi satu
+    baris terukur 330-430 px untuk isi yang hanya ~85 px, dan formulirnya tampak berongga.
+    """
+    for key, kf in frame._kontrol.items():
+        isi = kf.kontrol.GetBestSize().height
+        if kf.bantuan is not None:
+            isi += kf.bantuan.GetBestSize().height
+        tinggi = kf.panel.GetBestSize().height
+        assert tinggi <= isi + 32, f"{key}: baris setinggi {tinggi}px untuk isi {isi}px"
+
+
+def test_teks_bantuan_dibungkus_ulang_dari_teks_asli(app):
+    """`Wrap` menyisipkan baris baru permanen; bungkus ulang harus mulai dari teks aslinya."""
+    from pilecap_fem.ui.wxgui import fields
+
+    teks = "Jarak antar batang yang Anda tetapkan; tool memilih diameter terkecil. " * 4
+    jendela = wx.Frame(None)
+    try:
+        t = fields.TeksBantuan(jendela, teks)
+        t.atur_lebar(600)
+        tinggi_lebar = t.GetBestSize().height
+
+        assert t.atur_lebar(300), "lebar berbeda harus dilaporkan berubah"
+        assert t.GetBestSize().height > tinggi_lebar, "kolom sempit harus lebih tinggi"
+
+        assert t.atur_lebar(600)
+        assert t.GetBestSize().height == tinggi_lebar, "kembali ke lebar awal, tinggi harus sama"
+        assert " ".join(t.GetLabel().split()) == " ".join(teks.split()), "teks tidak boleh berubah"
+        assert not t.atur_lebar(600), "lebar yang sama tidak perlu menata ulang"
+    finally:
+        jendela.Destroy()

@@ -77,7 +77,7 @@ class MainFrame(wx.Frame):
         self._kontrol: dict[str, fields.KontrolField] = {}
         #: Penanda "seksi ini di-override CSV", per entitas seksi. Diisi saat halaman
         #: dibangun, labelnya diperbarui tiap folder input berubah.
-        self._tanda_override: dict[str, wx.StaticText] = {}
+        self._tanda_override: dict[str, fields.TeksBantuan] = {}
         self._halaman: list[wx.Window] = []
         self._baris_log: list[str] = []
         self._berjalan = False
@@ -176,11 +176,12 @@ class MainFrame(wx.Frame):
     def _bangun_halaman(self, induk: wx.Window, seksi: Any) -> wx.Window:
         halaman = ScrolledPanel(induk)
         sizer = wx.BoxSizer(wx.VERTICAL)
+        teks_halaman: list[fields.TeksBantuan] = []
+        kontrol_halaman: list[fields.KontrolField] = []
 
         if seksi.help:
-            bantuan = wx.StaticText(halaman, label=seksi.help)
-            bantuan.Wrap(680)
-            bantuan.SetForegroundColour(ABU)
+            bantuan = fields.TeksBantuan(halaman, seksi.help)
+            teks_halaman.append(bantuan)
             sizer.Add(bantuan, 0, wx.ALL, 6)
 
         if getattr(seksi, "illustration", None):
@@ -189,8 +190,10 @@ class MainFrame(wx.Frame):
         if getattr(seksi, "override_entity", None):
             # Diisi ulang oleh `_perbarui_deteksi`; disimpan agar labelnya dapat diubah
             # tanpa membangun ulang halaman.
-            tanda = wx.StaticText(halaman, label="")
+            tanda = fields.TeksBantuan(halaman, "")
             tanda.SetForegroundColour(wx.Colour(176, 96, 0))
+            tanda.Hide()  # baru tampil bila ada CSV yang meng-override seksi ini
+            teks_halaman.append(tanda)
             sizer.Add(tanda, 0, wx.ALL, 6)
             self._tanda_override[seksi.override_entity] = tanda
 
@@ -199,14 +202,37 @@ class MainFrame(wx.Frame):
             kf = fields.KontrolField(halaman, f, pilihan=pilihan)
             kf.pada_perubahan(self._pada_ubah)
             self._kontrol[f.key] = kf
+            kontrol_halaman.append(kf)
             sizer.Add(kf.panel, 0, wx.EXPAND)
             if galat:
                 pesan = wx.StaticText(halaman, label=galat)
                 pesan.SetForegroundColour(wx.Colour(176, 0, 0))
-                sizer.Add(pesan, 0, wx.LEFT | wx.BOTTOM, fields.LEBAR_LABEL + 12)
+                # Spacer, bukan border: lihat `KontrolField` soal margin bawah.
+                geser = wx.BoxSizer(wx.HORIZONTAL)
+                geser.AddSpacer(fields.INDENT_BANTUAN)
+                geser.Add(pesan, 1)
+                sizer.Add(geser, 0, wx.EXPAND | wx.BOTTOM, 4)
 
         halaman.SetSizer(sizer)
         halaman.SetupScrolling(scroll_x=False)
+
+        def sesuaikan(event: wx.SizeEvent) -> None:
+            """Bungkus ulang teks bantuan agar tidak terpotong di sisi kanan.
+
+            Ruang untuk scrollbar vertikal SELALU disisihkan, ada atau tidak. Mengukurnya
+            hanya saat tampil membuat lebar yang dihitung bergantung pada scrollbar, yang
+            kemunculannya bergantung pada tinggi isi, yang bergantung pada lebar ini --
+            sebuah lingkaran yang berayun tanpa henti.
+            """
+            event.Skip()
+            lebar = halaman.GetClientSize().width - wx.SystemSettings.GetMetric(wx.SYS_VSCROLL_X)
+            berubah = [t.atur_lebar(lebar - 16) for t in teks_halaman]
+            berubah += [kf.atur_lebar(lebar) for kf in kontrol_halaman]
+            if any(berubah):
+                halaman.Layout()
+                halaman.FitInside()
+
+        halaman.Bind(wx.EVT_SIZE, sesuaikan)
         self._halaman.append(halaman)
         return halaman
 
@@ -321,13 +347,15 @@ class MainFrame(wx.Frame):
 
         for entitas, tanda in self._tanda_override.items():
             berkas = override.get(entitas)
-            tanda.SetLabel(
-                f"Diabaikan -- di-override {berkas}. Nilai tetap ditulis ke config supaya "
-                "terlihat apa yang dilewati."
-                if berkas
-                else ""
-            )
-            tanda.Wrap(680)
+            if berkas:
+                tanda.ganti(
+                    f"Diabaikan -- di-override {berkas}. Nilai tetap ditulis ke config "
+                    "supaya terlihat apa yang dilewati."
+                )
+            tanda.Show(bool(berkas))
+        for halaman in self._halaman:
+            halaman.Layout()
+            halaman.FitInside()
         self.Layout()
 
     def _pada_pilih_config(self, event: wx.CommandEvent) -> None:

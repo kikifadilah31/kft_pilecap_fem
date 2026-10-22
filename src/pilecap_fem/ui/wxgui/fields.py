@@ -17,9 +17,61 @@ import wx
 from pilecap_fem.ui import formstate
 from pilecap_fem.ui.schema import Field
 
-#: Lebar kolom label. Cukup untuk label terpanjang berikut satuannya tanpa membuat kolom
-#: kontrol menjadi sempit.
-LEBAR_LABEL = 260
+#: Lebar kolom label. Label terpanjang DIUKUR 207 px (`Paksa plot opsvis walau elemen
+#: banyak`); 230 menyisakan ruang untuk satuan yang lebih panjang tanpa meninggalkan celah
+#: lebar antara label pendek dan kotak isiannya.
+LEBAR_LABEL = 230
+
+#: Geser kiri teks bantuan: sejajar dengan kontrol, bukan dengan label.
+INDENT_BANTUAN = LEBAR_LABEL + 12
+
+#: Lebar awal teks bantuan sebelum halamannya pernah diukur, dan batas bawahnya. Di bawah
+#: batas itu teks menjadi kolom sempit yang tingginya melonjak, lebih buruk daripada terpotong.
+LEBAR_BANTUAN_AWAL = 520
+LEBAR_BANTUAN_MIN = 240
+
+#: Warna teks keterangan sekunder.
+ABU = wx.Colour(96, 96, 96)
+
+
+class TeksBantuan(wx.StaticText):
+    """Teks keterangan yang lebar bungkusnya dapat diatur ulang.
+
+    `wx.StaticText.Wrap` menyisipkan baris baru ke dalam label secara PERMANEN, sehingga
+    membungkus ulang pada lebar lain berarti mengembalikan teks aslinya lebih dulu. Teks
+    asli karena itu disimpan di sini.
+
+    Lebar bungkus tetap (sebelumnya 620 px) memotong teks di sisi kanan begitu jendela lebih
+    sempit daripada ukuran bawaannya.
+    """
+
+    def __init__(self, induk: wx.Window, teks: str, *, kecil: bool = False) -> None:
+        super().__init__(induk, label=teks)
+        self._teks = teks
+        self._lebar = 0
+        self.SetForegroundColour(ABU)
+        if kecil:
+            font = self.GetFont()
+            font.SetPointSize(max(7, font.GetPointSize() - 1))
+            self.SetFont(font)
+        self.atur_lebar(LEBAR_BANTUAN_AWAL)
+
+    def atur_lebar(self, lebar: int) -> bool:
+        """Bungkus pada `lebar` piksel. True bila lebarnya berubah (tata letak perlu diulang)."""
+        lebar = max(LEBAR_BANTUAN_MIN, int(lebar))
+        if lebar == self._lebar:
+            return False
+        self._lebar = lebar
+        self.SetLabel(self._teks)
+        self.Wrap(lebar)
+        return True
+
+    def ganti(self, teks: str) -> None:
+        """Ganti isinya, lalu bungkus pada lebar yang sedang berlaku."""
+        self._teks = teks
+        self.SetLabel(teks)
+        self.Wrap(self._lebar)
+
 
 #: Lebar kotak isian angka. Seragam supaya kolomnya rata dari seksi ke seksi.
 LEBAR_ANGKA = 140
@@ -66,15 +118,19 @@ class KontrolField:
         self._kedua: Any = None
         self.kontrol: Any = self._buat_kontrol(baris)
 
-        sizer.Add(baris, 0, wx.EXPAND | wx.ALL, 4)
+        sizer.Add(baris, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 4)
+        self.bantuan: TeksBantuan | None = None
         if f.help:
-            self.bantuan = wx.StaticText(self.panel, label=f.help)
-            self.bantuan.Wrap(620)
-            self.bantuan.SetForegroundColour(wx.Colour(96, 96, 96))
-            kecil = self.bantuan.GetFont()
-            kecil.SetPointSize(max(7, kecil.GetPointSize() - 1))
-            self.bantuan.SetFont(kecil)
-            sizer.Add(self.bantuan, 0, wx.LEFT | wx.BOTTOM, LEBAR_LABEL + 12)
+            self.bantuan = TeksBantuan(self.panel, f.help, kecil=True)
+            # Pergeseran kiri lewat spacer, BUKAN lewat border: `wx.LEFT | wx.BOTTOM` dengan
+            # satu nilai border memberi margin yang sama ke kedua sisi, sehingga margin
+            # bawahnya ikut 242 px -- ~270 px ruang kosong di bawah setiap field.
+            geser = wx.BoxSizer(wx.HORIZONTAL)
+            geser.AddSpacer(INDENT_BANTUAN)
+            geser.Add(self.bantuan, 1)
+            sizer.Add(geser, 0, wx.EXPAND | wx.BOTTOM, 4)
+        else:
+            sizer.AddSpacer(4)
         self.panel.SetSizer(sizer)
 
     # -- pembuatan ---------------------------------------------------------
@@ -186,6 +242,13 @@ class KontrolField:
 
     # -- tampilan ----------------------------------------------------------
 
+    def atur_lebar(self, lebar_halaman: int) -> bool:
+        """Sesuaikan bungkus teks bantuan dengan lebar halaman. True bila ada yang berubah."""
+        if self.bantuan is None:
+            return False
+        # 4 px border kiri panel + 4 px kanan.
+        return self.bantuan.atur_lebar(lebar_halaman - INDENT_BANTUAN - 8)
+
     def terapkan(self, tampilan: formstate.FieldView) -> None:
         """Perbarui label dan visibilitas menurut keadaan formulir saat ini."""
         self.label.SetLabel(tampilan.label)
@@ -222,4 +285,13 @@ def pilihan_aman(f: Field) -> tuple[tuple[Any, ...], str | None]:
         return (), f"Daftar pilihan tidak dapat dibaca: {exc}"
 
 
-__all__ = ["LEBAR_ANGKA", "LEBAR_LABEL", "KontrolField", "pilihan_aman", "teks_angka"]
+__all__ = [
+    "ABU",
+    "INDENT_BANTUAN",
+    "LEBAR_ANGKA",
+    "LEBAR_LABEL",
+    "KontrolField",
+    "TeksBantuan",
+    "pilihan_aman",
+    "teks_angka",
+]
