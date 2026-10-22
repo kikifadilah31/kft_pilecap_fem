@@ -27,13 +27,25 @@ dipasang dari wheel rilis) diambil lewat HTTPS biasa.
 uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.14.0/pilecap_fem-0.14.0-py3-none-any.whl
 ```
 
+**Dengan antarmuka grafis** — tambahkan extra-nya pada nama paket. Keduanya terpisah dan
+dapat dipasang bersamaan (`pilecap-fem[gui,ui]`):
+
+```bash
+uv tool install --python 3.12 "pilecap-fem[gui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.14.0/pilecap_fem-0.14.0-py3-none-any.whl"
+```
+```bash
+uv tool install --python 3.12 "pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.14.0/pilecap_fem-0.14.0-py3-none-any.whl"
+```
+
+Baris pertama memasang **jendela aplikasi** (`pilecap-gui`, wxPython), baris kedua **formulir peramban** (`pilecap-ui`, Streamlit). Tanpa extra, kedua perintah itu tetap terdaftar tetapi hanya mencetak petunjuk pemasangan.
+
 **PC yang sudah punya git — jalankan langsung dari sumber, tanpa memasang apa pun:**
 
 ```bash
 uvx --python 3.12 --from git+https://github.com/kikifadilah31/kft_pilecap_fem pilecap-run --help
 ```
 
-Setelah dipasang, kelima command (`pilecap-mesh`, `pilecap-analyze`, `pilecap-report`,
+Setelah dipasang, keenam command (`pilecap-mesh`, `pilecap-analyze`, `pilecap-report`,
 `pilecap-run`, `pilecap-ui`, `pilecap-gui`) tersedia langsung di terminal.
 
 Lima hal yang perlu diketahui:
@@ -74,6 +86,8 @@ uv tool install --python 3.12 --force https://github.com/kikifadilah31/kft_pilec
 Ganti `v0.14.0` dan nama berkasnya sesuai versi yang dituju di
 [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases). Tanpa
 `--force`, `uv` menolak memasang di atas tool dengan nama yang sama.
+
+Bila sebelumnya Anda memasang antarmuka grafis, **sertakan extra-nya lagi** (`"pilecap-fem[gui] @ <URL wheel>"`): memasang ulang tanpa extra menghapus wxPython dari tool tersebut, dan `pilecap-gui` kembali hanya mencetak petunjuk pemasangan.
 
 **PC yang sudah punya git (jalur `uvx`):** setiap pemanggilan tanpa tag versi (`@vX.Y.Z`)
 sudah otomatis mengambil `main` terbaru — tidak ada langkah upgrade terpisah. Bila perintah
@@ -136,7 +150,18 @@ subprocess — sehingga keduanya **tidak dapat** menghasilkan masukan analisis y
 Kesetaraan itu dijaga test yang membandingkan `pilecap_config.json` yang benar-benar ditulis
 masing-masing untuk masukan yang sama.
 
-**Jendela aplikasi** (wxPython) — tanpa server dan tanpa peramban:
+**Jendela aplikasi** (wxPython) — tanpa server dan tanpa peramban.
+
+Pasang dari wheel rilis, lalu buka:
+
+```bash
+uv tool install --python 3.12 --force "pilecap-fem[gui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.14.0/pilecap_fem-0.14.0-py3-none-any.whl"
+```
+```bash
+pilecap-gui
+```
+
+Dari clone lokal (pengembangan):
 
 ```bash
 uv sync --extra gui
@@ -146,6 +171,15 @@ uv run pilecap-gui
 ```
 
 **Formulir di peramban** (Streamlit):
+
+```bash
+uv tool install --python 3.12 --force "pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.14.0/pilecap_fem-0.14.0-py3-none-any.whl"
+```
+```bash
+pilecap-ui
+```
+
+Dari clone lokal (pengembangan):
 
 ```bash
 uv sync --extra ui
