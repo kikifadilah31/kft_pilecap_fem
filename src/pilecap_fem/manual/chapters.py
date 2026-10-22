@@ -539,11 +539,35 @@ def chapter_first_run() -> str:
     b.append(
         _md(
             "Bagi pengguna yang tidak terbiasa mengetik perintah, tersedia formulir yang "
-            "berjalan di peramban. Formulir tersebut menanyakan setiap masukan satu per "
-            "satu, lengkap dengan penjelasan dan gambar, lalu menuliskan berkas "
-            "konfigurasinya untuk Anda.\n\n"
-            "Fitur ini perlu dipasang sekali dengan menambahkan bagian `[ui]` pada "
-            "perintah pemasangan."
+            "menanyakan setiap masukan satu per satu, lengkap dengan penjelasan dan "
+            "gambar, lalu menuliskan berkas konfigurasinya untuk Anda.\n\n"
+            "Formulir itu tersedia dalam dua bentuk yang **menghasilkan berkas konfigurasi "
+            "yang sama persis**. Pilih salah satu saja."
+        )
+    )
+
+    b.append(tk.heading(3, "Bentuk pertama: jendela aplikasi"))
+    b.append(
+        _md(
+            "Bentuk ini terbuka sebagai jendela biasa, seperti aplikasi lain di komputer "
+            "Anda. Tidak ada peramban yang perlu dibuka dan tidak ada alamat yang perlu "
+            "diketik. Dipasang sekali dengan menambahkan bagian `[gui]`."
+        )
+    )
+    b.append(
+        tk.code_block(
+            "uv tool install --force --python 3.12 "
+            f'"pilecap-fem[gui] @ {config.wheel_url(__version__)}"'
+        )
+    )
+    b.append(_md("Setelah itu jendelanya dibuka dengan satu perintah."))
+    b.append(tk.code_block("pilecap-gui"))
+
+    b.append(tk.heading(3, "Bentuk kedua: formulir di peramban"))
+    b.append(
+        _md(
+            "Bentuk ini berjalan di peramban pada alamat `http://localhost:8501`, hanya di "
+            "mesin ini dan tanpa koneksi internet. Dipasang dengan bagian `[ui]`."
         )
     )
     b.append(
@@ -554,10 +578,13 @@ def chapter_first_run() -> str:
     )
     b.append(_md("Setelah itu formulirnya dibuka dengan satu perintah."))
     b.append(tk.code_block("pilecap-ui"))
+
     b.append(
         _md(
-            "Seluruh isian pada formulir tersebut adalah field yang sama dengan yang "
-            "diuraikan pada bab [Referensi konfigurasi](#bab-konfigurasi)."
+            "Seluruh isian pada kedua formulir tersebut adalah field yang sama dengan yang "
+            "diuraikan pada bab [Referensi konfigurasi](#bab-konfigurasi). Keduanya juga "
+            "menjalankan perintah `pilecap-run` yang sama, sehingga hasilnya tidak dapat "
+            "berbeda dari menjalankannya sendiri dari baris perintah."
         )
     )
     b.append(tk.pagebreak())
@@ -1371,6 +1398,7 @@ _PERINTAH: tuple[tuple[str, str], ...] = (
     ),
     ("pilecap-run", "Menjalankan seluruh rantai di atas dalam satu perintah."),
     ("pilecap-ui", "Membuka formulir grafis di peramban."),
+    ("pilecap-gui", "Membuka formulir grafis sebagai jendela aplikasi, tanpa peramban."),
     ("pilecap-manual", "Menghasilkan panduan ini untuk versi yang sedang terpasang."),
 )
 

@@ -10,9 +10,7 @@ dan menampilkan log beserta hasilnya.
 from __future__ import annotations
 
 import os
-import re
 import subprocess
-import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -21,12 +19,12 @@ import streamlit as st
 
 from pilecap_fem import __version__, config
 from pilecap_fem.ui import argv as argv_builder
-from pilecap_fem.ui import schema
+from pilecap_fem.ui import detect, formstate, runner, runopts, schema
 from pilecap_fem.ui.launcher import CWD_ENV
 
-#: Derau tqdm di stderr: carriage return dan potongan progress bar.
-PROGRESS_NOISE = re.compile(r"\r|\d+%\||it/s\]|s/it\]")
-MAX_LOG_LINES = 400
+#: Dipakai bersama antarmuka desktop; lihat `ui/runner.py` untuk alasan satu salinan.
+PROGRESS_NOISE = runner.PROGRESS_NOISE
+MAX_LOG_LINES = runner.MAX_LOG_LINES
 
 WORKDIR = Path(os.environ.get(CWD_ENV, os.getcwd()))
 
@@ -48,27 +46,8 @@ st.session_state.setdefault("last_command", "")
 
 @st.cache_data(show_spinner=False, ttl="10s")
 def detect_inputs(folder: str) -> dict[str, str]:
-    """Jalankan auto-detect bawaan tool terhadap folder yang ditunjuk.
-
-    Memakai `io_utils.autodetect` yang sama dengan CLI, sehingga apa yang ditampilkan di
-    sini persis apa yang nanti dipakai -- termasuk penolakannya bila ada dua berkas yang
-    cocok pada satu pola.
-    """
-    from pilecap_fem import io_utils
-
-    path = Path(folder)
-    found: dict[str, str] = {}
-    if not path.is_dir():
-        return found
-    for key in config.FILE_PATTERNS:
-        try:
-            match = io_utils.autodetect(path, key, required=False)
-        except Exception as exc:  # pola ambigu -> tampilkan sebagai masalah, bukan crash
-            found[key] = f"AMBIGU: {exc}"
-            continue
-        if match is not None:
-            found[key] = match.name
-    return found
+    """Pembungkus cache atas `detect.deteksi`, yang dipakai bersama antarmuka desktop."""
+    return detect.deteksi(folder)
 
 
 # ---------------------------------------------------------------------------
@@ -169,8 +148,9 @@ def render_field(f: schema.Field, values: dict[str, Any], unit_labels: dict[str,
     if f.kind == "int":
         return st.number_input(
             label,
-            step=1,
+            step=int(f.step) if f.step else 1,
             min_value=int(f.min_value) if f.min_value is not None else None,
+            max_value=int(f.max_value) if f.max_value is not None else None,
             key=key,
             help=f.help or None,
             **seed(key, "value", int(current) if current is not None else 0),
@@ -249,14 +229,7 @@ input_dir = st.text_input(
 )
 
 detected = detect_inputs(input_dir)
-override_entity = {
-    "pilecap_polygon": "pilecap",
-    "pile_coords": "pile",
-    "pier_polygon": "pier",
-}
-overridden: dict[str, str] = {
-    override_entity[k]: v for k, v in detected.items() if k in override_entity
-}
+overridden = detect.override_terdeteksi(detected)
 
 with st.container(border=True):
     if not Path(input_dir).is_dir():
@@ -320,7 +293,9 @@ with st.container(border=True):
 values = schema.default_values()
 
 with st.form("masukan", border=False):
-    unit_labels = {"length": "mm", "force": "kN", "stress": "MPa"}
+    # Diturunkan dari pilihan `units.*` berikut cadangan `config.DEFAULT_INPUT_UNITS`;
+    # daftar yang diketik di sini akan menyimpang diam-diam begitu bawaannya berubah.
+    unit_labels = formstate.unit_labels(values)
 
     for section in schema.SECTIONS:
         sumber_override = (
@@ -359,87 +334,17 @@ with st.form("masukan", border=False):
                     unit_labels[f.name] = values[f.key]
 
     with st.container(border=True):
-        st.markdown("### Opsi penyajian & jalannya analisis")
-        st.caption(
-            "Tidak satu pun opsi di bagian ini mengubah angka hasil — semuanya soal "
-            "penyajian dan cakupan run. Bawaannya aman; lewati saja bila ragu."
-        )
-        run_values: dict[str, Any] = {}
-        run_values["output_dir"] = st.text_input(
-            "Folder output",
-            value="output",
-            help="Folder tempat hasil ditulis, relatif terhadap folder kerja di atas. "
-            "Setiap run membuat subfolder baru bertimestamp dan TIDAK PERNAH menimpa run "
-            "sebelumnya, jadi aman dipakai berulang kali.",
-        )
-        with st.container(horizontal=True):
-            run_values["theme"] = st.selectbox(
-                "Tema plot",
-                list(config.THEMES),
-                help="Warna latar seluruh gambar. `light` untuk dicetak atau ditempel di "
-                "laporan; `dark` lebih nyaman dibaca di layar. Angka dan skalanya identik.",
-            )
-            run_values["contour_method"] = st.selectbox(
-                "Metode kontur",
-                list(config.CONTOUR_METHODS),
-                help="Cara nilai digambar. `element-center` mewarnai tiap elemen datar — "
-                "itulah yang sebenarnya dihitung, dan jadi bawaan. `average-nodal` "
-                "merata-ratakan ke titik simpul sehingga tampak halus, tetapi kehalusan itu "
-                "tidak pernah dihitung dan paling menyesatkan di sekitar tepi pier.",
-            )
-        with st.container(horizontal=True):
-            run_values["dpi"] = st.number_input(
-                "DPI",
-                value=config.OUTPUT_DPI,
-                min_value=50,
-                max_value=600,
-                step=50,
-                help="Kerapatan titik gambar PNG. Naikkan bila gambar akan dicetak besar "
-                "atau diperbesar untuk memeriksa detail; berkasnya ikut membesar.",
-            )
-            run_values["log_level"] = st.selectbox(
-                "Level log",
-                ["INFO", "DEBUG", "WARNING", "ERROR"],
-                help="Seberapa rinci log yang tampil di bawah dan ditulis ke `run.log`. "
-                "`INFO` sudah memuat seluruh langkah penting. Pakai `DEBUG` hanya saat "
-                "menelusuri masalah — keluaran gmsh ikut ditampilkan dan sangat panjang.",
-            )
-        combo_text = st.text_input(
-            "Batasi kombinasi (pisahkan spasi)",
-            placeholder="kosongkan untuk menganalisis semua",
-            help="Nama kombinasi dari `pile_reactions.csv` yang ingin dijalankan saja, "
-            "mis. `1.2D+1.6L`. Berguna untuk mencoba cepat pada satu kombinasi sebelum "
-            "menjalankan semuanya. Kosongkan untuk menganalisis seluruhnya.",
-        )
-        run_values["combo"] = combo_text.split() if combo_text.strip() else None
-        run_values["opsvis"] = st.checkbox(
-            "Paksa plot opsvis walau elemen banyak",
-            help="Gambar model dan bentuk terdeformasi dari OpenSeesPy. Bawaannya "
-            f"DILEWATI di atas {config.OPSVIS_MAX_ELEMENTS:,} elemen karena waktu "
-            "gambarnya tumbuh lebih cepat daripada linier dan dapat memakan menit-menit. "
-            "Centang bila Anda memang membutuhkan gambar itu dan bersedia menunggu.",
-        )
-        run_values["no_rebar_plots"] = st.checkbox(
-            "Lewati plot tulangan (lebih cepat)",
-            help="Melewati peta diameter, spasi, dan sengkang. Angka tulangan TETAP "
-            "dihitung dan tetap ada di `rebar_design.csv` serta calc sheet — hanya "
-            "gambarnya yang tidak dibuat. Berguna saat masih mencoba-coba geometri.",
-        )
-        run_values["no_envelope"] = st.checkbox(
-            "Lewati envelope",
-            help="Melewati pembuatan folder `Envelope/`, yang berisi nilai terselubung "
-            "(maksimum/minimum) di seluruh kombinasi beserta keterangan kombinasi mana "
-            "yang menentukan. Kosongkan centang ini bila Anda menganalisis lebih dari "
-            "satu kombinasi — envelope-lah yang biasanya dipakai mendesain.",
-        )
-        run_values["pdf"] = st.checkbox(
-            "Buat laporan PDF",
-            help="Satu dokumen PDF lengkap untuk seluruh run: sampul, dasar teori beserta "
-            "rumus dan sumbernya, data masukan, satu bab per kombinasi, envelope, "
-            "keterbatasan, dan provenance — dengan seluruh diagram sebagai gambar "
-            "bernomor. Sumber Typst-nya ikut disimpan agar hasilnya dapat diperiksa. "
-            "Menambah waktu di akhir pelaporan dan menghasilkan berkas belasan MB.",
-        )
+        st.markdown(f"### {runopts.RUN_SECTION.title}")
+        st.caption(runopts.RUN_SECTION.help)
+        # Dirender dengan loop YANG SAMA seperti bagian skema di atas. Sepuluh opsi ini
+        # semula ditulis inline di sini; begitu ada frontend kedua, salinan keduanya akan
+        # menyimpang dari kunci `dest` yang diharapkan `build_argv` -- dan flag yang tidak
+        # dikenal baru ketahuan saat run gagal di tangan pengguna.
+        run_form: dict[str, Any] = runopts.default_values()
+        for f in runopts.RUN_FIELDS:
+            run_form[f.key] = render_field(f, run_form, unit_labels)
+
+    run_values = runopts.to_argv_values(run_form)
 
     with st.container(horizontal=True):
         submitted = st.form_submit_button(
@@ -516,7 +421,7 @@ with st.status("Menjalankan…", expanded=True) as status:
     lines: list[str] = []
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "pilecap_fem.cli_pilecap_run", *cli_argv],
+        runner.perintah(cli_argv),
         cwd=str(WORKDIR),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -573,11 +478,10 @@ elif proc.returncode == 2:
     # PilecapError. Pesannya sudah ditulis untuk dibaca engineer, jadi ditampilkan apa
     # adanya -- tetapi HARUS didahulukan: pada input dengan override geometri, log
     # diakhiri belasan baris WARNING dan penyebab sebenarnya terkubur di bawahnya.
-    ringkas = [ln for ln in lines if ln.startswith("GAGAL:")]
+    ringkas = runner.ringkas_kegagalan(lines)
     if ringkas:
-        mulai = lines.index(ringkas[0])
         st.error("Masukan ditolak:", icon=":material/error:")
-        st.code("\n".join(lines[mulai:]))
+        st.code("\n".join(ringkas))
     else:
         st.error("Masukan ditolak. Lihat log di atas.", icon=":material/error:")
     with st.expander("Log lengkap"):

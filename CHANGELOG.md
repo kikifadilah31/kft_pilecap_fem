@@ -2,6 +2,73 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.14.0] — 2026-10-21 — antarmuka desktop sebagai frontend kedua
+
+Pemicunya panduan mandiri 0.12.0, yang dibuat untuk pembaca yang tidak dapat membaca README
+di GitHub. Bagi mereka, satu-satunya antarmuka grafis yang ada masih menuntut hal yang
+janggal: menyalakan server lalu membuka peramban ke `localhost`.
+
+### Added — `pilecap-gui`, jendela aplikasi native
+
+Antarmuka wxPython sebagai **frontend kedua yang berdiri sendiri**. Streamlit tetap ada dan
+tetap berfungsi tanpa perubahan perilaku: mengganti sekaligus berarti mempertaruhkan
+satu-satunya antarmuka grafis yang sudah teruji demi yang belum ada.
+
+| | Jendela aplikasi | Formulir peramban |
+|---|---|---|
+| Extra | `gui` (wxPython) | `ui` (Streamlit) |
+| Perintah | `pilecap-gui` | `pilecap-ui` |
+| Port jaringan | tidak ada | `localhost:8501` |
+
+Kedua extra terpisah satu sama lain: pemakai jendela tidak ikut menarik server Streamlit.
+
+### Changed — logika bersama diekstrak supaya kedua antarmuka tidak dapat menyimpang
+
+Yang semula ditulis inline di `ui/app.py` kini jadi modul tanpa toolkit, dipakai keduanya:
+
+* `ui/runopts.py` — sepuluh opsi run sebagai `schema.Field`, sehingga **satu loop perender
+  melayani bagian skema maupun opsi run**. Sebelumnya opsi run punya prosa bantuan dan kunci
+  `dest` yang ditulis tangan; salinan kedua akan menyimpang dan flag yang tidak dikenal baru
+  ketahuan saat run gagal di tangan pengguna.
+* `ui/formstate.py` — visibilitas bersyarat, label satuan, koersi angka.
+* `ui/detect.py` — deteksi berkas input berikut penanganan pola ambigu.
+* `ui/runner.py` — subprocess CLI. Memuat lima hal rapuh yang sebelumnya hanya ada di
+  `app.py`: penyaring derau tqdm, batas baris log, keharusan menguras stdout, pengangkatan
+  baris `GAGAL:` ke atas log, dan perintah proses anak itu sendiri.
+
+Kesetaraan keduanya diverifikasi dengan membandingkan `pilecap_config.json` yang
+**benar-benar ditulis** masing-masing antarmuka untuk masukan yang sama: identik byte demi
+byte.
+
+### Fixed — satu duplikasi laten di halaman Streamlit
+
+`ui/app.py` mengetik ulang `{"length": "mm", "force": "kN", "stress": "MPa"}`, menduplikasi
+`config.DEFAULT_INPUT_UNITS`. Kini diturunkan, sehingga label satuan tidak dapat menyimpang
+diam-diam begitu bawaannya berubah.
+
+### Catatan teknis — dua hal yang diukur, bukan diasumsikan
+
+**Ilustrasi tidak dapat dirender `wx.svg`.** Upaya pertama memakainya dan gagal secara
+diam-diam. `wx.svg` memakai nanosvg, yang tidak merender `<text>` dan tidak membaca blok
+`<style>` berkelas — dan seluruh ilustrasi di repo ini memakai keduanya. Hasil render
+`sistem-koordinat.svg` diukur: tiga kepala panah di atas bidang hitam, tanpa satu pun dari
+18 labelnya. Gambar tanpa label bukan versi sederhana dari gambarnya, ia gambar yang lain.
+Rasterisasi karena itu lewat Typst, yang sudah terkunci sebagai dependency dan sudah merender
+ilustrasi yang sama untuk laporan PDF; hasilnya di-cache (`ui/rasterize.py`).
+
+**Field angka tidak dapat memakai `wx.SpinCtrlDouble`.** Kontrol itu menurunkan jumlah
+desimalnya dari `inc`, dan dengan `inc` berapa pun yang masuk akal di sini ia melaporkan
+`digits=0` — sehingga `0.05` dibacanya `0.0` dan `27.5` dibacanya `28.0`, tanpa peringatan.
+Pada rasio redaman dan tebal pelat, nilai yang berubah diam-diam saat config dimuat adalah
+kegagalan terburuk yang bisa dipunyai alat ini: hasilnya tetap keluar, tetap tampak wajar,
+dan salah. Seluruh field angka karena itu kotak teks dengan koersi terpusat.
+
+### Test
+
+Dua aturan rumah yang sebelumnya **terdokumentasi tetapi tidak dijaga satu test pun** kini
+ditegakkan lewat pemeriksaan AST: hanya `ui/wxgui/` yang boleh mengimpor `wx`, dan `ui/wxgui/`
+tidak boleh mengimpor engine di tingkat modul.
+
 ## [0.13.2] — 2026-09-14 — pile yang seluruhnya berada di bawah pier dapat dianalisis
 
 Dilaporkan pengguna: pilecap 4800 x 4800, tebal 1500, grup pile 3 x 3 berspasi 1800 --

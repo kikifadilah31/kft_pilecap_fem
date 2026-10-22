@@ -86,6 +86,10 @@ dependencies = [
 # beserta dependensinya hanya untuk menjalankan analisis.
 [project.optional-dependencies]
 ui = ["streamlit>=1.57"]
+# Antarmuka desktop native. Terpisah dari `ui` karena keduanya berdiri sendiri:
+# pengguna yang memakai jendela wx tidak perlu menarik server Streamlit, dan
+# sebaliknya. wxPython tidak membawa dependency lain sama sekali (DIUKUR).
+gui = ["wxpython>=4.2"]
 
 [project.scripts]
 pilecap-mesh = "pilecap_fem.cli_pilecap_mesh:entry_point"
@@ -94,6 +98,7 @@ pilecap-report = "pilecap_fem.cli_pilecap_report:entry_point"
 pilecap-run = "pilecap_fem.cli_pilecap_run:entry_point"
 pilecap-ui = "pilecap_fem.ui.launcher:entry_point"
 pilecap-manual = "pilecap_fem.cli_pilecap_manual:entry_point"
+pilecap-gui = "pilecap_fem.ui.wx_launcher:entry_point"
 
 [dependency-groups]
 dev = [

@@ -24,7 +24,7 @@ dipasang dari wheel rilis) diambil lewat HTTPS biasa.
 **PC tanpa git — pasang dari wheel rilis, disematkan ke versi tertentu:**
 
 ```bash
-uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.2/pilecap_fem-0.13.2-py3-none-any.whl
+uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.14.0/pilecap_fem-0.14.0-py3-none-any.whl
 ```
 
 **PC yang sudah punya git — jalankan langsung dari sumber, tanpa memasang apa pun:**
@@ -34,7 +34,7 @@ uvx --python 3.12 --from git+https://github.com/kikifadilah31/kft_pilecap_fem pi
 ```
 
 Setelah dipasang, kelima command (`pilecap-mesh`, `pilecap-analyze`, `pilecap-report`,
-`pilecap-run`, `pilecap-ui`) tersedia langsung di terminal.
+`pilecap-run`, `pilecap-ui`, `pilecap-gui`) tersedia langsung di terminal.
 
 Lima hal yang perlu diketahui:
 
@@ -45,12 +45,12 @@ Lima hal yang perlu diketahui:
   menyebutkan persoalannya dan perintah yang benar — bukan error DLL yang membingungkan.
 - **Jalur wheel selalu tersemat ke satu versi** — nomor versinya ada di URL sendiri, jadi
   tidak perlu (dan tidak bisa) "selalu ambil terbaru" lewat jalur ini. Untuk versi lain,
-  ganti `v0.13.2` dan nama berkasnya menjadi versi yang dituju di
+  ganti `v0.14.0` dan nama berkasnya menjadi versi yang dituju di
   [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases) — lihat
   juga "Upgrade ke versi terbaru" di bawah.
 - **`--from` wajib** pada `uvx` karena nama paket (`pilecap-fem`) berbeda dari nama
   command yang dijalankan.
-- **Sematkan tag versi** (`@v0.13.2`) pada jalur git untuk pekerjaan yang hasilnya akan
+- **Sematkan tag versi** (`@v0.14.0`) pada jalur git untuk pekerjaan yang hasilnya akan
   diperiksa kemudian. `run_manifest.json` merekam `tool_version`; dengan tag, versi itu
   dapat ditarik kembali persis. Tanpa tag, instalasi selalu mengambil `main` terbaru.
 - **Unduhan pertama ~60 MB** (gmsh saja 40 MB), lalu di-cache `uv`.
@@ -68,10 +68,10 @@ pilecap-run --version
 yang lebih baru, dengan `--force` karena nama tool-nya (`pilecap-fem`) sudah terpasang:
 
 ```bash
-uv tool install --python 3.12 --force https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.2/pilecap_fem-0.13.2-py3-none-any.whl
+uv tool install --python 3.12 --force https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.14.0/pilecap_fem-0.14.0-py3-none-any.whl
 ```
 
-Ganti `v0.13.2` dan nama berkasnya sesuai versi yang dituju di
+Ganti `v0.14.0` dan nama berkasnya sesuai versi yang dituju di
 [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases). Tanpa
 `--force`, `uv` menolak memasang di atas tool dengan nama yang sama.
 
@@ -130,6 +130,23 @@ sebagai release asset di samping wheel.
 
 ## Antarmuka grafis (opsional) — untuk yang tidak terbiasa CLI
 
+Tersedia **dua** antarmuka grafis yang berdiri sendiri. Keduanya memakai daftar field,
+pembangun config, dan pembangun argv yang sama, lalu memanggil `pilecap-run` sebagai
+subprocess — sehingga keduanya **tidak dapat** menghasilkan masukan analisis yang berbeda.
+Kesetaraan itu dijaga test yang membandingkan `pilecap_config.json` yang benar-benar ditulis
+masing-masing untuk masukan yang sama.
+
+**Jendela aplikasi** (wxPython) — tanpa server dan tanpa peramban:
+
+```bash
+uv sync --extra gui
+```
+```bash
+uv run pilecap-gui
+```
+
+**Formulir di peramban** (Streamlit):
+
 ```bash
 uv sync --extra ui
 ```
@@ -137,9 +154,9 @@ uv sync --extra ui
 uv run pilecap-ui
 ```
 
-Formulir terbuka di `http://localhost:8501` — **offline, hanya mesin ini**. Isi seluruh
-masukan, tekan **Jalankan analisis**, selesai. Tidak perlu menulis `pilecap_config.json`
-maupun menghafal satu pun flag.
+Formulir peramban terbuka di `http://localhost:8501` — **offline, hanya mesin ini**. Isi
+seluruh masukan, tekan **Jalankan analisis**, selesai. Tidak perlu menulis
+`pilecap_config.json` maupun menghafal satu pun flag.
 
 Yang tersedia di formulir:
 
@@ -151,10 +168,21 @@ Yang tersedia di formulir:
 * **Muat `pilecap_config.json` yang sudah ada.** Isi path-nya di kotak paling atas lalu
   tekan **Muat**; seluruh formulir terisi dan tetap dapat disunting. Kunci yang tidak
   dikenal formulir dilaporkan, tidak dibuang diam-diam.
-* **Pratinjau geometri.** Tombol **Perbarui pratinjau** menggambar denah pilecap, pile,
-  dan pier sebelum apa pun dijalankan. Tidak menyentuh gmsh maupun OpenSees, jadi selesai
-  seketika, dan override CSV ikut diperhitungkan sehingga yang tergambar memang yang akan
-  dianalisis.
+* **Pratinjau geometri.** Tombol pratinjau menggambar denah pilecap, pile, dan pier
+  sebelum apa pun dijalankan. Tidak menyentuh gmsh maupun OpenSees, jadi selesai seketika,
+  dan override CSV ikut diperhitungkan sehingga yang tergambar memang yang akan dianalisis.
+  Pada jendela aplikasi, pratinjau terbuka di jendela terpisah yang dapat diubah ukuran dan
+  dibiarkan terbuka sambil masukannya disunting.
+
+Perbedaan yang ada hanya pada penyajian, bukan pada hasil:
+
+| | Jendela aplikasi | Formulir peramban |
+|---|---|---|
+| Extra | `gui` (wxPython) | `ui` (Streamlit) |
+| Perintah | `pilecap-gui` | `pilecap-ui` |
+| Port jaringan | tidak ada | `localhost:8501` |
+| Susunan 60 field | 12 halaman berseksi | satu kolom bergulir |
+| Ilustrasi | PNG hasil rasterisasi Typst | SVG langsung |
 
 Tiga hal yang perlu diketahui:
 
@@ -170,7 +198,9 @@ Config yang dihasilkan formulir ditulis ke `<folder kerja>/ui_configs/` dengan n
 bertimestamp — bukan ke folder input, agar auto-detect config tidak menjadi ambigu bagi
 siapa pun yang kemudian menjalankan CLI tanpa `--config`.
 
-`streamlit` sengaja **opsional**: pengguna CLI tidak ikut memasangnya.
+`streamlit` dan `wxpython` sengaja **opsional**, dan terpisah satu sama lain: pengguna
+CLI tidak ikut memasang keduanya, dan pemakai jendela aplikasi tidak ikut menarik server
+Streamlit.
 
 ## Pemakaian
 
@@ -823,7 +853,8 @@ Empat di antaranya paling sering terlewat karena tidak punya bawaan yang masuk a
 `material.E`, `material.E_source`, `design.fy`, `design.fy_source` — lihat
 [Nilai yang WAJIB Anda tetapkan sendiri](#nilai-yang-wajib-anda-tetapkan-sendiri).
 
-> Penjelasan di bagian ini dan tooltip di `pilecap-ui` berasal dari daftar field yang sama
+> Penjelasan di bagian ini dan tooltip di `pilecap-ui`/`pilecap-gui` berasal dari daftar
+> field yang sama
 > (`src/pilecap_fem/ui/schema.py`). Test `test_readme_mendokumentasikan_setiap_field`
 > menggagalkan suite bila ada field baru yang belum masuk ke sini — supaya keduanya tidak
 > menyimpang diam-diam.

@@ -88,6 +88,12 @@ class Field:
     visible_when: Callable[[dict[str, Any]], bool] | None = None
     min_value: float | None = None
     max_value: float | None = None
+    #: Kenaikan per klik pada kontrol angka. `None` = biarkan frontend memilih.
+    #:
+    #: Ada demi field seperti DPI yang rentangnya 50..600: menaikkannya satu per satu
+    #: membuat kontrolnya praktis tidak terpakai. Ditaruh di sini, bukan di daftar terpisah
+    #: milik tiap frontend, supaya kedua antarmuka tidak dapat menyimpang soal ini.
+    step: float | None = None
 
     @property
     def block(self) -> str:

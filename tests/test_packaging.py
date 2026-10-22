@@ -39,12 +39,14 @@ EXPECTED_SCRIPTS = {
     "pilecap-report": "pilecap_fem.cli_pilecap_report:entry_point",
     "pilecap-run": "pilecap_fem.cli_pilecap_run:entry_point",
     "pilecap-ui": "pilecap_fem.ui.launcher:entry_point",
+    "pilecap-gui": "pilecap_fem.ui.wx_launcher:entry_point",
     "pilecap-manual": "pilecap_fem.cli_pilecap_manual:entry_point",
 }
 
-#: `pilecap-ui` sengaja TIDAK menerima argumen baris perintah -- seluruh masukan diisi
-#: lewat formulir -- sehingga ia tidak punya `--version` untuk diuji.
-VERSIONED_SCRIPTS = {k: v for k, v in EXPECTED_SCRIPTS.items() if k != "pilecap-ui"}
+#: Kedua antarmuka formulir sengaja TIDAK menerima argumen baris perintah -- seluruh
+#: masukan diisi lewat formulir -- sehingga keduanya tidak punya `--version` untuk diuji.
+FORM_SCRIPTS = frozenset({"pilecap-ui", "pilecap-gui"})
+VERSIONED_SCRIPTS = {k: v for k, v in EXPECTED_SCRIPTS.items() if k not in FORM_SCRIPTS}
 
 
 def _pyproject_text() -> str:
@@ -420,6 +422,30 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
     for module in ("__init__", "chapters", "document", "figures", "model", "theory", "typst_kit"):
         path = f"pilecap_fem/reporting_pdf/{module}.py"
         assert path in names, f"modul laporan PDF tidak ikut terkemas ({path})"
+
+    # Modul antarmuka. `app.py` sudah diperiksa di atas sebagai data; sisanya modul yang
+    # benar-benar diimpor, dan keduanya dibutuhkan kedua antarmuka.
+    for module in (
+        "__init__",
+        "argv",
+        "detect",
+        "formstate",
+        "launcher",
+        "preview",
+        "rasterize",
+        "runner",
+        "runopts",
+        "schema",
+        "wx_launcher",
+    ):
+        path = f"pilecap_fem/ui/{module}.py"
+        assert path in names, f"modul antarmuka tidak ikut terkemas ({path})"
+
+    # Sub-paket desktop. Tanpa ini, `pilecap-gui` gagal hanya pada instalasi sungguhan --
+    # persis kelas kegagalan yang tidak pernah terlihat dari repo.
+    for module in ("__init__", "fields", "main", "svgview"):
+        path = f"pilecap_fem/ui/wxgui/{module}.py"
+        assert path in names, f"modul antarmuka desktop tidak ikut terkemas ({path})"
 
     # Panduan HARUS ikut di dalam wheel, bukan hanya ada di repo: pengguna yang menerima
     # wheel saja justru yang paling membutuhkan panduan sesuai versi terpasangnya.
