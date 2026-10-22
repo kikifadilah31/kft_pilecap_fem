@@ -2,6 +2,47 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [0.14.1] — 2026-10-22 — jarak antar field di jendela desktop
+
+Dilaporkan pengguna lewat tangkapan layar: pada `pilecap-gui`, jarak antar field terlalu
+berjauhan.
+
+### Fixed — margin bawah ~270 px di bawah setiap field
+
+Teks bantuan ditambahkan dengan `wx.LEFT | wx.BOTTOM` dan **satu** nilai border. Border itu
+berlaku ke kedua sisi, sehingga margin bawahnya ikut sebesar pergeseran kiri (242 px).
+Tinggi satu baris field terukur **330-430 px** untuk isi yang hanya ~85 px; kini 71-84 px.
+Isi halaman "Desain - umum" turun dari 2392 px menjadi 566 px.
+
+Pergeseran kiri kini lewat spacer, bukan border. Pesan galat daftar pilihan memakai pola
+yang sama dan ikut diperbaiki.
+
+### Fixed — teks bantuan terpotong di sisi kanan
+
+Teks dibungkus pada lebar tetap 620 px, sehingga terpotong pada jendela yang lebih sempit
+dari ukuran bawaan. Kini lebarnya mengikuti halaman, termasuk saat jendela diubah ukurannya.
+Ruang untuk scrollbar selalu disisihkan: mengukurnya hanya saat tampil membuat lebar yang
+dihitung bergantung pada scrollbar, yang kemunculannya bergantung pada tinggi isi, yang
+bergantung pada lebar itu -- sebuah lingkaran yang berayun tanpa henti.
+
+### Changed
+
+* Kolom label dipersempit dari 260 ke 230 px. Label terpanjang terukur 207 px, jadi kolom
+  lama meninggalkan celah lebar antara label pendek dan kotak isiannya.
+* Penanda "di-override CSV" disembunyikan saat kosong, bukan menyisakan satu baris kosong di
+  halaman Pilecap, Pile, dan Pier.
+
+### Test
+
+Dua test baru menjaga tata letak. `test_tinggi_baris_field_tidak_membengkak_oleh_margin`
+terbukti **merah** pada margin yang dirusak lagi ("baris setinggi 283px untuk isi 37px"),
+sehingga ia benar-benar menangkap bug ini.
+
+### Belum diperbaiki
+
+Teks bantuan di jendela desktop masih menampilkan tanda markdown mentah (mis. `**satu**`),
+karena teks itu ditulis untuk Streamlit yang merendernya.
+
 ## [0.14.0] — 2026-10-21 — antarmuka desktop sebagai frontend kedua
 
 Pemicunya panduan mandiri 0.12.0, yang dibuat untuk pembaca yang tidak dapat membaca README
