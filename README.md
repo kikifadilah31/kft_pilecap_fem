@@ -24,20 +24,23 @@ dipasang dari wheel rilis) diambil lewat HTTPS biasa.
 **PC tanpa git — pasang dari wheel rilis, disematkan ke versi tertentu:**
 
 ```bash
-uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.14.1/pilecap_fem-0.14.1-py3-none-any.whl
+uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.15.0/pilecap_fem-0.15.0-py3-none-any.whl
 ```
 
-**Dengan antarmuka grafis** — tambahkan extra-nya pada nama paket. Keduanya terpisah dan
-dapat dipasang bersamaan (`pilecap-fem[gui,ui]`):
+**Dengan antarmuka grafis** — tambahkan extra-nya pada nama paket. Ketiganya terpisah dan
+dapat dipasang bersamaan (mis. `pilecap-fem[gui,ui,qt]`):
 
 ```bash
-uv tool install --python 3.12 "pilecap-fem[gui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.14.1/pilecap_fem-0.14.1-py3-none-any.whl"
+uv tool install --python 3.12 "pilecap-fem[gui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.15.0/pilecap_fem-0.15.0-py3-none-any.whl"
 ```
 ```bash
-uv tool install --python 3.12 "pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.14.1/pilecap_fem-0.14.1-py3-none-any.whl"
+uv tool install --python 3.12 "pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.15.0/pilecap_fem-0.15.0-py3-none-any.whl"
+```
+```bash
+uv tool install --python 3.12 "pilecap-fem[qt] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.15.0/pilecap_fem-0.15.0-py3-none-any.whl"
 ```
 
-Baris pertama memasang **jendela aplikasi** (`pilecap-gui`, wxPython), baris kedua **formulir peramban** (`pilecap-ui`, Streamlit). Tanpa extra, kedua perintah itu tetap terdaftar tetapi hanya mencetak petunjuk pemasangan.
+Baris pertama memasang **jendela aplikasi** (`pilecap-gui`, wxPython), baris kedua **formulir peramban** (`pilecap-ui`, Streamlit), baris ketiga **jendela Qt** (`pilecap-qt`, PySide6, eksperimental). Tanpa extra, ketiga perintah itu tetap terdaftar tetapi hanya mencetak petunjuk pemasangan.
 
 **PC yang sudah punya git — jalankan langsung dari sumber, tanpa memasang apa pun:**
 
@@ -45,8 +48,8 @@ Baris pertama memasang **jendela aplikasi** (`pilecap-gui`, wxPython), baris ked
 uvx --python 3.12 --from git+https://github.com/kikifadilah31/kft_pilecap_fem pilecap-run --help
 ```
 
-Setelah dipasang, keenam command (`pilecap-mesh`, `pilecap-analyze`, `pilecap-report`,
-`pilecap-run`, `pilecap-ui`, `pilecap-gui`) tersedia langsung di terminal.
+Setelah dipasang, ketujuh command (`pilecap-mesh`, `pilecap-analyze`, `pilecap-report`,
+`pilecap-run`, `pilecap-ui`, `pilecap-gui`, `pilecap-qt`) tersedia langsung di terminal.
 
 Lima hal yang perlu diketahui:
 
@@ -57,12 +60,12 @@ Lima hal yang perlu diketahui:
   menyebutkan persoalannya dan perintah yang benar — bukan error DLL yang membingungkan.
 - **Jalur wheel selalu tersemat ke satu versi** — nomor versinya ada di URL sendiri, jadi
   tidak perlu (dan tidak bisa) "selalu ambil terbaru" lewat jalur ini. Untuk versi lain,
-  ganti `v0.14.1` dan nama berkasnya menjadi versi yang dituju di
+  ganti `v0.15.0` dan nama berkasnya menjadi versi yang dituju di
   [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases) — lihat
   juga "Upgrade ke versi terbaru" di bawah.
 - **`--from` wajib** pada `uvx` karena nama paket (`pilecap-fem`) berbeda dari nama
   command yang dijalankan.
-- **Sematkan tag versi** (`@v0.14.1`) pada jalur git untuk pekerjaan yang hasilnya akan
+- **Sematkan tag versi** (`@v0.15.0`) pada jalur git untuk pekerjaan yang hasilnya akan
   diperiksa kemudian. `run_manifest.json` merekam `tool_version`; dengan tag, versi itu
   dapat ditarik kembali persis. Tanpa tag, instalasi selalu mengambil `main` terbaru.
 - **Unduhan pertama ~60 MB** (gmsh saja 40 MB), lalu di-cache `uv`.
@@ -80,10 +83,10 @@ pilecap-run --version
 yang lebih baru, dengan `--force` karena nama tool-nya (`pilecap-fem`) sudah terpasang:
 
 ```bash
-uv tool install --python 3.12 --force https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.14.1/pilecap_fem-0.14.1-py3-none-any.whl
+uv tool install --python 3.12 --force https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.15.0/pilecap_fem-0.15.0-py3-none-any.whl
 ```
 
-Ganti `v0.14.1` dan nama berkasnya sesuai versi yang dituju di
+Ganti `v0.15.0` dan nama berkasnya sesuai versi yang dituju di
 [halaman Releases](https://github.com/kikifadilah31/kft_pilecap_fem/releases). Tanpa
 `--force`, `uv` menolak memasang di atas tool dengan nama yang sama.
 
@@ -157,7 +160,7 @@ masing-masing untuk masukan yang sama.
 Pasang dari wheel rilis, lalu buka:
 
 ```bash
-uv tool install --python 3.12 --force "pilecap-fem[gui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.14.1/pilecap_fem-0.14.1-py3-none-any.whl"
+uv tool install --python 3.12 --force "pilecap-fem[gui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.15.0/pilecap_fem-0.15.0-py3-none-any.whl"
 ```
 ```bash
 pilecap-gui
@@ -175,7 +178,7 @@ uv run pilecap-gui
 **Formulir di peramban** (Streamlit):
 
 ```bash
-uv tool install --python 3.12 --force "pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.14.1/pilecap_fem-0.14.1-py3-none-any.whl"
+uv tool install --python 3.12 --force "pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.15.0/pilecap_fem-0.15.0-py3-none-any.whl"
 ```
 ```bash
 pilecap-ui
@@ -191,8 +194,16 @@ uv run pilecap-ui
 ```
 
 **Jendela Qt** (PySide6) — **eksperimental**, untuk dibandingkan dengan jendela wxPython.
-Saat ini hanya dari clone lokal; wheel rilis v0.14.1 belum memuatnya, jadi jalur pemasangan
-dari wheel baru tersedia pada rilis berikutnya.
+Tersedia sejak v0.15.0.
+
+```bash
+uv tool install --python 3.12 --force "pilecap-fem[qt] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.15.0/pilecap_fem-0.15.0-py3-none-any.whl"
+```
+```bash
+pilecap-qt
+```
+
+Dari clone lokal (pengembangan):
 
 ```bash
 uv sync --extra qt

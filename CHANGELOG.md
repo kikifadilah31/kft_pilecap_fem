@@ -2,7 +2,7 @@
 
 Format mengikuti template PRD Bagian 16C.
 
-## [Unreleased]
+## [0.15.0] — 2026-10-23 — antarmuka desktop ketiga (PySide6), eksperimental
 
 ### Added — `pilecap-qt`, antarmuka desktop ketiga (PySide6), EKSPERIMENTAL
 
@@ -16,6 +16,9 @@ PDF, dan Addons — unduhan ±244 MB berbanding ±79 MB (DIUKUR), tanpa satu pun
 Yang berbeda dari jendela wx, dan menjadi bahan perbandingannya:
 
 * Teks bantuan dirender sebagai **markdown** (`**satu**` tampil tebal), bukan mentah.
+* Warna teks diturunkan dari palet aktif, sehingga terbaca di **mode gelap** Windows yang
+  diikuti Qt. Warna tetap untuk latar terang (`#606060`) nyaris hilang di latar gelap --
+  terlihat pada tangkapan layar pertama antarmuka ini.
 * Teks bantuan membungkus sendiri mengikuti lebar jendela; jarak label dan kotak diatur
   `QFormLayout`, bukan sizer yang disusun tangan seperti sumber bug v0.14.1.
 * Uji asapnya berjalan **tanpa display** (`QT_QPA_PLATFORM=offscreen`).
