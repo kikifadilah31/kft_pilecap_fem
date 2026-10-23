@@ -21,7 +21,16 @@ import pytest
 
 from pilecap_fem import cli_pilecap_run, config
 from pilecap_fem.ui import argv as argv_builder
-from pilecap_fem.ui import detect, formstate, runner, runopts, schema, wx_launcher
+from pilecap_fem.ui import (
+    desktop,
+    detect,
+    formstate,
+    qt_launcher,
+    runner,
+    runopts,
+    schema,
+    wx_launcher,
+)
 
 UI_DIR = Path(schema.__file__).parent
 
@@ -421,3 +430,175 @@ def test_setiap_ilustrasi_seksi_ada_di_paket():
         if s.illustration and not (config.illustrations_dir() / s.illustration).is_file()
     ]
     assert not hilang, f"ilustrasi tidak ada di paket: {hilang}"
+
+
+# ---------------------------------------------------------------------------
+# Logika desktop bersama (ui/desktop.py) -- dipakai wx DAN Qt
+# ---------------------------------------------------------------------------
+
+CONTOH_EX01 = Path("examples/ex01_standard_4pile/pilecap_config.json")
+
+
+def test_nilai_skema_membuang_opsi_run():
+    nilai = schema.default_values() | runopts.default_values()
+    hasil = desktop.nilai_skema(nilai)
+    assert not [k for k in hasil if k.startswith(runopts.PREFIX)]
+    assert set(hasil) == set(schema.default_values())
+
+
+def test_perintah_pratinjau_memakai_nama_config_contoh(tmp_path):
+    nilai = schema.default_values() | runopts.default_values()
+    perintah = desktop.susun_perintah_pratinjau(nilai, str(tmp_path / "input"), tmp_path)
+    assert perintah.startswith("pilecap-run ")
+    assert "pilecap_config_<timestamp>.json" in perintah
+
+
+def test_peringatan_koersi_hanya_isian_bermasalah():
+    hasil = desktop.peringatan_koersi([("Tebal", None), ("Cover", "'x' bukan angka")])
+    assert hasil == ["Cover: 'x' bukan angka"]
+
+
+def test_status_folder_input_ketiga_cabang(tmp_path):
+    assert desktop.status_folder_input(str(tmp_path / "tidak-ada"), {}).tingkat == "galat"
+    assert desktop.status_folder_input(str(tmp_path), {}).tingkat == "peringatan"
+    ok = desktop.status_folder_input(str(tmp_path), {"reactions": "pile_reactions.csv"})
+    assert ok.tingkat == "sukses"
+    assert "pile_reactions.csv" in ok.isi
+
+
+@pytest.mark.parametrize(
+    ("isi", "potongan"),
+    [
+        (None, "tidak ditemukan"),
+        ("{bukan json", "Bukan JSON"),
+        ("[1, 2]", "objek JSON"),
+    ],
+)
+def test_muat_config_menolak_dengan_pesan(tmp_path, isi, potongan):
+    berkas = tmp_path / "c.json"
+    if isi is not None:
+        berkas.write_text(isi, encoding="utf-8")
+    with pytest.raises(desktop.ConfigTakTerbaca, match=potongan):
+        desktop.muat_config(str(berkas), tmp_path)
+
+
+def test_muat_config_kosong_meminta_path(tmp_path):
+    with pytest.raises(desktop.ConfigTakTerbaca, match="Isi dulu"):
+        desktop.muat_config("   ", tmp_path)
+
+
+def test_muat_config_path_relatif_diukur_dari_folder_kerja():
+    nilai, tak_dikenal, path = desktop.muat_config(str(CONTOH_EX01), Path.cwd())
+    assert path == Path.cwd() / CONTOH_EX01
+    assert not tak_dikenal
+    assert nilai["pilecap.thickness"] is not None
+
+
+def test_pesan_dimuat_melaporkan_kunci_tak_dikenal(tmp_path):
+    assert desktop.pesan_dimuat(tmp_path, ()).tingkat == "info"
+    pesan = desktop.pesan_dimuat(tmp_path, ("asing.kunci",))
+    assert pesan.tingkat == "peringatan"
+    assert "asing.kunci" in pesan.isi
+
+
+def test_pesan_hasil_setiap_kode_keluar(tmp_path):
+    cfg = tmp_path / "c.json"
+    sukses = desktop.pesan_hasil(runner.Hasil(returncode=0, run_dir="out/r1"), cfg)
+    assert sukses.tingkat == "sukses"
+    assert "out/r1" in sukses.isi
+    assert str(cfg) in sukses.isi
+
+    ditolak = desktop.pesan_hasil(
+        runner.Hasil(returncode=2, lines=["WARNING a", "GAGAL: pile di luar pelat", "WARNING b"]),
+        cfg,
+    )
+    assert ditolak.tingkat == "galat"
+    assert ditolak.isi.startswith("Masukan ditolak:")
+    assert "GAGAL: pile di luar pelat" in ditolak.isi
+    assert "WARNING a" not in ditolak.isi, "penyebab harus diangkat, bukan dikubur log"
+
+    tanpa_gagal = desktop.pesan_hasil(runner.Hasil(returncode=2, lines=["WARNING a"]), cfg)
+    assert "Lihat log" in tanpa_gagal.isi
+
+    assert desktop.pesan_hasil(runner.Hasil(returncode=4), cfg).tingkat == "peringatan"
+    lain = desktop.pesan_hasil(runner.Hasil(returncode=137), cfg)
+    assert lain.tingkat == "galat"
+    assert "137" in lain.isi
+
+
+def test_label_hasil():
+    assert desktop.label_hasil(runner.Hasil(returncode=0, run_dir="r")).isi == "Selesai -- r"
+    assert desktop.label_hasil(runner.Hasil(returncode=2)).isi == "Gagal (exit 2)"
+
+
+def test_siapkan_run_menulis_config_baru_lalu_menyusun_argv(tmp_path):
+    nilai = schema.default_values() | runopts.default_values()
+    config_path, argv = desktop.siapkan_run(nilai, str(tmp_path / "input"), tmp_path)
+    assert config_path.parent == tmp_path / "ui_configs"
+    assert config_path.is_file()
+    assert argv[argv.index("--config") + 1] == str(config_path)
+    cli_pilecap_run.build_parser().parse_args(argv)
+
+
+def test_desktop_tidak_mengimpor_toolkit():
+    nama = _impor_tingkat_modul(UI_DIR / "desktop.py")
+    assert not nama & {"wx", "PySide6", "streamlit"}
+
+
+# ---------------------------------------------------------------------------
+# Antarmuka Qt (eksperimental) -- aturan impor dan peluncur
+# ---------------------------------------------------------------------------
+
+
+def test_hanya_qtgui_yang_mengimpor_pyside6():
+    """Aturan yang sama dengan wx: modul logika harus dapat diuji tanpa toolkit apa pun."""
+    berkas = [*_modul_ui(), *sorted((UI_DIR / "wxgui").glob("*.py"))]
+    pelanggar = [p.name for p in berkas if "PySide6" in _impor_tingkat_modul(p)]
+    assert not pelanggar, f"mengimpor PySide6 di luar ui/qtgui/: {pelanggar}"
+
+
+def test_qtgui_tidak_mengimpor_wx():
+    pelanggar = [
+        p.name for p in sorted((UI_DIR / "qtgui").glob("*.py")) if "wx" in _impor_tingkat_modul(p)
+    ]
+    assert not pelanggar, f"qtgui mengimpor wx: {pelanggar}"
+
+
+def test_qtgui_tidak_mengimpor_engine_di_tingkat_modul():
+    terlarang = {"openseespy", "gmsh", "opsvis"}
+    pelanggar = {
+        p.name: sorted(_impor_tingkat_modul(p) & terlarang)
+        for p in sorted((UI_DIR / "qtgui").glob("*.py"))
+        if _impor_tingkat_modul(p) & terlarang
+    }
+    assert not pelanggar, f"engine diimpor di tingkat modul: {pelanggar}"
+
+
+def test_qt_absen_memberi_petunjuk_bukan_traceback(monkeypatch, capsys):
+    monkeypatch.setattr(qt_launcher, "qt_available", lambda: False)
+    kode = qt_launcher.launch([])
+    keluaran = capsys.readouterr().out
+
+    assert kode == 1
+    assert "uv sync --extra qt" in keluaran
+    assert "pilecap-gui" in keluaran, "antarmuka lain tetap harus ditawarkan"
+
+
+def test_banner_qt_menyebut_folder_kerja_yang_dipakai(monkeypatch, capsys, tmp_path):
+    """Sama dengan uji banner wx: jendelanya diganti modul tiruan, tanpa mengimpor PySide6."""
+    import types
+
+    palsu = types.ModuleType("pilecap_fem.ui.qtgui.main")
+    palsu.run_app = lambda: 0  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "pilecap_fem.ui.qtgui.main", palsu)
+    monkeypatch.setenv(qt_launcher.CWD_ENV, str(tmp_path))
+    monkeypatch.setattr(qt_launcher, "qt_available", lambda: True)
+
+    assert qt_launcher.launch([]) == 0
+    assert str(tmp_path) in capsys.readouterr().out
+
+
+def test_ketiga_peluncur_memakai_folder_kerja_yang_sama():
+    from pilecap_fem.ui import launcher
+
+    assert qt_launcher.CWD_ENV == wx_launcher.CWD_ENV == launcher.CWD_ENV

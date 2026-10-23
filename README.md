@@ -144,10 +144,12 @@ sebagai release asset di samping wheel.
 
 ## Antarmuka grafis (opsional) — untuk yang tidak terbiasa CLI
 
-Tersedia **dua** antarmuka grafis yang berdiri sendiri. Keduanya memakai daftar field,
-pembangun config, dan pembangun argv yang sama, lalu memanggil `pilecap-run` sebagai
-subprocess — sehingga keduanya **tidak dapat** menghasilkan masukan analisis yang berbeda.
-Kesetaraan itu dijaga test yang membandingkan `pilecap_config.json` yang benar-benar ditulis
+Tersedia **tiga** antarmuka grafis yang berdiri sendiri: jendela wxPython, formulir
+peramban Streamlit, dan jendela Qt (PySide6) yang masih **eksperimental** — disediakan untuk
+dibandingkan sebelum salah satunya dipilih. Ketiganya memakai daftar field, pembangun config,
+dan pembangun argv yang sama, lalu memanggil `pilecap-run` sebagai subprocess — sehingga
+ketiganya **tidak dapat** menghasilkan masukan analisis yang berbeda. Kesetaraan itu
+diverifikasi dengan membandingkan `pilecap_config.json` yang benar-benar ditulis
 masing-masing untuk masukan yang sama.
 
 **Jendela aplikasi** (wxPython) — tanpa server dan tanpa peramban.
@@ -188,6 +190,20 @@ uv sync --extra ui
 uv run pilecap-ui
 ```
 
+**Jendela Qt** (PySide6) — **eksperimental**, untuk dibandingkan dengan jendela wxPython.
+Saat ini hanya dari clone lokal; wheel rilis v0.14.1 belum memuatnya, jadi jalur pemasangan
+dari wheel baru tersedia pada rilis berikutnya.
+
+```bash
+uv sync --extra qt
+```
+```bash
+uv run pilecap-qt
+```
+
+Extra `qt` memasang `pyside6-essentials`, bukan paket `pyside6` utuh: paket utuh ikut
+menarik WebEngine dan modul lain yang tidak dipakai (unduhan ±244 MB berbanding ±79 MB).
+
 Formulir peramban terbuka di `http://localhost:8501` — **offline, hanya mesin ini**. Isi
 seluruh masukan, tekan **Jalankan analisis**, selesai. Tidak perlu menulis
 `pilecap_config.json` maupun menghafal satu pun flag.
@@ -210,13 +226,14 @@ Yang tersedia di formulir:
 
 Perbedaan yang ada hanya pada penyajian, bukan pada hasil:
 
-| | Jendela aplikasi | Formulir peramban |
-|---|---|---|
-| Extra | `gui` (wxPython) | `ui` (Streamlit) |
-| Perintah | `pilecap-gui` | `pilecap-ui` |
-| Port jaringan | tidak ada | `localhost:8501` |
-| Susunan 60 field | 12 halaman berseksi | satu kolom bergulir |
-| Ilustrasi | PNG hasil rasterisasi Typst | SVG langsung |
+| | Jendela aplikasi | Formulir peramban | Jendela Qt (eksperimental) |
+|---|---|---|---|
+| Extra | `gui` (wxPython) | `ui` (Streamlit) | `qt` (PySide6) |
+| Perintah | `pilecap-gui` | `pilecap-ui` | `pilecap-qt` |
+| Port jaringan | tidak ada | `localhost:8501` | tidak ada |
+| Susunan 60 field | 12 halaman berseksi | satu kolom bergulir | 12 halaman berseksi |
+| Teks bantuan | teks polos (tanda `**` tampil mentah) | markdown dirender | markdown dirender |
+| Ilustrasi | PNG hasil rasterisasi Typst | SVG langsung | PNG hasil rasterisasi Typst |
 
 Tiga hal yang perlu diketahui:
 
@@ -232,9 +249,9 @@ Config yang dihasilkan formulir ditulis ke `<folder kerja>/ui_configs/` dengan n
 bertimestamp — bukan ke folder input, agar auto-detect config tidak menjadi ambigu bagi
 siapa pun yang kemudian menjalankan CLI tanpa `--config`.
 
-`streamlit` dan `wxpython` sengaja **opsional**, dan terpisah satu sama lain: pengguna
-CLI tidak ikut memasang keduanya, dan pemakai jendela aplikasi tidak ikut menarik server
-Streamlit.
+`streamlit`, `wxpython`, dan `pyside6-essentials` sengaja **opsional**, dan terpisah satu
+sama lain: pengguna CLI tidak ikut memasang satu pun, dan pemakai salah satu jendela tidak
+ikut menarik toolkit yang lain maupun server Streamlit.
 
 ## Pemakaian
 

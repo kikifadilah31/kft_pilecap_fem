@@ -1399,6 +1399,10 @@ _PERINTAH: tuple[tuple[str, str], ...] = (
     ("pilecap-run", "Menjalankan seluruh rantai di atas dalam satu perintah."),
     ("pilecap-ui", "Membuka formulir grafis di peramban."),
     ("pilecap-gui", "Membuka formulir grafis sebagai jendela aplikasi, tanpa peramban."),
+    (
+        "pilecap-qt",
+        "Membuka formulir grafis sebagai jendela aplikasi Qt (eksperimental, untuk dibandingkan).",
+    ),
     ("pilecap-manual", "Menghasilkan panduan ini untuk versi yang sedang terpasang."),
 )
 

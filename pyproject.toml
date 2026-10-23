@@ -90,6 +90,11 @@ ui = ["streamlit>=1.57"]
 # pengguna yang memakai jendela wx tidak perlu menarik server Streamlit, dan
 # sebaliknya. wxPython tidak membawa dependency lain sama sekali (DIUKUR).
 gui = ["wxpython>=4.2"]
+# Antarmuka desktop ketiga (PySide6), EKSPERIMENTAL: disediakan untuk dibandingkan
+# dengan `gui` sebelum salah satunya dipilih. `pyside6-essentials`, bukan `pyside6`:
+# paket utuh ikut menarik WebEngine/PDF/Addons (~244 MB unduhan, DIUKUR) yang tidak
+# dipakai; essentials ~79 MB. >=6.5 karena `QFormLayout.setRowVisible` (Qt 6.4+).
+qt = ["pyside6-essentials>=6.5"]
 
 [project.scripts]
 pilecap-mesh = "pilecap_fem.cli_pilecap_mesh:entry_point"
@@ -99,6 +104,7 @@ pilecap-run = "pilecap_fem.cli_pilecap_run:entry_point"
 pilecap-ui = "pilecap_fem.ui.launcher:entry_point"
 pilecap-manual = "pilecap_fem.cli_pilecap_manual:entry_point"
 pilecap-gui = "pilecap_fem.ui.wx_launcher:entry_point"
+pilecap-qt = "pilecap_fem.ui.qt_launcher:entry_point"
 
 [dependency-groups]
 dev = [

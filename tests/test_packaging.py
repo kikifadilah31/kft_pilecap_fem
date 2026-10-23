@@ -40,12 +40,13 @@ EXPECTED_SCRIPTS = {
     "pilecap-run": "pilecap_fem.cli_pilecap_run:entry_point",
     "pilecap-ui": "pilecap_fem.ui.launcher:entry_point",
     "pilecap-gui": "pilecap_fem.ui.wx_launcher:entry_point",
+    "pilecap-qt": "pilecap_fem.ui.qt_launcher:entry_point",
     "pilecap-manual": "pilecap_fem.cli_pilecap_manual:entry_point",
 }
 
 #: Kedua antarmuka formulir sengaja TIDAK menerima argumen baris perintah -- seluruh
 #: masukan diisi lewat formulir -- sehingga keduanya tidak punya `--version` untuk diuji.
-FORM_SCRIPTS = frozenset({"pilecap-ui", "pilecap-gui"})
+FORM_SCRIPTS = frozenset({"pilecap-ui", "pilecap-gui", "pilecap-qt"})
 VERSIONED_SCRIPTS = {k: v for k, v in EXPECTED_SCRIPTS.items() if k not in FORM_SCRIPTS}
 
 
@@ -437,6 +438,8 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
         "runopts",
         "schema",
         "wx_launcher",
+        "qt_launcher",
+        "desktop",
     ):
         path = f"pilecap_fem/ui/{module}.py"
         assert path in names, f"modul antarmuka tidak ikut terkemas ({path})"
@@ -446,6 +449,11 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
     for module in ("__init__", "fields", "main", "svgview"):
         path = f"pilecap_fem/ui/wxgui/{module}.py"
         assert path in names, f"modul antarmuka desktop tidak ikut terkemas ({path})"
+
+    # Sub-paket Qt (eksperimental), dengan alasan yang sama.
+    for module in ("__init__", "fields", "illustration", "main"):
+        path = f"pilecap_fem/ui/qtgui/{module}.py"
+        assert path in names, f"modul antarmuka Qt tidak ikut terkemas ({path})"
 
     # Panduan HARUS ikut di dalam wheel, bukan hanya ada di repo: pengguna yang menerima
     # wheel saja justru yang paling membutuhkan panduan sesuai versi terpasangnya.

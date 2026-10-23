@@ -2,6 +2,43 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [Unreleased]
+
+### Added — `pilecap-qt`, antarmuka desktop ketiga (PySide6), EKSPERIMENTAL
+
+Disediakan untuk **dibandingkan** dengan `pilecap-gui` (wxPython) dan `pilecap-ui`
+(Streamlit) sebelum salah satunya dipilih. Tidak ada antarmuka yang dihapus; ketiganya dapat
+dijalankan berdampingan (`uv sync --extra qt`, lalu `uv run pilecap-qt`).
+
+Extra `qt` memasang `pyside6-essentials`, bukan `pyside6`: paket utuh ikut menarik WebEngine,
+PDF, dan Addons — unduhan ±244 MB berbanding ±79 MB (DIUKUR), tanpa satu pun dipakai.
+
+Yang berbeda dari jendela wx, dan menjadi bahan perbandingannya:
+
+* Teks bantuan dirender sebagai **markdown** (`**satu**` tampil tebal), bukan mentah.
+* Teks bantuan membungkus sendiri mengikuti lebar jendela; jarak label dan kotak diatur
+  `QFormLayout`, bukan sizer yang disusun tangan seperti sumber bug v0.14.1.
+* Uji asapnya berjalan **tanpa display** (`QT_QPA_PLATFORM=offscreen`).
+
+### Changed — logika desktop bersama diekstrak dari `wxgui/main.py`
+
+Supaya antarmuka kedua tidak menyalin pesan galat, aturan kode keluar, dan penyusunan
+perintah, logika non-widget jendela wx pindah ke `ui/desktop.py` (tanpa toolkit), dipakai wx
+maupun Qt: pemuatan config, status folder input, pratinjau geometri, penyiapan run, dan pesan
+hasil per kode keluar. `pilihan_aman` dan `teks_angka` pindah ke `ui/formstate.py`. Perilaku
+wx tidak berubah; dijaga uji asap wx yang sudah ada.
+
+### Catatan teknis — diukur, bukan diasumsikan
+
+* **QtSvg merender ilustrasi dengan benar** pada platform Windows — label `<text>` dan warna
+  dari blok `<style>` utuh, berbeda dari `wx.svg`. Antarmuka Qt tetap memakai PNG dari
+  `ui/rasterize.py` supaya ketiga antarmuka menampilkan gambar yang sama dengan PDF.
+* **Platform `offscreen` Qt tidak punya font** (0 keluarga, berbanding 446 pada platform
+  Windows), sehingga render teks yang diuji di sana tampil sebagai kotak kosong. Uji Qt karena
+  itu tidak menguji ukuran teks dalam piksel.
+* Jendela Qt terbangun dalam ±1,0 s, setara wx (±1,1 s). Run pertama sesudah memasang PySide6
+  makan ±9 s — ongkos sekali, tidak berulang pada run berikutnya.
+
 ## [0.14.1] — 2026-10-22 — jarak antar field di jendela desktop
 
 Dilaporkan pengguna lewat tangkapan layar: pada `pilecap-gui`, jarak antar field terlalu

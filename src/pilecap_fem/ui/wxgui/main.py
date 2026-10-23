@@ -1,36 +1,44 @@
 """Jendela utama antarmuka desktop.
 
 Hanya merangkai: seluruh keputusan yang dapat salah secara diam-diam ada di `schema.py`,
-`runopts.py`, `formstate.py`, `detect.py`, dan `runner.py` -- semuanya tanpa wx, semuanya
-dapat diuji tanpa display.
+`runopts.py`, `formstate.py`, `detect.py`, `runner.py`, dan `desktop.py` -- semuanya tanpa
+wx, semuanya dapat diuji tanpa display, dan semuanya dipakai juga oleh antarmuka Qt.
 """
 
 from __future__ import annotations
 
-import json
-import os
 from pathlib import Path
 from typing import Any
 
 import wx
 from wx.lib.scrolledpanel import ScrolledPanel
 
-from pilecap_fem import __version__, config
+from pilecap_fem import __version__
 from pilecap_fem.ui import argv as argv_builder
-from pilecap_fem.ui import detect, formstate, runner, runopts, schema
-from pilecap_fem.ui.launcher import CWD_ENV
+from pilecap_fem.ui import desktop, detect, formstate, runner, runopts, schema
 from pilecap_fem.ui.wxgui import fields, svgview
 
-#: Folder kerja. Sama dengan Streamlit: tempat perintahnya dipanggil.
-WORKDIR = Path(os.environ.get(CWD_ENV, os.getcwd()))
+#: Folder kerja. Atribut modul, dibaca saat dipakai -- test menimpanya.
+WORKDIR = desktop.folder_kerja()
 
-#: Jeda sebelum lintasan penyegaran dijalankan, dalam milidetik.
-#:
-#: Penyegaran dipicu `EVT_TEXT`, yang menyala per ketukan tombol. Tanpa jeda, mengetik
-#: "1200" menjalankan empat lintasan penuh atas 70 field berikut tata letak 12 halaman --
-#: terasa sebagai kibasan dan huruf yang tertinggal. Jedanya cukup pendek untuk tidak terasa
-#: sebagai lag, cukup panjang untuk menyatukan satu kata ketikan.
-JEDA_SEGAR_MS = 180
+#: Lihat `desktop.JEDA_SEGAR_MS`.
+JEDA_SEGAR_MS = desktop.JEDA_SEGAR_MS
+
+#: Ikon kotak pesan per tingkat `desktop.Pesan`.
+IKON = {
+    "info": wx.ICON_INFORMATION,
+    "sukses": wx.ICON_INFORMATION,
+    "peringatan": wx.ICON_WARNING,
+    "galat": wx.ICON_ERROR,
+}
+
+#: Warna teks status per tingkat.
+WARNA = {
+    "info": wx.Colour(96, 96, 96),
+    "sukses": wx.Colour(0, 128, 0),
+    "peringatan": wx.Colour(176, 96, 0),
+    "galat": wx.Colour(176, 0, 0),
+}
 
 #: Abu-abu untuk teks keterangan sekunder.
 ABU = wx.Colour(96, 96, 96)
@@ -198,7 +206,7 @@ class MainFrame(wx.Frame):
             self._tanda_override[seksi.override_entity] = tanda
 
         for f in seksi.fields:
-            pilihan, galat = fields.pilihan_aman(f)
+            pilihan, galat = formstate.pilihan_aman(f)
             kf = fields.KontrolField(halaman, f, pilihan=pilihan)
             kf.pada_perubahan(self._pada_ubah)
             self._kontrol[f.key] = kf
@@ -306,21 +314,7 @@ class MainFrame(wx.Frame):
         self._perintah.SetValue(self._susun_perintah(nilai))
 
     def _susun_perintah(self, nilai: dict[str, Any]) -> str:
-        """Perintah yang AKAN dijalankan, memakai nama config yang belum ada.
-
-        Config baru ditulis tiap run (`schema.write_config` tidak pernah menimpa), jadi nama
-        pastinya belum diketahui sebelum tombol ditekan. Yang ditampilkan karena itu memakai
-        nama contoh -- bentuk flag-nya yang penting di sini, dan itu sudah tepat.
-        """
-        try:
-            cli_argv = argv_builder.build_argv(
-                WORKDIR / "ui_configs" / "pilecap_config_<timestamp>.json",
-                Path(self._input_dir.GetValue() or "."),
-                runopts.to_argv_values(nilai),
-            )
-        except Exception as exc:  # formulir setengah terisi bukan kesalahan pengguna
-            return f"(perintah belum dapat disusun: {exc})"
-        return argv_builder.format_command(cli_argv)
+        return desktop.susun_perintah_pratinjau(nilai, self._input_dir.GetValue(), WORKDIR)
 
     # -- folder input & config ---------------------------------------------
 
@@ -334,24 +328,14 @@ class MainFrame(wx.Frame):
         terdeteksi = detect.deteksi(folder)
         override = detect.override_terdeteksi(terdeteksi)
 
-        if not Path(folder).is_dir():
-            teks, warna = "Folder tidak ditemukan.", wx.Colour(176, 0, 0)
-        elif "reactions" not in terdeteksi:
-            teks = "pile_reactions.csv tidak terdeteksi -- analisis tidak dapat berjalan tanpa itu."
-            warna = wx.Colour(176, 96, 0)
-        else:
-            teks = f"Reaksi pile: {terdeteksi['reactions']}"
-            warna = wx.Colour(0, 128, 0)
-        self._status_input.SetLabel(teks)
-        self._status_input.SetForegroundColour(warna)
+        status = desktop.status_folder_input(folder, terdeteksi)
+        self._status_input.SetLabel(status.isi)
+        self._status_input.SetForegroundColour(WARNA[status.tingkat])
 
         for entitas, tanda in self._tanda_override.items():
             berkas = override.get(entitas)
             if berkas:
-                tanda.ganti(
-                    f"Diabaikan -- di-override {berkas}. Nilai tetap ditulis ke config "
-                    "supaya terlihat apa yang dilewati."
-                )
+                tanda.ganti(desktop.teks_override(berkas))
             tanda.Show(bool(berkas))
         for halaman in self._halaman:
             halaman.Layout()
@@ -370,39 +354,15 @@ class MainFrame(wx.Frame):
                 self._config_dimuat.SetValue(dlg.GetPath())
 
     def _pada_muat_config(self, event: wx.CommandEvent) -> None:
-        teks = self._config_dimuat.GetValue().strip()
-        if not teks:
-            self._beritahu("Isi dulu path config-nya.", wx.ICON_WARNING)
-            return
-        path = Path(teks).expanduser()
-        if not path.is_absolute():
-            path = WORKDIR / path
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            self._beritahu(f"Berkas tidak ditemukan:\n{path}", wx.ICON_ERROR)
+            nilai, tak_dikenal, path = desktop.muat_config(self._config_dimuat.GetValue(), WORKDIR)
+        except desktop.ConfigTakTerbaca as exc:
+            self._beritahu(str(exc), wx.ICON_ERROR)
             return
-        except json.JSONDecodeError as exc:
-            self._beritahu(f"Bukan JSON yang sah: {exc}", wx.ICON_ERROR)
-            return
-        if not isinstance(raw, dict):
-            self._beritahu("Isi config harus objek JSON di level teratas.", wx.ICON_ERROR)
-            return
-
-        nilai, tak_dikenal = schema.values_from_config(raw)
         self._muat_nilai(nilai)
         self._segarkan()
-
-        pesan = f"Dimuat dari {path}"
-        if tak_dikenal:
-            # Dilaporkan, tidak dibuang diam-diam: config tulisan tangan boleh memuat field
-            # yang belum diwakili formulir, dan menyimpan ulang lewat formulir ini akan
-            # menghilangkannya.
-            pesan += (
-                "\n\nKunci berikut tidak dikenal formulir dan TIDAK akan ikut ditulis ke "
-                "config baru:\n  " + "\n  ".join(tak_dikenal)
-            )
-        self._beritahu(pesan, wx.ICON_WARNING if tak_dikenal else wx.ICON_INFORMATION)
+        pesan = desktop.pesan_dimuat(path, tak_dikenal)
+        self._beritahu(pesan.isi, IKON[pesan.tingkat])
 
     def _beritahu(self, pesan: str, ikon: int) -> None:
         wx.MessageBox(pesan, "pilecap-fem", wx.OK | ikon, self)
@@ -410,39 +370,19 @@ class MainFrame(wx.Frame):
     # -- pratinjau ---------------------------------------------------------
 
     def _pada_pratinjau(self, event: wx.CommandEvent) -> None:
-        # Hanya geometri: tidak menyentuh gmsh maupun OpenSees, jadi selesai dalam milidetik
-        # dan boleh berjalan di proses ini.
-        from pilecap_fem import renderer
-        from pilecap_fem.ui import preview as preview_mod
         from pilecap_fem.validators import PilecapError
 
-        nilai = self._nilai()
-        folder = self._input_dir.GetValue().strip()
         try:
-            geom = preview_mod.build_preview_geometry(
-                schema.build_config(self._nilai_skema(nilai)),
-                Path(folder) if folder else None,
-            )
+            figure = desktop.gambar_pratinjau(self._nilai(), self._input_dir.GetValue())
         except PilecapError as exc:
             # Pesan validator sudah ditulis untuk dibaca engineer; ditampilkan apa adanya.
             self._beritahu(str(exc), wx.ICON_ERROR)
             return
-
-        figure = renderer.render_geometry_plan(
-            geom,
-            style=renderer.PlotStyle(theme=config.theme(nilai["run.theme"])),
-            block=renderer.TitleBlock(
-                project=str(nilai.get("project.name") or ""),
-                engineer=str(nilai.get("project.engineer") or ""),
-                date=str(nilai.get("project.date") or ""),
-            ),
-        )
         FramePratinjau(self, figure).Show()
 
     @staticmethod
     def _nilai_skema(nilai: dict[str, Any]) -> dict[str, Any]:
-        """Buang kunci opsi run; `build_config` hanya mengenal kunci skema."""
-        return {k: v for k, v in nilai.items() if not k.startswith(runopts.PREFIX)}
+        return desktop.nilai_skema(nilai)
 
     # -- menjalankan -------------------------------------------------------
 
@@ -451,19 +391,12 @@ class MainFrame(wx.Frame):
             return
         nilai = self._nilai()
 
-        peringatan = [
-            f"{self._kontrol[k].field.label}: {self._kontrol[k].peringatan}"
-            for k in self._kontrol
-            if self._kontrol[k].peringatan
-        ]
+        peringatan = desktop.peringatan_koersi(
+            (kf.field.label, kf.peringatan) for kf in self._kontrol.values()
+        )
         if peringatan:
-            # Ditanyakan, tidak dijalankan diam-diam: isian yang tidak terbaca diganti nilai
-            # bawaan, dan itu perubahan pada masukan analisis yang berhak diketahui pengguna
-            # SEBELUM run berjalan belasan menit.
             jawab = wx.MessageBox(
-                "Beberapa isian tidak terbaca dan akan memakai nilai bawaan:\n\n  "
-                + "\n  ".join(peringatan)
-                + "\n\nLanjutkan?",
+                desktop.teks_konfirmasi_koersi(peringatan),
                 "pilecap-fem",
                 wx.YES_NO | wx.ICON_WARNING,
                 self,
@@ -472,16 +405,10 @@ class MainFrame(wx.Frame):
                 return
 
         try:
-            config_path = schema.write_config(
-                schema.build_config(self._nilai_skema(nilai)), WORKDIR
-            )
+            config_path, cli_argv = desktop.siapkan_run(nilai, self._input_dir.GetValue(), WORKDIR)
         except Exception as exc:
             self._beritahu(f"Config tidak dapat ditulis: {exc}", wx.ICON_ERROR)
             return
-
-        cli_argv = argv_builder.build_argv(
-            config_path, Path(self._input_dir.GetValue()), runopts.to_argv_values(nilai)
-        )
         self._perintah.SetValue(argv_builder.format_command(cli_argv))
 
         self._baris_log = []
@@ -509,37 +436,13 @@ class MainFrame(wx.Frame):
         self._berjalan = False
         self._tombol_jalan.Enable()
 
-        if hasil.returncode == 0:
-            self._hasil.SetLabel(f"Selesai -- {hasil.run_dir}")
-            self._hasil.SetForegroundColour(wx.Colour(0, 128, 0))
-            self.SetStatusText(f"Selesai: {hasil.run_dir}")
-            self._beritahu(
-                f"Analisis selesai.\n\nFolder hasil:\n{hasil.run_dir}\n\n"
-                f"Config yang dipakai:\n{config_path}\n\n"
-                "Buka SUMMARY.md di folder hasil untuk ringkasan, dan calc_sheet.md di tiap "
-                "folder kombinasi untuk perhitungan yang dapat ditelusuri.",
-                wx.ICON_INFORMATION,
-            )
-            return
+        label = desktop.label_hasil(hasil)
+        self._hasil.SetForegroundColour(WARNA[label.tingkat])
+        self._hasil.SetLabel(label.isi)
+        self.SetStatusText(label.isi)
 
-        self._hasil.SetForegroundColour(wx.Colour(176, 0, 0))
-        self._hasil.SetLabel(f"Gagal (exit {hasil.returncode})")
-        self.SetStatusText(f"Gagal (exit {hasil.returncode})")
-
-        if hasil.returncode == 2:
-            ringkas = runner.ringkas_kegagalan(hasil.lines)
-            if ringkas:
-                pesan = "Masukan ditolak:\n\n" + "\n".join(ringkas)
-            else:
-                pesan = "Masukan ditolak. Lihat log di jendela."
-            self._beritahu(pesan, wx.ICON_ERROR)
-        elif hasil.returncode == 4:
-            self._beritahu("Fitur yang diminta belum tersedia di versi ini.", wx.ICON_WARNING)
-        else:
-            self._beritahu(
-                f"Berhenti tak terduga (exit {hasil.returncode}). Log lengkap ada di jendela.",
-                wx.ICON_ERROR,
-            )
+        pesan = desktop.pesan_hasil(hasil, config_path)
+        self._beritahu(pesan.isi, IKON[pesan.tingkat])
 
 
 def run_app() -> int:

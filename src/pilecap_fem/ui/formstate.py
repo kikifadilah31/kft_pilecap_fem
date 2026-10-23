@@ -134,6 +134,38 @@ def coerce_number(raw: str, default: Any) -> tuple[Any, str | None]:
         return default, f"{teks!r} bukan angka; dipakai nilai bawaan."
 
 
+def pilihan_aman(f: Field) -> tuple[tuple[Any, ...], str | None]:
+    """Daftar pilihan field, beserta pesan bila sumbernya gagal dibaca.
+
+    `choices_fn` untuk `analysis.shell_element` dan `analysis.section` menarik openseespy --
+    lambat, dan dapat gagal pada instalasi yang tidak lengkap. Kegagalannya **tidak boleh
+    menjatuhkan formulir**: pengguna masih dapat mengisi seluruh field lain, dan kontrol yang
+    kosong beserta pesannya jauh lebih berguna daripada jendela yang menolak terbuka.
+    """
+    try:
+        return tuple(f.options()), None
+    # Sumber pilihan ada di luar paket ini, jadi galatnya tidak dapat didaftar.
+    except Exception as exc:
+        return (), f"Daftar pilihan tidak dapat dibaca: {exc}"
+
+
+def teks_angka(nilai: Any) -> str:
+    """Angka menjadi teks untuk ditaruh di kotak isian.
+
+    Bilangan bulat ditulis tanpa ekor `.0` -- `1200`, bukan `1200.0` -- karena nyaris semua
+    masukan geometri bulat dan ekor itu membuat formulir tampak berisik.
+
+    Aman karena `formstate.coerce_number` SELALU mengembalikan `float`: apa pun yang
+    ditampilkan di sini dibaca kembali sebagai float yang sama, sehingga peringkasan ini
+    tidak dapat mengubah config yang ditulis.
+    """
+    if nilai is None:
+        return ""
+    if isinstance(nilai, float) and nilai.is_integer():
+        return str(int(nilai))
+    return str(nilai)
+
+
 __all__ = [
     "SEMUA_FIELD",
     "FieldView",
@@ -141,5 +173,7 @@ __all__ = [
     "coerce_optional_number",
     "label_for",
     "layout_state",
+    "pilihan_aman",
+    "teks_angka",
     "unit_labels",
 ]
