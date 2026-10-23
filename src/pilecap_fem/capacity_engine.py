@@ -711,6 +711,24 @@ class OneWayShearCapacity:
         return abs(self.v_u) > self.phi_v_c
 
 
+def _vu_setara_shell_kit(vu_kn_per_m: Any, phi_shear: float) -> Any:
+    """`V_u` yang membuat `calc_shear_Av_per_s` menghitung dengan `phi_shear` dari config.
+
+    `shell_kit.rebar.calc_shear_Av_per_s` tidak menerima phi; ia memakai `PHI_SHEAR`
+    (0,75) yang tetap. Tetapi phi hanya muncul di sana dalam bentuk `V_u / phi` -- di
+    `V_s = V_u/phi - V_c`, di ambang `V_u > 0,5 phi V_c`, dan karenanya juga di batas badan
+    hancur `V_s > V_s,maks`. Memberinya `V_u' = V_u * PHI_SHEAR / phi` karena itu
+    menghasilkan PERSIS rumus dengan phi pilihan pengguna, tanpa menulis ulang satu pun
+    rumus shell-kit.
+
+    Tanpa ini `design.phi_shear` hanya mengubah `phi V_c` yang DILAPORKAN, sementara luas
+    sengkang tetap dihitung dengan 0,75. DIUKUR pada `f'c` 30 MPa, `fy` 420 MPa, `d` 1000 mm:
+    phi 0,60 pada `V_u = 1,5 V_c` memberi `Av/s` 2,217 alih-alih 3,326 mm2/mm -- sengkang
+    33% lebih sedikit daripada yang dimaksud pengguna, tanpa peringatan apa pun.
+    """
+    return vu_kn_per_m * (float(sk_rebar.PHI_SHEAR) / phi_shear)
+
+
 def one_way_shear_capacity(
     v_u_si: float,
     d_effective: float,
@@ -742,9 +760,8 @@ def one_way_shear_capacity(
     v_c_n = float(sk_rebar.calc_Vc(inputs.fc_mpa, bw_mm, d_mm))
     v_s_max_n = float(sk_rebar.calc_Vs_max(inputs.fc_mpa, bw_mm, d_mm))
     vu_kn_per_m = abs(v_u_si) * config.DISPLAY_UNITS["shear_per_width"][1]
-    av_per_s_mm = float(
-        sk_rebar.calc_shear_Av_per_s(vu_kn_per_m, inputs.fc_mpa, inputs.fy_mpa, d_mm)
-    )
+    vu_setara = _vu_setara_shell_kit(vu_kn_per_m, inputs.phi_shear)
+    av_per_s_mm = float(sk_rebar.calc_shear_Av_per_s(vu_setara, inputs.fc_mpa, inputs.fy_mpa, d_mm))
 
     status = STATUS_OK if np.isfinite(av_per_s_mm) else STATUS_WEB_CRUSHED
     if status == STATUS_WEB_CRUSHED:
@@ -866,13 +883,14 @@ def shear_rebar_map(
     )
     vu_kn_per_m = np.abs(values) * config.DISPLAY_UNITS["shear_per_width"][1]
 
+    vu_setara = _vu_setara_shell_kit(vu_kn_per_m, inputs.phi_shear)
     av_mm = np.asarray(
-        sk_rebar.calc_shear_Av_per_s(vu_kn_per_m, inputs.fc_mpa, inputs.fy_mpa, dv_mm),
+        sk_rebar.calc_shear_Av_per_s(vu_setara, inputs.fc_mpa, inputs.fy_mpa, dv_mm),
         dtype=np.float64,
     )
     av_no_min_mm = np.asarray(
         sk_rebar.calc_shear_Av_per_s(
-            vu_kn_per_m, inputs.fc_mpa, inputs.fy_mpa, dv_mm, apply_av_min=False
+            vu_setara, inputs.fc_mpa, inputs.fy_mpa, dv_mm, apply_av_min=False
         ),
         dtype=np.float64,
     )

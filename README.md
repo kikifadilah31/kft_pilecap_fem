@@ -696,7 +696,7 @@ Pada mode `graded`, **salah satu** dari `size_local_pile` / `size_local_pier` wa
 | `design.fy` | tegangan | `—` | Tegangan leleh baja. Berbanding **terbalik** dengan luas tulangan — salah mengisinya langsung menggeser seluruh hasil. |
 | `design.fy_source` | – | `—` | **Wajib, run ditolak bila kosong.** `shell-kit` punya `DEFAULT_FY = 420` tetapi tool ini tidak memakainya diam-diam. Mis. `"BjTS 420B, SNI 2052:2017"`. |
 | `design.phi_flexure` | – | `null` | Faktor reduksi lentur. Kosong = 0,90 bawaan SNI dari `shell-kit`; asalnya tetap dicetak di calc sheet. |
-| `design.phi_shear` | – | `null` | Faktor reduksi geser. Kosong = 0,75. Lebih kecil daripada `phi` lentur karena keruntuhan geser getas dan lebih sulit diprediksi. |
+| `design.phi_shear` | – | `null` | Faktor reduksi geser. Kosong = 0,75. Lebih kecil daripada `phi` lentur karena keruntuhan geser getas dan lebih sulit diprediksi. Dipakai di seluruh perhitungan geser, termasuk luas sengkang — lihat [cara penerapannya](#bagaimana-φ-geser-dari-config-diterapkan). |
 | `design.as_min_surface_zone` | panjang | `null` | Kosong = murni SNI 2847:2019. Diisi (mis. `300`) = mengikuti ACI 350-06 Ps. 7.12.2.1 untuk elemen tebal. **Pada pilecap tebal ini mengubah hampir seluruh hasil lentur** — lihat [bagiannya](#designas_min_surface_zone--opsional-tetapi-berdampak-besar). |
 
 ### `design` — pemilihan tulangan
@@ -922,6 +922,224 @@ Empat di antaranya paling sering terlewat karena tidak punya bawaan yang masuk a
 > menyimpang diam-diam.
 
 ---
+
+## Rumus perhitungan tulangan — lentur, geser, dan `V_n,maks`
+
+Seluruh rumus di bawah **dihitung `shell-kit`** (`shell_kit.rebar`), bukan ditulis ulang di
+pilecap-fem; nama fungsinya dicantumkan supaya setiap rumus dapat ditelusuri ke kodenya.
+Pasal SNI 2847:2019 yang disebut adalah pasal **sebagaimana dirujuk kode tersebut**.
+
+Perhitungan dilakukan **per lajur selebar 1 m** pada setiap elemen (atau setiap lajur
+momen, lihat [Metode desain tulangan](#metode-desain-tulangan--per-elemen-atau-per-lajur)).
+Satuan di dalam rumus: N, mm, MPa.
+
+| Simbol | Arti | Sumber nilai |
+|---|---|---|
+| `b`, `b_w` | lebar lajur = 1000 mm | konstanta `STRIP_WIDTH_MM` |
+| `h` | tebal pilecap | `pilecap.thickness` |
+| `c` | selimut beton | `design.cover` |
+| `f'c` | kuat tekan beton | `material.fc` |
+| `f_y` | tegangan leleh baja — **juga dipakai sebagai `f_yt` sengkang** | `design.fy` |
+| `D` | diameter batang lentur | dihitung atau `design.rebar_config` |
+| `λ` | faktor beton ringan = 1,0 (beton normal, Ps. 19.2.4) | konstanta |
+| `E_s` | 200.000 MPa (Ps. 20.2.2.2) | konstanta |
+| `ε_cu` | 0,003 (Ps. 22.2.2.1) | konstanta |
+| `φ_lentur` | 0,90 | `design.phi_flexure`, kosong = 0,90 |
+| `φ_geser` | 0,75 | `design.phi_shear`, kosong = 0,75 — dipakai di **seluruh** rumus geser, lihat [cara penerapannya](#bagaimana-φ-geser-dari-config-diterapkan) |
+
+### Tulangan lentur
+
+**1. Momen desain per muka.** Momen elemen `m` (`m_x` untuk tulangan arah X, `m_y` untuk
+arah Y) dipisah menurut muka yang tertarik — momen positif menarik serat bawah:
+
+```math
+M_{u,\text{bawah}} = \max(m,\,0) \qquad M_{u,\text{atas}} = \max(-m,\,0)
+```
+
+`m_xy` tidak dipakai mengoreksi momen ini (koreksi Wood-Armer belum diterapkan, lihat
+[Yang BELUM dilakukan](#yang-belum-dilakukan-tool-ini)).
+
+**2. Tinggi efektif** (`calc_effective_depth`). Batang arah X dipasang di lapis luar,
+arah Y di lapis dalam:
+
+```math
+d_X = h - c - \tfrac{1}{2}D \qquad d_Y = h - c - \tfrac{3}{2}D
+```
+
+Pada mode `spacing_fixed`, `D` adalah jawabannya sendiri, jadi `d` **diiterasi**
+(`solve_rebar_iterative`): mulai dari D16, diameter yang terpilih menggantikan diameter
+asumsi hanya bila lebih besar, maksimum 5 putaran. Pada mode `diameter_fixed`, `D` diambil
+dari `design.rebar_config` dan `d` dihitung sekali.
+
+**3. Luas tulangan perlu** (`calc_as_required`, blok tegangan persegi ekuivalen):
+
+```math
+A_{s,\text{perlu}} = \frac{0{,}85\,f'_c\,b\,d}{f_y}
+\left(1-\sqrt{1-\frac{2\,M_u}{\varphi_{\text{lentur}}\;0{,}85\,f'_c\,b\,d^{2}}}\right)
+```
+
+Bila bilangan di bawah akar negatif, penampang tidak sanggup memikul `M_u` dan elemen
+ditandai **PENAMPANG TIDAK MEMADAI**.
+
+**4. Batas kendali tarik** (`calc_rho_max`). `φ = 0,90` hanya sah untuk penampang
+terkendali tarik, jadi `A_s` dibatasi; melampauinya ditandai **TIDAK MEMADAI**, bukan
+dengan menurunkan `φ` diam-diam:
+
+```math
+\rho_{\max} = 0{,}85\,\beta_1\,\frac{f'_c}{f_y}\,
+\frac{\varepsilon_{cu}}{\varepsilon_{cu}+\varepsilon_{ty}+0{,}003}
+\qquad \varepsilon_{ty}=\frac{f_y}{E_s}
+\qquad A_{s,\text{perlu}} \le \rho_{\max}\,b\,d
+```
+
+dengan `β1` (`calc_beta1`, Ps. 22.2.2.4.3):
+
+```math
+\beta_1 =
+\begin{cases}
+0{,}85 & f'_c \le 28 \\
+0{,}85 - 0{,}05\,\dfrac{f'_c-28}{7} & 28 < f'_c < 55 \\
+0{,}65 & f'_c \ge 55
+\end{cases}
+```
+
+**5. Tulangan minimum per muka** (`calc_as_min_per_face`, Ps. 24.4.3.2). Minimum SNI adalah
+**total satu arah untuk seluruh tebal**, sehingga dibagi dua muka:
+
+```math
+\rho_{\min} =
+\begin{cases}
+0{,}0020 & f_y < 420 \\
+\max\!\left(0{,}0018\,\dfrac{420}{f_y},\;0{,}0014\right) & f_y \ge 420
+\end{cases}
+\qquad
+A_{s,\min} = \rho_{\min}\,b\,t_{\text{ef}}
+\qquad
+t_{\text{ef}} = \tfrac{1}{2}h
+```
+
+Bila `design.as_min_surface_zone` diisi, `t_ef = min(h/2, as_min_surface_zone)` —
+[engineering judgement ACI 350](#designas_min_surface_zone--opsional-tetapi-berdampak-besar),
+bukan SNI. Luas desainnya:
+
+```math
+A_s = \max\left(A_{s,\text{perlu}},\;A_{s,\min}\right)
+```
+
+**6. Pemilihan batang.**
+
+* `spacing_fixed` — spasi `s` ditetapkan, diameter dipilih: diameter tersedia terkecil
+  (D13, D16, D19, D22, D25, D32) yang memenuhi
+  ```math
+  D \ge \sqrt{\frac{4\,A_s\,s}{1000\,\pi}}
+  ```
+  Bila `design.rebar_select_codes` diisi, yang dipilih adalah konfigurasi terkecil
+  (mis. `2D25`) yang luasnya `≥ A_s · s / 1000`. Melampaui pilihan terbesar → **TIDAK
+  MEMADAI**. Pada mode ini spasi yang Anda tetapkan **tidak** diperiksa terhadap batas spasi
+  di bawah.
+* `diameter_fixed` — diameter ditetapkan, spasi dihitung lalu dibatasi
+  (`check_spacing_limits`, Ps. 25.2.1 untuk spasi minimum):
+  ```math
+  s = \frac{\tfrac{\pi}{4}D^{2}\cdot 1000}{A_s}
+  \qquad s \le s_{\max} = \min(2h,\;450)
+  \qquad s \ge s_{\min} = D + \max(25,\;D)
+  ```
+  Spasi di atas `s_max` dipotong turun ke `s_max` (konservatif); spasi di bawah `s_min`
+  berarti batang tidak dapat dipasang dan elemen ditandai **TIDAK MEMADAI**.
+
+### Tulangan geser satu arah (sengkang)
+
+Berlaku untuk cek penampang kritis pada `d` dari muka pier **dan** untuk peta `Av/s` per
+elemen. Pada peta per elemen, `d_v` dihitung dengan rumus tinggi efektif di atas untuk
+**asumsi D16** dan tidak diiterasi terhadap diameter sengkang yang terpilih.
+
+**1. Kuat geser beton** (`calc_Vc`, Ps. 22.5.5.1):
+
+```math
+V_c = 0{,}17\,\lambda\,\sqrt{f'_c}\;b_w\,d_v
+```
+
+**2. Luas sengkang perlu** (`calc_shear_Av_per_s`):
+
+```math
+\frac{A_v}{s} =
+\begin{cases}
+0 & |V_u| \le 0{,}5\,\varphi_{\text{geser}}\,V_c \\[4pt]
+\max\!\left(\dfrac{V_s}{f_y\,d_v},\;\dfrac{A_{v,\min}}{s}\right) & |V_u| > 0{,}5\,\varphi_{\text{geser}}\,V_c
+\end{cases}
+\qquad
+V_s = \max\!\left(\frac{|V_u|}{\varphi_{\text{geser}}} - V_c,\;0\right)
+```
+
+dengan tulangan geser minimum (`calc_Av_min_per_s`, Ps. 9.6.3.4):
+
+```math
+\frac{A_{v,\min}}{s} = \max\!\left(0{,}062\,\sqrt{f'_c}\,\frac{b_w}{f_y},\;0{,}35\,\frac{b_w}{f_y}\right)
+```
+
+Jadi pada `0,5 φVc < |Vu| ≤ φVc`, beton sudah cukup (`V_s = 0`) tetapi kode tetap meminta
+`A_v,min`.
+
+**3. Diameter sengkang** (`calc_shear_diameter`). Satu kaki sengkang memikul luasan
+tributari `s_long × s_trans`:
+
+```math
+A_b = \frac{A_v}{s}\cdot\frac{s_{\text{long}}\;s_{\text{trans}}}{1000}
+\qquad
+D_{\text{sengkang}} \ge \sqrt{\frac{4\,A_b}{\pi}}
+```
+
+dibulatkan **ke atas** ke diameter tersedia (D10–D25, atau
+`design.stirrup_select_diameters`). Melampaui diameter terbesar → **TIDAK MEMADAI**.
+
+### Batas atas geser: `V_s,maks` dan `V_n,maks`
+
+Kode **tidak** menghitung `V_n,maks` sebagai satu angka tersendiri. Yang diperiksanya adalah
+batas sengkang sebelum badan beton hancur (`calc_Vs_max`, Ps. 22.5.1.2):
+
+```math
+V_{s,\max} = 0{,}66\,\sqrt{f'_c}\;b_w\,d_v
+```
+
+Elemen dengan `V_s > V_s,maks` ditandai **BADAN HANCUR**. Karena `V_n = V_c + V_s`, syarat
+itu **identik** dengan membatasi kuat geser nominal:
+
+```math
+V_{n,\max} = V_c + V_{s,\max} = (0{,}17\,\lambda + 0{,}66)\,\sqrt{f'_c}\;b_w\,d_v
+= 0{,}83\,\sqrt{f'_c}\;b_w\,d_v \quad (\lambda = 1)
+```
+
+```math
+\text{BADAN HANCUR} \iff |V_u| > \varphi_{\text{geser}}\,V_{n,\max}
+```
+
+Pada kondisi ini **sengkang sebanyak apa pun tidak menolong** — pelat harus dipertebal atau
+`f'c` dinaikkan. Geser **pons** (dua arah) tidak termasuk di sini: kapasitasnya belum
+dievaluasi ([Yang BELUM dilakukan](#yang-belum-dilakukan-tool-ini)).
+
+### Bagaimana φ geser dari config diterapkan
+
+`calc_shear_Av_per_s` di `shell-kit` tidak menerima φ; ia memakai konstanta `PHI_SHEAR = 0,75`.
+Tetapi φ hanya muncul di rumusnya dalam bentuk `V_u / φ` — di `V_s`, di ambang `0,5 φV_c`,
+dan karenanya juga di batas BADAN HANCUR. pilecap-fem karena itu memberinya geser yang
+disetarakan:
+
+```math
+V_u' = V_u \cdot \frac{0{,}75}{\varphi_{\text{geser}}}
+\quad\Longrightarrow\quad
+\frac{V_u'}{0{,}75} = \frac{V_u}{\varphi_{\text{geser}}}
+```
+
+sehingga seluruh rumus di atas berlaku **persis** dengan `φ` pilihan Anda, tanpa satu pun
+rumus `shell-kit` ditulis ulang. Dengan `design.phi_shear` kosong (0,75) penyetaraan ini tidak
+berpengaruh sama sekali.
+
+> **Diperbaiki setelah v0.15.0.** Sebelumnya `design.phi_shear` hanya mengubah `φV_c` yang
+> dilaporkan; luas sengkang tetap dihitung dengan 0,75. DIUKUR (`f'c` 30 MPa, `f_y` 420 MPa,
+> `d` 1000 mm, `V_u = 1,5 V_c`): `φ = 0,60` memberi `A_v/s` **2,217** alih-alih **3,326 mm²/mm**
+> — sengkang 33% lebih sedikit daripada yang dimaksud. Pada `V_u` kecil, saat `A_v,min` yang
+> menentukan, hasil kedua φ memang sama dan itu benar. Hanya berdampak bila `phi_shear` diisi
+> selain 0,75.
 
 ## Contoh
 

@@ -715,3 +715,92 @@ def test_envelope_muka_atas_memakai_momen_paling_negatif():
         ce.flexure_design(np.minimum(a, b), INPUTS, direction="x", face="atas")
     )
     np.testing.assert_allclose(dari_envelope, np.maximum(*per_kombinasi), rtol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# phi geser dari config -- harus sampai ke luas sengkang, bukan hanya ke phi*Vc
+# ---------------------------------------------------------------------------
+
+#: Kedalaman penampang uji [m]; bulat supaya angka harapan mudah diperiksa tangan.
+_D_UJI = 1.0
+
+
+def _av_harapan_mm(vu_n: float, phi: float, inputs: ce.CapacityInputs) -> float:
+    """Av/s [mm2/mm] menurut rumus SNI dengan phi sembarang, dari blok bangunan shell-kit.
+
+    `V_c`, `V_s,maks`, dan `Av,min` diambil dari shell-kit; yang ditulis di sini hanya
+    susunan rumusnya, persis seperti di README, supaya test ini memeriksa phi -- bukan
+    menyalin implementasi yang sedang diuji.
+    """
+    fc, fy, d_mm, b = inputs.fc_mpa, inputs.fy_mpa, _D_UJI * 1e3, 1000.0
+    vc = float(sk_rebar.calc_Vc(fc, b, d_mm))
+    if abs(vu_n) <= 0.5 * phi * vc:
+        return 0.0
+    vs = max(abs(vu_n) / phi - vc, 0.0)
+    if vs > float(sk_rebar.calc_Vs_max(fc, b, d_mm)):
+        return float("nan")
+    return max(vs / (fy * d_mm), float(sk_rebar.calc_Av_min_per_s(fc, fy, b)))
+
+
+def _vc_uji() -> float:
+    return float(sk_rebar.calc_Vc(INPUTS.fc_mpa, 1000.0, _D_UJI * 1e3))
+
+
+def test_phi_geser_bawaan_tidak_mengubah_hasil_shell_kit():
+    """Dengan phi 0,75 (konstanta shell-kit) penyetaraan V_u harus tanpa efek sama sekali."""
+    vu = 1.5 * _vc_uji()
+    hasil = ce.one_way_shear_capacity(vu, _D_UJI, INPUTS, label="uji")
+    langsung = sk_rebar.calc_shear_Av_per_s(vu / 1e3, 30.0, 420.0, _D_UJI * 1e3)
+    assert hasil.av_per_s * 1e3 == pytest.approx(float(langsung), rel=1e-12)
+
+
+@pytest.mark.parametrize("phi", [0.60, 0.70, 0.75, 0.85])
+@pytest.mark.parametrize("faktor", [0.20, 0.33, 0.70, 1.50, 3.00, 5.00])
+def test_phi_geser_dari_config_dipakai_menghitung_sengkang(phi, faktor):
+    """Av/s mengikuti phi pengguna di SELURUH rentang: tanpa sengkang, Av,min, sengkang
+    nyata, dan badan hancur.
+
+    Bug yang ditutup: `calc_shear_Av_per_s` selalu memakai 0,75, sehingga phi 0,60 pada
+    `V_u = 1,5 V_c` memberi sengkang 33% lebih sedikit daripada yang dimaksud.
+    """
+    inputs = dataclasses.replace(INPUTS, phi_shear=phi)
+    vu = faktor * _vc_uji()
+    hasil = ce.one_way_shear_capacity(vu, _D_UJI, inputs, label="uji")
+    harapan = _av_harapan_mm(vu, phi, inputs)
+
+    if np.isnan(harapan):
+        assert hasil.status == ce.STATUS_WEB_CRUSHED
+        assert np.isnan(hasil.av_per_s)
+    else:
+        assert hasil.av_per_s * 1e3 == pytest.approx(harapan, rel=1e-12, abs=1e-15)
+    assert hasil.phi_v_c == pytest.approx(phi * hasil.v_c)
+
+
+def test_phi_geser_lebih_kecil_menambah_sengkang():
+    """Arah perubahannya harus konservatif: phi lebih kecil -> sengkang lebih banyak."""
+    vu = 1.5 * _vc_uji()
+    biasa = ce.one_way_shear_capacity(vu, _D_UJI, INPUTS, label="0,75")
+    ketat = ce.one_way_shear_capacity(
+        vu, _D_UJI, dataclasses.replace(INPUTS, phi_shear=0.60), label="0,60"
+    )
+    assert ketat.av_per_s > biasa.av_per_s
+    # Angka yang dilaporkan di docstring dan CHANGELOG.
+    assert biasa.av_per_s * 1e3 == pytest.approx(2.2170, abs=5e-5)
+    assert ketat.av_per_s * 1e3 == pytest.approx(3.3255, abs=5e-5)
+
+
+def test_peta_sengkang_juga_mengikuti_phi_geser():
+    """Jalur kedua (peta per elemen) harus mendapat perbaikan yang sama, termasuk Av/s
+    tanpa minimum yang dipakai membedakan "beton tidak cukup" dari "kena minimum"."""
+    v = np.array([300.0, 1_400.0, 2_200.0])  # kN/m
+    biasa = ce.shear_rebar_map(v * 1e3, INPUTS, direction="x")
+    ketat = ce.shear_rebar_map(v * 1e3, dataclasses.replace(INPUTS, phi_shear=0.60), direction="x")
+    dv = biasa.d_shear * 1e3
+    setara = v * (sk_rebar.PHI_SHEAR / 0.60)
+    harap = sk_rebar.calc_shear_Av_per_s(setara, 30.0, 420.0, dv)
+    harap_tanpa_min = sk_rebar.calc_shear_Av_per_s(setara, 30.0, 420.0, dv, apply_av_min=False)
+
+    assert np.allclose(ketat.av_per_s * 1e3, harap, equal_nan=True)
+    assert np.allclose(ketat.av_per_s_no_min * 1e3, harap_tanpa_min, equal_nan=True)
+    with np.errstate(invalid="ignore"):
+        assert np.all((ketat.av_per_s >= biasa.av_per_s) | np.isnan(ketat.av_per_s))

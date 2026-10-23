@@ -2,6 +2,34 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [Unreleased]
+
+### Fixed — `design.phi_shear` tidak dipakai untuk menghitung sengkang
+
+`design.phi_shear` hanya mengubah `φV_c` yang dilaporkan dan vonis "perlu sengkang". Luas
+sengkang (`A_v/s`), ambang `0,5 φV_c`, dan vonis BADAN HANCUR dihitung
+`shell_kit.rebar.calc_shear_Av_per_s`, yang tidak menerima φ dan selalu memakai 0,75.
+
+DIUKUR (`f'c` 30 MPa, `f_y` 420 MPa, `d` 1000 mm, `V_u = 1,5 V_c`): `phi_shear: 0.60` memberi
+`A_v/s` **2,217** alih-alih **3,326 mm²/mm** — sengkang 33% lebih sedikit daripada yang
+dimaksud pengguna, tanpa peringatan. Hanya berdampak bila `phi_shear` diisi selain 0,75;
+config dengan `phi_shear` kosong (bawaan, termasuk seluruh contoh) tidak berubah.
+
+Diperbaiki tanpa menulis ulang rumus shell-kit: φ hanya muncul di sana dalam bentuk `V_u/φ`,
+jadi shell-kit diberi `V_u' = V_u · 0,75/φ`, yang menghasilkan rumus dengan φ pengguna secara
+persis. Berlaku untuk cek penampang kritis maupun peta sengkang per elemen. Test baru memeriksa
+24 kombinasi φ × `V_u` di keempat rezim (tanpa sengkang, `A_v,min`, sengkang nyata, badan
+hancur) terhadap rumus SNI yang disusun dari blok bangunan shell-kit; 9 di antaranya terbukti
+merah pada perilaku lama.
+
+### Added — rumus tulangan di README
+
+Bagian baru "Rumus perhitungan tulangan" memuat rumus lentur, geser, dan `V_n,maks` persis
+seperti yang dihitung shell-kit, masing-masing dengan nama fungsinya. Setiap rumus diperiksa
+menghasilkan angka identik dengan fungsi shell-kit-nya. `V_n,maks` tidak dihitung kode sebagai
+angka tersendiri; yang diperiksa adalah `V_s ≤ V_s,maks`, yang setara dengan
+`V_n ≤ V_n,maks = 0,83 √f'c b_w d_v` (λ = 1).
+
 ## [0.15.0] — 2026-10-23 — antarmuka desktop ketiga (PySide6), eksperimental
 
 ### Added — `pilecap-qt`, antarmuka desktop ketiga (PySide6), EKSPERIMENTAL
