@@ -2,7 +2,7 @@
 
 Format mengikuti template PRD Bagian 16C.
 
-## [Unreleased]
+## [0.15.1] — 2026-10-23 — `design.phi_shear` dipakai menghitung sengkang; rumus di README
 
 ### Fixed — `design.phi_shear` tidak dipakai untuk menghitung sengkang
 
