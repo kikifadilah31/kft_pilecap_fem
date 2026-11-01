@@ -189,4 +189,5 @@ testpaths = ["tests"]
 addopts = "-ra"
 markers = [
     "slow: test yang menjalankan meshing penuh (beberapa detik per kasus)",
+    "gui_toolkit(nama): test yang membuat App toolkit GUI native (wx/qt); bila satu sesi memilih lebih dari satu toolkit, tiap toolkit dijalankan di proses pytest anak (lihat tests/conftest.py)",
 ]

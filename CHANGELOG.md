@@ -2,6 +2,27 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [Unreleased]
+
+### Fixed — test wx dan Qt dalam satu sesi pytest mematikan prosesnya
+
+`pytest tests/test_ui_wxgui.py tests/test_ui_qtgui.py` mati dengan "Windows fatal exception:
+access violation" pada uji Qt pertama. Suite penuh selamat hanya karena urutan nama berkas
+kebetulan menjalankan Qt lebih dulu.
+
+DIUKUR: begitu sebuah `wx.App` pernah dibuat lalu dilepas, atau sebuah jendela wx pernah
+dibuat, `QApplication.processEvents()` berikutnya crash, baik pada platform `offscreen`
+maupun `windows`. Dispatcher event Qt di Windows memompa seluruh antrean pesan Win32 milik
+thread, termasuk pesan untuk jendela tersembunyi wx yang sudah dibongkar. Bukan cacat
+`pilecap-gui` atau `pilecap-qt`: keduanya tidak pernah berjalan dalam satu proses.
+
+Kedua berkas kini bertanda `gui_toolkit("wx")` / `gui_toolkit("qt")`. Bila satu sesi memilih
+test dari lebih dari satu toolkit, test setiap toolkit dijalankan di proses pytest anak
+tersendiri dan laporannya diputar ulang per test di proses induk (`-x`, `-ra`, junitxml tetap
+per test; crash di anak dilaporkan sebagai kegagalan test yang tidak selesai). Satu berkas
+yang dijalankan sendirian tetap berjalan di proses yang sama. Tidak ada test yang dihapus
+atau dilewati.
+
 ## [0.15.1] — 2026-10-23 — `design.phi_shear` dipakai menghitung sengkang; rumus di README
 
 ### Fixed — `design.phi_shear` tidak dipakai untuk menghitung sengkang
