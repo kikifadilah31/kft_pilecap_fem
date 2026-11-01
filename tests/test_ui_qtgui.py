@@ -29,6 +29,10 @@ QtWidgets = pytest.importorskip(
 
 from pilecap_fem.ui import formstate, runner, schema  # noqa: E402
 
+#: wx dan Qt tidak boleh hidup dalam satu proses (crash native, lihat tests/conftest.py);
+#: tanda ini membuat keduanya dijalankan di proses terpisah bila terpilih bersama.
+pytestmark = pytest.mark.gui_toolkit("qt")
+
 CONTOH_EX01 = Path("examples/ex01_standard_4pile/pilecap_config.json")
 
 
