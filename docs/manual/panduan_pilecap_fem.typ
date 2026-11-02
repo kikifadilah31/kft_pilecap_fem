@@ -38,7 +38,7 @@
 
 #set page(footer: context [
   #set text(size: 7.5pt, fill: luma(90))
-  pilecap-fem v0.13.2 -- alat bantu perhitungan; wajib diperiksa dan disetujui engineer yang bertanggung jawab
+  pilecap-fem v0.16.0 -- alat bantu perhitungan; wajib diperiksa dan disetujui engineer yang bertanggung jawab
   #h(1fr)
   #counter(page).display("1 / 1", both: true)
 ])
@@ -50,7 +50,7 @@
   #text(size: 13pt)[Analisis pilecap berbasis metode elemen hingga,
   dari data masukan sampai penulangan menurut SNI 2847:2019]
   #v(14mm)
-  #text(size: 16pt, weight: 700)[Versi 0.13.2]
+  #text(size: 16pt, weight: 700)[Versi 0.16.0]
   #v(3mm)
   #text(size: 10pt)[Sistem satuan internal: SI (N, m, Pa)]
 ]
@@ -156,7 +156,7 @@ Selisih terbesar yang terukur pada momen puncak -- besaran yang menentukan tulan
   [Unduhan pertama], [Sekitar 60 MB, sekali saja per komputer.],
   [Jaringan], [Hanya saat memasang. Setelah terpasang, bekerja sepenuhnya luring.],
   [Data], [Seluruh keluaran ditulis sebagai berkas biasa di disk perusahaan sendiri; tidak ada data yang dikirim ke mana pun.],
-  [Pelatihan], [4 contoh lengkap ikut terpasang dan dapat dijalankan tanpa menyiapkan data apa pun.],
+  [Pelatihan], [5 contoh lengkap ikut terpasang dan dapat dijalankan tanpa menyiapkan data apa pun.],
   [Antarmuka], [Tersedia formulir grafis bagi pengguna yang tidak terbiasa dengan baris perintah.],
 ),
   caption: [Prasyarat penerapan di lingkungan perusahaan.],
@@ -165,7 +165,7 @@ Selisih terbesar yang terukur pada momen puncak -- besaran yang menentukan tulan
 == Pernyataan tanggung jawab
 
 #kotak([HATI-HATI], rgb("#b91c1c"))[
-#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.13.2 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
+#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.16.0 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
 ]
 
 #pagebreak()
@@ -237,7 +237,7 @@ Satu perintah, disalin utuh termasuk alamat panjang di ujungnya.
   inset: 8pt,
   radius: 2pt,
   breakable: true,
-  raw(block: true, "uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.2/pilecap_fem-0.13.2-py3-none-any.whl"),
+  raw(block: true, "uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.16.0/pilecap_fem-0.16.0-py3-none-any.whl"),
 )
 
 Bagian-bagian perintah tersebut berarti sebagai berikut.
@@ -269,7 +269,7 @@ Bagian `--python 3.12` tidak boleh dihilangkan. Pustaka solver yang dipakai pera
   raw(block: true, "pilecap-run --version"),
 )
 
-Perintah itu harus menampilkan nomor versi. Bila yang muncul adalah #tegas[0.13.2], panduan ini memang panduan untuk perangkat lunak yang baru Anda pasang. Bila berbeda, mintalah panduan untuk versi tersebut -- daftar field dan keterbatasan dapat berbeda antarversi.
+Perintah itu harus menampilkan nomor versi. Bila yang muncul adalah #tegas[0.16.0], panduan ini memang panduan untuk perangkat lunak yang baru Anda pasang. Bila berbeda, mintalah panduan untuk versi tersebut -- daftar field dan keterbatasan dapat berbeda antarversi.
 
 == Bila gagal
 
@@ -297,10 +297,10 @@ Perintahnya sama dengan pemasangan, ditambah `--force`. Tanpa itu `uv` melihat b
   inset: 8pt,
   radius: 2pt,
   breakable: true,
-  raw(block: true, "uv tool install --force --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.2/pilecap_fem-0.13.2-py3-none-any.whl"),
+  raw(block: true, "uv tool install --force --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.16.0/pilecap_fem-0.16.0-py3-none-any.whl"),
 )
 
-Alamat pada perintah di atas menunjuk versi #tegas[0.13.2]. Untuk versi lain, bagian nomor versinya diganti. Seluruh rilis beserta alamatnya tersedia pada halaman berikut.
+Alamat pada perintah di atas menunjuk versi #tegas[0.16.0]. Untuk versi lain, bagian nomor versinya diganti. Seluruh rilis beserta alamatnya tersedia pada halaman berikut.
 
 #link("https://github.com/kikifadilah31/kft_pilecap_fem/releases")[#raw("https://github.com/kikifadilah31/kft_pilecap_fem/releases")]
 
@@ -308,7 +308,7 @@ Alamat pada perintah di atas menunjuk versi #tegas[0.13.2]. Untuk versi lain, ba
 
 = Menjalankan pertama kali <bab-jalan-pertama>
 
-Perangkat lunak ini membawa #tegas[4 contoh lengkap]. Menjalankan salah satunya adalah cara tercepat memastikan pemasangan berhasil dan melihat bentuk keluarannya, tanpa perlu menyiapkan data sendiri.
+Perangkat lunak ini membawa #tegas[5 contoh lengkap]. Menjalankan salah satunya adalah cara tercepat memastikan pemasangan berhasil dan melihat bentuk keluarannya, tanpa perlu menyiapkan data sendiri.
 
 == Contoh yang tersedia
 
@@ -321,6 +321,7 @@ Perangkat lunak ini membawa #tegas[4 contoh lengkap]. Menjalankan salah satunya 
   [`ex02_standard_12pile`], [Pilecap besar dengan 12 tiang dan pier lingkaran. Menunjukkan perilaku model yang lebih halus dan waktu analisis yang lebih panjang.],
   [`ex03_custom_polygon`], [Pilecap dengan denah tidak persegi, didefinisikan sebagai poligon bebas.],
   [`ex04_pile_overlap_pier`], [Tiang yang sebagian tertutup pier. Kasus khusus dengan penanganan tersendiri, dijelaskan pada bab dasar teori.],
+  [`ex05_tapered_p2`], [Pilecap tapper: denah trapesium, 16 tiang, tebal 2000 mm di sekitar pier menipis ke 1000 mm di tepi. Contoh profil tebal parametrik dan desain dengan tebal lokal.],
 ),
   caption: [Contoh bawaan yang ikut terpasang.],
 )
@@ -359,9 +360,13 @@ Seluruh keluaran ditulis ke dalam folder `output`, dengan #tegas[satu subfolder 
 
 == Menggunakan formulir grafis
 
-Bagi pengguna yang tidak terbiasa mengetik perintah, tersedia formulir yang berjalan di peramban. Formulir tersebut menanyakan setiap masukan satu per satu, lengkap dengan penjelasan dan gambar, lalu menuliskan berkas konfigurasinya untuk Anda.
+Bagi pengguna yang tidak terbiasa mengetik perintah, tersedia formulir yang menanyakan setiap masukan satu per satu, lengkap dengan penjelasan dan gambar, lalu menuliskan berkas konfigurasinya untuk Anda.
 
-Fitur ini perlu dipasang sekali dengan menambahkan bagian `[ui]` pada perintah pemasangan.
+Formulir itu tersedia dalam dua bentuk yang #tegas[menghasilkan berkas konfigurasi yang sama persis]. Pilih salah satu saja.
+
+=== Bentuk pertama: jendela aplikasi
+
+Bentuk ini terbuka sebagai jendela biasa, seperti aplikasi lain di komputer Anda. Tidak ada peramban yang perlu dibuka dan tidak ada alamat yang perlu diketik. Dipasang sekali dengan menambahkan bagian `[gui]`.
 
 #block(
   width: 100%,
@@ -369,7 +374,31 @@ Fitur ini perlu dipasang sekali dengan menambahkan bagian `[ui]` pada perintah p
   inset: 8pt,
   radius: 2pt,
   breakable: true,
-  raw(block: true, "uv tool install --force --python 3.12 \"pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.13.2/pilecap_fem-0.13.2-py3-none-any.whl\""),
+  raw(block: true, "uv tool install --force --python 3.12 \"pilecap-fem[gui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.16.0/pilecap_fem-0.16.0-py3-none-any.whl\""),
+)
+
+Setelah itu jendelanya dibuka dengan satu perintah.
+
+#block(
+  width: 100%,
+  fill: luma(245),
+  inset: 8pt,
+  radius: 2pt,
+  breakable: true,
+  raw(block: true, "pilecap-gui"),
+)
+
+=== Bentuk kedua: formulir di peramban
+
+Bentuk ini berjalan di peramban pada alamat `http://localhost:8501`, hanya di mesin ini dan tanpa koneksi internet. Dipasang dengan bagian `[ui]`.
+
+#block(
+  width: 100%,
+  fill: luma(245),
+  inset: 8pt,
+  radius: 2pt,
+  breakable: true,
+  raw(block: true, "uv tool install --force --python 3.12 \"pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.16.0/pilecap_fem-0.16.0-py3-none-any.whl\""),
 )
 
 Setelah itu formulirnya dibuka dengan satu perintah.
@@ -383,7 +412,7 @@ Setelah itu formulirnya dibuka dengan satu perintah.
   raw(block: true, "pilecap-ui"),
 )
 
-Seluruh isian pada formulir tersebut adalah field yang sama dengan yang diuraikan pada bab #link(<bab-konfigurasi>)[Referensi konfigurasi].
+Seluruh isian pada kedua formulir tersebut adalah field yang sama dengan yang diuraikan pada bab #link(<bab-konfigurasi>)[Referensi konfigurasi]. Keduanya juga menjalankan perintah `pilecap-run` yang sama, sehingga hasilnya tidak dapat berbeda dari menjalankannya sendiri dari baris perintah.
 
 #pagebreak()
 
@@ -403,6 +432,7 @@ Satu folder masukan berisi satu berkas konfigurasi dan beberapa berkas data. Per
   [Koordinat pusat tiap tiang], [`*pile*coord*.csv`],
   [Denah pilecap sebagai poligon, bila bentuknya tidak persegi], [`*cap*polygon*.csv`],
   [Denah pier sebagai poligon, bila bentuknya tidak persegi maupun lingkaran], [`*pier*polygon*.csv`],
+  [Tebal pilecap tapper per bidang, bila tebalnya tidak seragam dan tidak dapat dinyatakan dengan profil parametrik], [`*cap*thick*.csv`],
 ),
   caption: [Pola nama berkas masukan yang dikenali otomatis.],
 )
@@ -454,11 +484,57 @@ Hasil perhitungan selalu disajikan dalam satuan tampilan berikut.
   caption: [Satuan tampilan hasil perhitungan.],
 )
 
+== Pilecap tapper (tebal bervariasi)
+
+Pilecap tapper berbawah datar dan beratas miring, menipis dari plateau di sekitar pier ke tepi. Tebalnya diberikan dengan #tegas[salah satu] dari dua cara. Bila keduanya ada, berkas CSV yang dipakai.
+
+#figure(
+  table(
+  columns: 3,
+  align: (left, left, left),
+  [Cara], [Yang diisi], [Cocok untuk],
+  [Profil parametrik], [`pilecap.thickness` (tebal plateau), `pilecap.edge_thickness` (tebal tepi), `pilecap.taper_shoulder` (lebar bahu datar di sekeliling pier)], [Atas miring ke empat sisi (atap perisai), satu pier persegi, pilecap segiempat],
+  [CSV per bidang], [Berkas `*cap*thick*.csv`, kolom `face, x, y, t`], [Bentuk lain: beberapa pier, denah bukan segiempat, kemiringan tidak simetris],
+),
+  caption: [Dua cara mendefinisikan tebal pilecap tapper.],
+)
+
+Pada CSV, setiap #tegas[bidang] ditulis sebagai 3 atau 4 titik sudut berurutan dengan tebal di tiap titiknya, persis garis pada gambar denah struktur. Contoh dua dari lima bidang pilecap P2 (satuan mm), yaitu plateau dan bidang miring sisi selatan:
+
+#figure(
+  table(
+  columns: 4,
+  align: (left, right, right, right),
+  [face], [x], [y], [t],
+  [PLATEAU], [3419], [4299], [2000],
+  [PLATEAU], [5919], [4299], [2000],
+  [PLATEAU], [5919], [7799], [2000],
+  [PLATEAU], [3419], [7799], [2000],
+  [SELATAN], [238], [0], [1000],
+  [SELATAN], [9100], [0], [1000],
+  [SELATAN], [5919], [4299], [2000],
+  [SELATAN], [3419], [4299], [2000],
+),
+  caption: [Potongan CSV tebal per bidang.],
+)
+
+#kotak([PERINGATAN], rgb("#b45309"))[
+CSV #tegas[ditolak] bila bidang-bidangnya bercelah, saling tumpang tindih, tidak menutup seluruh pilecap, atau bila titik yang berimpit diberi tebal berbeda. Lompatan tebal di tepi bersama hampir selalu salah ketik, jadi tidak ditebak.
+]
+
+#tegas[Cara tool memakainya.] Elemen pelat, di perangkat lunak ini maupun di Midas Civil, hanya punya satu tebal. Tebal tiap elemen diambil di titik beratnya lalu dibulatkan ke kelipatan `pilecap.thickness_step` (bawaan 10 mm). Elemen bertebal sama berbagi satu penampang, satu #tegas[pita]. Penampang analisis, berat sendiri, ID `*THICKNESS` pada `model.mct`, dan desain tulangan memakai tebal pita yang sama, sehingga model Midas yang diimpor melihat pelat yang identik. Bidang acuan pelat tidak digeser (tanpa _offset_), sama dengan model Midas pembanding.
+
+#tegas[Desain.] Setiap elemen didesain dengan tebalnya sendiri, memakai rumus yang sama dengan pelat rata: `d`, `As` perlu, `As` minimum, batas spasi, `dv`, dan `phi Vc` mengikuti tebal lokal. Geser satu arah di penampang kritis memakai `d` setara sepanjang penampang, yaitu rata-rata tebal efektif elemen yang terpotong berbobot lebarnya. Rasio `a/d` memakai `d` di pusat tiap tiang. Mode lajur (`design.rebar_basis = "strip"`) ditolak untuk pilecap tapper, karena satu lajur memotong plateau dan bidang miring sekaligus dan tidak punya satu `d`.
+
+#kotak([PENTING], rgb("#b91c1c"))[
+Pilecap tapper umumnya tebal terhadap jarak tiangnya, sehingga peringatan _deep pile cap_ lebih sering relevan di sini. Tiang tepi juga berada di zona tertipis. Kontur tebal (`00_Model/contour_thickness.png`) dan kolom `d` pada berkas desain menunjukkan tebal yang benar-benar dipakai di setiap tempat.
+]
+
 #pagebreak()
 
 = Referensi konfigurasi <bab-konfigurasi>
 
-Seluruh masukan perangkat lunak ini terdiri atas #tegas[60 field] yang dikelompokkan ke dalam #tegas[11 bagian]. Bab ini menguraikan seluruhnya, sehingga berkas konfigurasi dapat disusun tanpa rujukan lain.
+Seluruh masukan perangkat lunak ini terdiri atas #tegas[63 field] yang dikelompokkan ke dalam #tegas[11 bagian]. Bab ini menguraikan seluruhnya, sehingga berkas konfigurasi dapat disusun tanpa rujukan lain.
 
 Field ditulis di dalam berkas konfigurasi berformat JSON dengan nama bagian sebagai kunci luar dan nama field sebagai kunci dalam. Formulir grafis `pilecap-ui` menanyakan field yang sama dan menuliskan berkas itu untuk Anda.
 
@@ -543,6 +619,9 @@ Pelat beton yang menyatukan kepala tiang. Dimodelkan sebagai pelat datar di bida
   align: (left, left, center, left, left),
   [Field], [Jenis], [Wajib], [Bawaan], [Satuan],
   [`thickness`], [angka desimal], [ya], [`1200.0`], [`mm`],
+  [`edge_thickness`], [angka desimal], [tidak], [`null`], [`mm`],
+  [`taper_shoulder`], [angka desimal], [bersyarat], [`500.0`], [`mm`],
+  [`thickness_step`], [angka desimal], [bersyarat], [`10.0`], [`mm`],
   [`length_x`], [angka desimal], [ya], [`4800.0`], [`mm`],
   [`length_y`], [angka desimal], [ya], [`4800.0`], [`mm`],
   [`origin`], [sepasang angka], [ya], [`[0.0, 0.0]`], [`mm`],
@@ -552,7 +631,31 @@ Pelat beton yang menyatukan kepala tiang. Dimodelkan sebagai pelat datar di bida
 
 === `pilecap.thickness` -- Tebal
 
-Tebal pelat, dipakai untuk kekakuan lentur, tinggi efektif tulangan, dan kapasitas geser. Ini besaran paling berpengaruh di seluruh model: kekakuan lentur pelat sebanding dengan tebal #tegas[pangkat tiga], sehingga tebal yang meleset 10% menggeser lendutan sekitar 30%.
+Tebal pelat, dipakai untuk kekakuan lentur, tinggi efektif tulangan, dan kapasitas geser. Ini besaran paling berpengaruh di seluruh model: kekakuan lentur pelat sebanding dengan tebal #tegas[pangkat tiga], sehingga tebal yang meleset 10% menggeser lendutan sekitar 30%. Pada pilecap tapper, ini tebal #tegas[maksimum] -- tebal plateau di sekitar pier.
+
+Nilainya tidak boleh kurang dari `0.0`.
+
+=== `pilecap.edge_thickness` -- Tebal tepi (pilecap tapper)
+
+Kosong = tebal seragam. Diisi = pilecap #tegas[tapper]: bawah datar, atas miring ke empat sisi seperti atap perisai, dari tebal di atas (plateau sekitar pier) menipis linear ke tebal ini di tepi. Butuh tepat satu pier persegi dan pilecap segiempat; bentuk lain diberikan lewat CSV tebal per bidang. Desain tulangan memakai tebal lokal tiap elemen, hanya mode per elemen.
+
+Nilainya tidak boleh kurang dari `0.0`.
+
+Boleh dikosongkan; tulis `null` untuk memakai bawaannya.
+
+=== `pilecap.taper_shoulder` -- Lebar bahu datar
+
+Lebar bagian datar di sekeliling pier sebelum bidang miring dimulai. Isi 0 bila kemiringan langsung dimulai dari muka pier.
+
+#tegas[Hanya berlaku bila tebal tepi `pilecap.edge_thickness` diisi (pilecap tapper).] Pada cabang yang lain field ini tidak ditulis ke berkas konfigurasi sama sekali, dan tidak dibaca.
+
+Nilainya tidak boleh kurang dari `0.0`.
+
+=== `pilecap.thickness_step` -- Langkah pembulatan tebal
+
+Elemen shell hanya punya satu tebal, jadi tebal tiap elemen diambil di titik beratnya lalu dibulatkan ke kelipatan nilai ini. Elemen bertebal sama berbagi satu ID tebal di Midas; nilai lebih besar = ID lebih sedikit, tangga lebih kasar. Halusnya tangga terutama ditentukan ukuran mesh, bukan nilai ini.
+
+#tegas[Hanya berlaku bila tebal tepi `pilecap.edge_thickness` diisi (pilecap tapper).] Pada cabang yang lain field ini tidak ditulis ke berkas konfigurasi sama sekali, dan tidak dibaca.
 
 Nilainya tidak boleh kurang dari `0.0`.
 
@@ -1452,6 +1555,8 @@ Seluruh versi berikut #tegas[dipatok persis], bukan sekadar versi minimum. Itu d
   [`shell-kit`], [`3.3.0`], [Kapasitas dan pemilihan tulangan menurut SNI 2847:2019],
   [`tqdm`], [`4.70.0`], [Penanda kemajuan proses],
   [`typst`], [`0.15.0`], [Kompilasi dokumen PDF],
+  [`wxpython`], [`>=4.2`], [-- -- hanya bila fitur tambahan dipasang],
+  [`pyside6-essentials`], [`>=6.5`], [-- -- hanya bila fitur tambahan dipasang],
   [`streamlit`], [`>=1.57`], [Formulir grafis (opsional) -- hanya bila fitur tambahan dipasang],
 ),
   caption: [Pustaka pihak ketiga beserta versi yang dipatok.],
@@ -1538,7 +1643,7 @@ Item berikut BELUM dikonfirmasi, sehingga pengecekan terkait #tegas[tidak dilaku
 = Tanggung jawab dan lisensi <bab-tanggung-jawab>
 
 #kotak([HATI-HATI], rgb("#b91c1c"))[
-#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.13.2 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
+#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.16.0 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
 ]
 
 Pernyataan di atas berlaku bagi setiap keluaran perangkat lunak ini, dan dicetak apa adanya pada setiap lembar perhitungan, setiap ringkasan, dan setiap laporan PDF yang dihasilkannya.
@@ -1564,7 +1669,7 @@ Perhitungan kapasitas penampang tidak dikerjakan sendiri oleh perangkat lunak in
   [Butir], [Nilai],
   [Standar acuan], [SNI 2847:2019],
   [Pustaka kapasitas], [`shell-kit` v3.3.0],
-  [Perangkat lunak ini], [`pilecap-fem` v0.13.2],
+  [Perangkat lunak ini], [`pilecap-fem` v0.16.0],
 ),
   caption: [Sumber perhitungan kapasitas.],
 )
@@ -1605,6 +1710,8 @@ Faktor reduksi kekuatan, mutu beton, dan mutu baja #tegas[tidak dicantumkan di s
   [`pilecap-report`], [Membuat kontur, envelope, lembar perhitungan, dan laporan dari hasil analisis.],
   [`pilecap-run`], [Menjalankan seluruh rantai di atas dalam satu perintah.],
   [`pilecap-ui`], [Membuka formulir grafis di peramban.],
+  [`pilecap-gui`], [Membuka formulir grafis sebagai jendela aplikasi, tanpa peramban.],
+  [`pilecap-qt`], [Membuka formulir grafis sebagai jendela aplikasi Qt (eksperimental, untuk dibandingkan).],
   [`pilecap-manual`], [Menghasilkan panduan ini untuk versi yang sedang terpasang.],
 ),
   caption: [Perintah yang tersedia setelah pemasangan.],

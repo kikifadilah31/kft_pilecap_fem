@@ -359,6 +359,40 @@ def golden_case(
     return name, expected, snapshot
 
 
+def _contoh_tapper(name: str) -> bool:
+    """Contoh bertebal tidak seragam: profil parametrik di config, atau CSV tebal per bidang.
+
+    Ditentukan dari BERKAS contoh, bukan dari nama foldernya, supaya contoh tapper baru
+    otomatis ikut teruji tanpa daftar yang harus diingat.
+    """
+    folder = EXAMPLES / name
+    cfg = json.loads((folder / "pilecap_config.json").read_text(encoding="utf-8"))
+    parametrik = (cfg.get("pilecap") or {}).get("edge_thickness") is not None
+    return parametrik or any(folder.glob(config.FILE_PATTERNS["pilecap_thickness"]))
+
+
+#: Contoh yang angka desainnya per elemen dengan tebal lokal. Contoh seragam tidak
+#: diparametrisasi ke test tapper sama sekali -- bukan dijalankan lalu dilewati, yang membuat
+#: laporan suite tampak seperti ada pemeriksaan yang terlewat padahal tidak ada.
+TAPPER_EXAMPLES: tuple[str, ...] = tuple(n for n in config.EXAMPLE_NAMES if _contoh_tapper(n))
+
+
+@pytest.fixture(params=TAPPER_EXAMPLES)
+def golden_tapper_case(
+    request: pytest.FixtureRequest,
+    snapshots: dict[str, dict[str, Any]],
+    regen_golden: bool,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    name = str(request.param)
+    snapshot = snapshots[name]
+    return name, _load_or_regen(name, snapshot, regen_golden), snapshot
+
+
+def test_ada_contoh_tapper_yang_dijaga_golden():
+    """Tanpa ini, menghapus contoh tapper akan membuat test tapper lenyap tanpa suara."""
+    assert TAPPER_EXAMPLES, "tidak ada contoh tapper di config.EXAMPLE_NAMES"
+
+
 def test_mesh_invariant_geometri_tidak_bergeser(golden_case):
     """Luas per physical group adalah geometri murni -- tidak boleh berubah sama sekali."""
     _, expected, actual = golden_case
@@ -440,12 +474,11 @@ def test_desain_tulangan_per_lajur_cocok_dengan_golden(golden_case):
                 )
 
 
-def test_desain_per_elemen_tapper_cocok_dengan_golden(golden_case):
+def test_desain_per_elemen_tapper_cocok_dengan_golden(golden_tapper_case):
     """`As` pakai per elemen (tebal lokal) pada probe -- hanya pilecap tapper."""
-    name, expected, actual = golden_case
+    name, expected, actual = golden_tapper_case
     kasus = [c for c, e in expected["combos"].items() if "element_design" in e]
-    if not kasus:
-        pytest.skip(f"{name}: pilecap seragam, angka desainnya per lajur")
+    assert kasus, f"{name}: golden tapper tidak memuat element_design"
     for combo in kasus:
         for key, gold_list in expected["combos"][combo]["element_design"].items():
             gold = np.asarray(gold_list, dtype=np.float64)

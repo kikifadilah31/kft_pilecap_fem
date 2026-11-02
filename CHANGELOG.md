@@ -2,9 +2,9 @@
 
 Format mengikuti template PRD Bagian 16C.
 
-## [Unreleased]
+## [0.16.0] — 2026-11-02 — Pilecap tapper (tebal bervariasi)
 
-### Added — pilecap tapper (tebal bervariasi), Fase 1: analisis dan ekspor Midas
+### Added — pilecap tapper (tebal bervariasi): analisis, ekspor Midas, desain tebal lokal
 
 Pilecap dengan bawah datar dan atas miring ke empat sisi (atap perisai) kini dapat
 dianalisis. Tebal didefinisikan dengan salah satu dari:
