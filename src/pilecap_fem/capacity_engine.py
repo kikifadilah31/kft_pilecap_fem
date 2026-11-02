@@ -27,6 +27,15 @@ menuliskan satu pun rumus kapasitas.
 3. **Kedalaman efektif berbeda per arah.** Diuji: `h=1200, cover=75, D=16` memberi
    `d_x = 1.117 mm` dan `d_y = 1.101 mm` -- arah X lapis luar, Y lapis dalam.
 
+.. rubric:: Pilecap tapper: shell-kit dipanggil per PITA tebal
+
+Beberapa fungsi `shell_kit.rebar` hanya menerima tebal SKALAR (`calc_as_min_per_face` dan
+`check_spacing_limits` memakai `min()` Python). Bila `CapacityInputs.elem_thickness`
+diisi, elemen dikelompokkan per tebal pita -- tebal yang SAMA dengan penampang OpenSees dan
+ID `*THICKNESS` Midas -- lalu shell-kit dipanggil sekali per pita dengan satu `h`, dan
+hasilnya dirangkai kembali. Tidak ada rumus yang ditulis ulang, dan pilecap seragam
+(`elem_thickness = None`) melewati jalur yang sama persis seperti sebelumnya.
+
 .. warning::
    `shell-kit` adalah alat desain **pelat per lajur 1 m**. Penerapannya pada pilecap sah
    untuk bagian yang berperilaku lentur pelat, TETAPI tidak untuk *deep member*
@@ -36,7 +45,8 @@ menuliskan satu pun rumus kapasitas.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Iterator
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -103,6 +113,27 @@ class CapacityInputs:
     stirrup_diameters: tuple[float, ...] = ()
     #: Batas tebal per muka untuk `As_min` [m]. `None` = murni SNI (tanpa batas).
     as_min_surface_zone: float | None = None
+    #: Tebal per elemen [m] untuk pilecap tapper -- tebal PITA, bukan tebal eksak, supaya
+    #: desain melihat tebal yang sama dengan FEM dan Midas. `None` = seragam `thickness`.
+    elem_thickness: np.ndarray | None = field(default=None, compare=False, repr=False)
+
+    @property
+    def is_tapered(self) -> bool:
+        return self.elem_thickness is not None
+
+    def with_element_thickness(self, elem_thickness: np.ndarray | None) -> CapacityInputs:
+        """Salinan dengan tebal per elemen; `None` mengembalikan jalur seragam."""
+        if elem_thickness is None:
+            return replace(self, elem_thickness=None)
+        values = np.asarray(elem_thickness, dtype=np.float64)
+        if values.ndim != 1 or not np.all(np.isfinite(values)) or np.any(values <= 0.0):
+            raise ValueError("elem_thickness harus array 1-D tebal positif yang terdefinisi.")
+        if np.any(values <= 2.0 * self.cover):
+            raise ValueError(
+                f"Tebal elemen terkecil {values.min():.4f} m tidak lebih dari dua kali selimut "
+                f"({self.cover:.4f} m); tinggi efektif tidak terdefinisi."
+            )
+        return replace(self, elem_thickness=values)
 
     # -- satuan shell-kit ---------------------------------------------------
 
@@ -231,7 +262,9 @@ class FlexureDesign:
     face: str  # "bawah" | "atas"
     mu: np.ndarray  # N.m/m, sudah |.| dan hanya sisi yang relevan
     as_required: np.ndarray  # m^2/m
-    as_min: float  # m^2/m
+    #: m^2/m. Skalar pada pilecap seragam; array per elemen pada pilecap tapper, karena
+    #: `As_min` bergantung pada tebal.
+    as_min: float | np.ndarray
     d_effective: np.ndarray  # m
     bar_diameter: np.ndarray  # m
     status: np.ndarray  # (M,) str
@@ -245,6 +278,40 @@ class FlexureDesign:
         """`As` terbesar yang terdefinisi [m^2/m]."""
         finite = self.as_required[np.isfinite(self.as_required)]
         return float(finite.max()) if finite.size else float("nan")
+
+    def as_min_at(self, index: int) -> float:
+        """`As_min` [m^2/m] elemen ke-`index`, berlaku untuk skalar maupun array."""
+        values = np.asarray(self.as_min, dtype=np.float64)
+        return float(values[index]) if values.ndim else float(values)
+
+    @property
+    def as_min_range(self) -> tuple[float, float]:
+        """(terkecil, terbesar) `As_min` [m^2/m]; keduanya sama pada pilecap seragam."""
+        values = np.asarray(self.as_min, dtype=np.float64)
+        return float(values.min()), float(values.max())
+
+
+def _bands(elem_thickness: np.ndarray) -> Iterator[tuple[float, np.ndarray]]:
+    """(tebal pita, indeks elemen) untuk tiap tebal unik, menaik."""
+    for h in np.unique(elem_thickness):
+        yield float(h), np.flatnonzero(elem_thickness == h)
+
+
+def _per_band_inputs(inputs: CapacityInputs, n: int) -> Iterator[tuple[CapacityInputs, np.ndarray]]:
+    """`CapacityInputs` seragam per pita beserta indeks elemennya.
+
+    Panjang array yang didesain WAJIB sama dengan jumlah elemen: momen lajur (satu angka
+    per lajur) tidak punya tebal per elemen, dan diam-diam memasangkannya dengan pita
+    elemen pertama akan memberi `d` yang salah tanpa pesan apa pun.
+    """
+    assert inputs.elem_thickness is not None
+    if inputs.elem_thickness.size != n:
+        raise ValueError(
+            f"Pilecap tapper: {n} nilai didesain, tetapi tebal per elemen ada "
+            f"{inputs.elem_thickness.size}. Desain tapper hanya per elemen."
+        )
+    for h, idx in _bands(inputs.elem_thickness):
+        yield replace(inputs, thickness=h, elem_thickness=None), idx
 
 
 def _face_moments(moments_si: np.ndarray, face: str) -> np.ndarray:
@@ -283,6 +350,61 @@ def flexure_design(
     if direction not in ("x", "y"):
         raise ValueError(f"direction = {direction!r} harus 'x' atau 'y'.")
 
+    if inputs.is_tapered:
+        moments = np.asarray(moments_si, dtype=np.float64)
+        n = moments.size
+        mu = np.full(n, np.nan)
+        as_req = np.full(n, np.nan)
+        as_min = np.full(n, np.nan)
+        d_eff = np.full(n, np.nan)
+        bar = np.full(n, np.nan)
+        status = np.full(n, STATUS_UNDEFINED, dtype=object)
+        for band_inputs, idx in _per_band_inputs(inputs, n):
+            part = _flexure_design_uniform(
+                moments[idx], band_inputs, direction=direction, face=face, layer=layer
+            )
+            mu[idx] = part.mu
+            as_req[idx] = part.as_required
+            as_min[idx] = part.as_min
+            d_eff[idx] = part.d_effective
+            bar[idx] = part.bar_diameter
+            status[idx] = part.status
+        design = FlexureDesign(
+            direction=direction,
+            face=face,
+            mu=mu,
+            as_required=as_req,
+            as_min=as_min,
+            d_effective=d_eff,
+            bar_diameter=bar,
+            status=status,
+        )
+    else:
+        design = _flexure_design_uniform(
+            moments_si, inputs, direction=direction, face=face, layer=layer
+        )
+
+    n_bad = design.n_inadequate
+    if n_bad:
+        _log.warning(
+            "Desain lentur arah %s muka %s: %d elemen PENAMPANG TIDAK MEMADAI "
+            "(momen melampaui batas kendali tarik pada tebal yang ada).",
+            direction,
+            face,
+            n_bad,
+        )
+    return design
+
+
+def _flexure_design_uniform(
+    moments_si: np.ndarray,
+    inputs: CapacityInputs,
+    *,
+    direction: str,
+    face: str,
+    layer: int,
+) -> FlexureDesign:
+    """`flexure_design` untuk SATU tebal (`inputs.thickness`)."""
     mu_si = _face_moments(moments_si, face)
     # SI (N.m/m) -> kN.m/m yang diminta shell-kit.
     mu_knm = np.nan_to_num(mu_si * config.DISPLAY_UNITS["moment_per_width"][1], nan=0.0)
@@ -336,16 +458,6 @@ def flexure_design(
     status[~np.isfinite(mu_si)] = STATUS_UNDEFINED
     status[np.isfinite(mu_si) & ~np.isfinite(as_mm2)] = STATUS_SECTION_INADEQUATE
     status[np.isfinite(mu_si) & (mu_si <= 0.0)] = STATUS_NO_MOMENT
-
-    n_bad = int(np.count_nonzero(status == STATUS_SECTION_INADEQUATE))
-    if n_bad:
-        _log.warning(
-            "Desain lentur arah %s muka %s: %d elemen PENAMPANG TIDAK MEMADAI "
-            "(momen melampaui batas kendali tarik pada tebal yang ada).",
-            direction,
-            face,
-            n_bad,
-        )
 
     to_si_area = 1.0 / config.DISPLAY_UNITS["steel_area"][1]
     to_si_len = 1.0 / config.DISPLAY_UNITS["length"][1]
@@ -421,10 +533,20 @@ def select_flexure_bars(design: FlexureDesign, inputs: CapacityInputs) -> RebarS
         spacing_mm = np.asarray(
             sk_rebar.calc_spacing_from_diameter(as_design_mm2, diameter), dtype=np.float64
         )
-        spacing_mm = np.asarray(
-            sk_rebar.check_spacing_limits(spacing_mm, inputs.thickness_mm, diameter),
-            dtype=np.float64,
-        )
+        if inputs.is_tapered:
+            # `s_max = min(2h, 450)` memakai tebal LOKAL; dicek per pita.
+            for band_inputs, idx in _per_band_inputs(inputs, spacing_mm.size):
+                spacing_mm[idx] = np.asarray(
+                    sk_rebar.check_spacing_limits(
+                        spacing_mm[idx], band_inputs.thickness_mm, diameter
+                    ),
+                    dtype=np.float64,
+                )
+        else:
+            spacing_mm = np.asarray(
+                sk_rebar.check_spacing_limits(spacing_mm, inputs.thickness_mm, diameter),
+                dtype=np.float64,
+            )
         status = _selection_status(design.status, spacing_mm, no_need=np.isinf(spacing_mm))
         # `inf` berarti "tidak perlu tulangan"; dibiarkan inf agar tidak tertukar dengan
         # NaN yang di sini berarti spasi melanggar batas.
@@ -529,8 +651,8 @@ def strip_flexure_design(
                 "d_eff_m": float(design.d_effective[0]),
                 "bar_diameter_m": float(design.bar_diameter[0]),
                 "As_required_m2_per_m": float(design.as_required[0]),
-                "As_min_m2_per_m": design.as_min,
-                "As_design_m2_per_m": _as_design(design.as_required[0], design.as_min),
+                "As_min_m2_per_m": design.as_min_at(0),
+                "As_design_m2_per_m": _as_design(design.as_required[0], design.as_min_at(0)),
                 "status": str(design.status[0]),
             }
         )
@@ -589,17 +711,21 @@ def governing_element_design(
                 "Mu_per_m_Nm": float(design.mu[index]),
                 "d_eff_m": float(design.d_effective[index]),
                 "As_required_m2_per_m": float(design.as_required[index]),
-                "As_min_m2_per_m": design.as_min,
+                "As_min_m2_per_m": design.as_min_at(index),
                 "As_design_m2_per_m": value,
                 "status": str(design.status[index]),
             }
         if terbaik is not None:
             as_min = float(terbaik["As_min_m2_per_m"])
+            lo, hi = designs_by_combo[str(terbaik["combo"])][(direction, face)].as_min_range
             rows.append(
                 {
                     **terbaik,
                     "n_inadequate": n_inadequate,
                     "as_min_governs": float(terbaik["As_design_m2_per_m"]) <= as_min * (1.0 + 1e-9),
+                    # Pilecap tapper: `As_min` bergantung tebal, jadi elemen TIDAK seri --
+                    # maksimumnya jatuh di bagian tertebal.
+                    "as_min_varies": hi > lo,
                 }
             )
     return rows
@@ -809,8 +935,10 @@ class ShearRebarMap:
 
     direction: str
     v_u: np.ndarray  # N/m
-    d_shear: float  # m
-    phi_v_c: float  # N/m
+    #: m. Skalar pada pilecap seragam; array per elemen pada pilecap tapper.
+    d_shear: float | np.ndarray
+    #: N/m. Skalar pada pilecap seragam; array per elemen pada pilecap tapper.
+    phi_v_c: float | np.ndarray
     #: `Av/s` [m^2/m] SETELAH `Av,min` diterapkan -- ini yang dipakai memilih diameter.
     av_per_s: np.ndarray
     #: `Av/s` [m^2/m] TANPA `Av,min`; > 0 hanya bila beton memang tidak cukup.
@@ -875,6 +1003,46 @@ def shear_rebar_map(
     if direction not in ("x", "y"):
         raise ValueError(f"direction = {direction!r} harus 'x' atau 'y'.")
 
+    if inputs.is_tapered:
+        values = np.asarray(v_u_si, dtype=np.float64)
+        parts = [
+            (idx, _shear_rebar_map_uniform(values[idx], band_inputs, direction=direction))
+            for band_inputs, idx in _per_band_inputs(inputs, values.size)
+        ]
+        first = parts[0][1]
+
+        def rangkai(name: str, dtype: Any = np.float64) -> np.ndarray:
+            out = np.empty(values.size, dtype=dtype)
+            for idx, part in parts:
+                out[idx] = np.broadcast_to(getattr(part, name), idx.shape)
+            return out
+
+        result = ShearRebarMap(
+            direction=direction,
+            v_u=values,
+            d_shear=rangkai("d_shear"),
+            phi_v_c=rangkai("phi_v_c"),
+            av_per_s=rangkai("av_per_s"),
+            av_per_s_no_min=rangkai("av_per_s_no_min"),
+            stirrup_diameter=rangkai("stirrup_diameter"),
+            status=rangkai("status", object),
+            available_diameters=first.available_diameters,
+        )
+    else:
+        result = _shear_rebar_map_uniform(v_u_si, inputs, direction=direction)
+    if result.n_web_crushed:
+        _log.warning(
+            "Peta geser arah %s: %d elemen BADAN HANCUR (V_u melampaui V_s maksimum).",
+            direction,
+            result.n_web_crushed,
+        )
+    return result
+
+
+def _shear_rebar_map_uniform(
+    v_u_si: np.ndarray, inputs: CapacityInputs, *, direction: str
+) -> ShearRebarMap:
+    """`shear_rebar_map` untuk SATU tebal (`inputs.thickness`)."""
     values = np.asarray(v_u_si, dtype=np.float64)
     dv_mm = float(
         sk_rebar.calc_effective_depth(
@@ -931,12 +1099,6 @@ def shear_rebar_map(
         status=status,
         available_diameters=tuple(sorted(d * to_si_len for d in allowed_mm)),
     )
-    if result.n_web_crushed:
-        _log.warning(
-            "Peta geser arah %s: %d elemen BADAN HANCUR (V_u melampaui V_s maksimum).",
-            direction,
-            result.n_web_crushed,
-        )
     return result
 
 
@@ -1013,6 +1175,22 @@ def provenance_block(inputs: CapacityInputs) -> dict[str, Any]:
             "shell-kit). Asumsi ini memengaruhi V_c."
         ),
         "as_min_surface_zone_mm": inputs.surface_zone_mm,
+        **(
+            {
+                "tebal_elemen_mm": [
+                    float(inputs.elem_thickness.min() * 1e3),
+                    float(inputs.elem_thickness.max() * 1e3),
+                ],
+                "jumlah_pita": int(np.unique(inputs.elem_thickness).size),
+                "catatan_tapper": (
+                    "Pilecap tapper: d, As_min, batas spasi, dv, dan phi Vc dihitung dengan "
+                    "tebal LOKAL tiap elemen (tebal pita, sama dengan penampang FEM dan ID "
+                    "*THICKNESS Midas). shell-kit dipanggil sekali per pita."
+                ),
+            }
+            if inputs.elem_thickness is not None
+            else {}
+        ),
         "catatan_as_min": (
             "As_min dihitung pada setengah tebal penuh (murni SNI 2847:2019)."
             if inputs.surface_zone_mm is None

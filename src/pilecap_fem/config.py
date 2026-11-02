@@ -70,6 +70,8 @@ FILE_PATTERNS: Final[dict[str, str]] = {
     "pile_coords": "*pile*coord*.csv",
     "pilecap_polygon": "*cap*polygon*.csv",
     "pier_polygon": "*pier*polygon*.csv",
+    # Tebal pilecap tapper per bidang (`face, x, y, t`). Opsional; lihat `thickness.py`.
+    "pilecap_thickness": "*cap*thick*.csv",
 }
 
 #: File yang wajib ada untuk command yang membutuhkannya.
@@ -523,6 +525,8 @@ CONTOUR_FIELDS: Final[dict[str, tuple[str, str, str]]] = {
     "q_y": ("contour_qy.png", "shear_per_width", "Geser transversal q_y"),
 }
 FILE_CONTOUR_DEFLECTION: Final[str] = "contour_deflection.png"
+#: Kontur tebal per elemen (pita) di `00_Model/` -- hanya untuk pilecap tapper.
+FILE_CONTOUR_THICKNESS: Final[str] = "contour_thickness.png"
 FILE_REBAR_DESIGN: Final[str] = "rebar_design.csv"
 FILE_REBAR_ENVELOPE: Final[str] = "rebar_design_envelope.csv"
 #: Envelope per LAJUR (mode `rebar_basis = "strip"` saja). Melengkapi berkas di atas, yang

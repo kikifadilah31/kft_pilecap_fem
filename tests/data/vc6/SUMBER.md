@@ -41,6 +41,34 @@ Yang **tidak** dibuktikan ex04: bahwa idealisasi jepit-sempurna itu benar secara
 Kedua program memakai idealisasi yang sama, jadi kesesuaiannya tidak dapat menilai
 asumsinya. Kapasitas strut tetap wajib dicek terpisah oleh engineer.
 
+### 1.2 ex05 menguji pilecap tapper (tebal bervariasi)
+
+Data disediakan pemilik proyek pada 2026-11-01. `ex05` adalah pilecap P2: denah trapesium
+8862/9338 × 12098 mm, bawah datar, atas miring empat arah (atap perisai) dari 2000 mm di
+plateau (pier 1500 × 2500 + bahu 500) ke 1000 mm di tepi, 16 pile. Ia satu-satunya kasus
+yang tebalnya tidak seragam, sehingga ia menguji dua hal yang tidak disentuh ex01–ex04:
+
+1. **Satu penampang per pita tebal.** Tebal tiap elemen (di titik beratnya) dibulatkan ke
+   kelipatan 10 mm: 8.002 elemen dalam **100 pita** (1010–2000 mm). OpenSees memakai satu
+   penampang per pita; `model.mct` memuat satu ID `*THICKNESS` per pita dan `iPRO` tiap
+   elemen menunjuk pitanya. Blok `*NODE`, `*ELEMENT`, dan `*THICKNESS` pada MCT yang
+   dijalankan Midas **identik** dengan ekspor kita — diperiksa, bukan diasumsikan.
+2. **Pita yang dibangun ulang = pita yang diekspor.** VC-6 membangun ulang pita dari medan
+   tebal di `geometry.json` pada mesh tersimpan; `element_thickness.csv` adalah catatan
+   pita yang dikirim ke Midas, dan test memastikan keduanya identik.
+
+Model Midas di sini **tanpa offset** (bidang acuan pelat = bidang node, z = 0), asumsi yang
+sama dengan pilecap-fem. Pemilik proyek juga menjalankan varian **dengan offset**
+(`bOFFSET = YES`, rasio 0,5 — bidang acuan di muka pelat); varian itu **tidak disalin**
+karena ia model fisis yang lain, bukan pembanding untuk asumsi kita. Diukur pada arsipnya:
+offset menurunkan puncak momen 2,2–3,8% dan lendutan ~4%, tetapi memunculkan gaya membran
+sampai **±530 kN/m tarik** dan **±890 kN/m tekan** yang sama sekali tidak ada pada model tanpa
+offset. Karena itu "tanpa offset" tidak dapat dinyatakan konservatif di seluruh pelat:
+lebih besar momennya, tetapi mengabaikan gaya membran.
+
+Reaksi pile ex05 masih **placeholder `[CONTOH]`**. Itu tidak melemahkan VC-6 — kedua
+program menerima beban yang sama persis — tetapi angka gaya dalamnya bukan angka desain P2.
+
 ## 2. LARANGAN: mesh tidak boleh diregenerasi
 
 `nodes.csv`, `elements.csv`, dan `geometry.json` di sini adalah mesh **persis** yang dipakai
@@ -297,23 +325,59 @@ khusus agar cocok.
 | `pilecap_config.json` | 2,137 | `896e9e38af1a341c234cad85ebd1de2e126885955ee8cbc4725bf7d8651ca224` |
 | *(tidak disalin)* `…Static Load.mec` | 1,454,252 | `7654d4c385527feed9c0c53aafba5752ce364855c3547f2ebadd219b0b7ded81` |
 
+### `ex05/`
+
+`pilecap_config.json` dan `pile_reactions.csv` di sini **byte-identik** dengan
+`examples/ex05_tapered_p2/` — diperiksa. Sumbernya varian `normal` (tanpa offset) di arsip
+pemilik proyek; nama berkas Midas aslinya `ex05_tapered_p2_output_displacement.csv`,
+`…_output_force_unit_length_global.csv`, `…_output_force_unit_length.csv` (lokal),
+`…_pier_output_reaction.csv`, `…_Static Load.log`/`.out`. Baris `PARAM` §3 pada `.mec`-nya
+identik dengan ex04 — diperiksa.
+
+| Berkas | Byte | sha256 |
+|--------|-----:|--------|
+| `element_thickness.csv` | 352,382 | `afb42112c70a77a0672860dbe192b36e11e8e3203ab496df63cabcef16e7e66e` |
+| `elements.csv` | 651,573 | `1e9e2fb6f1d95e53ecb56b5c866c8b7e7519b07439614a2212ff7642d6c282a8` |
+| `geometry.json` | 5,869 | `1c267e202b8d656676246b9d54f197eeccfd5c27d9c94727956394d02408b274` |
+| `midas_displacement.csv` | 795,127 | `10d5c9a210a319b1e825ee890d699e769ca1c5f92bd9ec9f4c28bddc68c20a8d` |
+| `midas_force_global.csv` | 7,601,172 | `0ff62b544caef56af985be974a1a9110878e6b3d08c64d0d5fc38cfd74b40bee` |
+| `midas_force_local.csv` | 7,579,299 | `53de758ee01cf8cf96188c1b090d6a1e6a0ec802fe4eada57747b8629310f53b` |
+| `midas_reaction.csv` | 25,755 | `7740cfa96015b2ae910c47d4e962590a3f5f0a66f7f04308887a17284cbedbc6` |
+| `midas_solver.log` | 1,518 | `c46173091eab916dea237e3f108b70df0ef4ff2c850f7c4a5d3eca2607754981` |
+| `midas_solver.out` | 3,964 | `1a20224f749c854e65209fee2489358aa9bbb4fc3d8591c4ac7609123558681f` |
+| `nodes.csv` | 343,639 | `5a95df4df8a4ed138e3c73c3d61eccd1ef095e3a5b63c57524bce01f417b16c1` |
+| `pile_reactions.csv` | 791 | `b40309a68bb0439aeba5031cddc29d6dc7a70a4ad9c4aff5bc480bc30555c48c` |
+| `pilecap_config.json` | 2,410 | `e7439d28ad7ecf033e24df055e037686d5fd220cef78129353e6cd42cc358a53` |
+| *(tidak disalin)* `…Static Load.mec` | 3,481,108 | `affc0e47da85ffc514f19a56bc7f11c3cb3f7ac5a7f947336f8734360eecd506` |
+| *(tidak disalin)* `ex05_tapered_p2.mct` (MCT yang dijalankan Midas) | 1,113,642 | `b904108200693a891b327011b6e109efb12d2db3999e76f9157e6ceeb05315af` |
+
 ## 7. Angka terukur VC-6
 
-Diukur ulang saat ex04 ditambahkan (4 contoh × 2 kombinasi). Kolom "gate" adalah batas di
+Diukur ulang saat ex04 ditambahkan (4 contoh × 2 kombinasi); kolom ex05 diukur saat ex05
+ditambahkan. Kolom "gate" adalah batas di
 `tests/test_validation_cases.py`; marginnya sengaja 3–7×, dan **tidak boleh dilonggarkan
-tanpa mengukur ulang keempatnya**.
+tanpa mengukur ulang seluruhnya**.
 
-| Jalur | Besaran | Terburuk ex01–03 | Terburuk ex04 | Gate |
-|-------|---------|-----------------:|--------------:|-----:|
-| 1 | Momen `m_xx`/`m_yy`/`m_xy` | 0,144% | 0,134% | 1,0% |
-| 1 | Geser `q_x`/`q_y` | 0,265% | 0,114% | 1,5% |
-| 1 | Momen **puncak** | 0,515% | 0,378% | 2,0% |
-| 2 | Lendutan `uz` per node | 0,216% | **0,258%** | 1,0% |
-| 3 | Reaksi `Rz` per node | 0,539% | 0,088% | 1,5% |
-| 3 | `Σ FZ` vs `Σ Pz` | ~6e-9 | ~4e-12 | 1e-4 |
-| — | Rotasi lokal→global | 2e-6 | 1,3e-6 | 1e-4 |
+| Jalur | Besaran | Terburuk ex01–03 | Terburuk ex04 | Terburuk ex05 | Gate |
+|-------|---------|-----------------:|--------------:|--------------:|-----:|
+| 1 | Momen `m_xx`/`m_yy`/`m_xy` | 0,144% | 0,134% | 0,047% | 1,0% |
+| 1 | Geser `q_x`/`q_y` | 0,265% | 0,114% | 0,091% | 1,5% |
+| 1 | Momen **puncak** | 0,515% | 0,378% | **0,83%** | 2,0% |
+| 2 | Lendutan `uz` per node | 0,216% | **0,258%** | 0,033% | 1,0% |
+| 3 | Reaksi `Rz` per node | 0,539% | 0,088% | 0,051% | 1,5% |
+| 3 | `Σ FZ` vs `Σ Pz` | ~6e-9 | ~4e-12 | ~1,3e-9 | 1e-4 |
+| — | Rotasi lokal→global | 2e-6 | 1,3e-6 | 1,6e-7 | 1e-4 |
 
-Korelasi minimum pada seluruh jalur ex04: 0,999942 (`m_xy`), gate 0,999.
+Korelasi minimum pada seluruh jalur ex04: 0,999942 (`m_xy`); ex05: 0,999968; gate 0,999.
+
+Momen puncak ex05 (0,83% pada `m_yy`, 1.2D+1.6L) adalah yang **terbesar** dari kelima
+contoh, meski masih 2,4× di bawah gate. Elemen puncaknya (#2621) berada di plateau tebal
+2000 mm, dan pada besaran yang sama RMS seluruh pelat hanya 0,034% — selisihnya tidak
+tampak sebagai pergeseran menyeluruh. Dipetakan (`tools/plot_vc6_perbandingan.py --ex05`):
+dari 1% elemen terburuk tiap gaya dan kombinasi, 91–99% berada dalam 300 mm dari tepi
+cakram pile atau tepi pier (zona yang hanya 36% luas pelat), dan paling banyak 1 dari 81
+berada di dekat garis jurai atau tepi plateau tanpa dekat pile/pier. Puncak Midas lebih
+besar pada keempat puncak (`m_xx`, `m_yy` × 2 kombinasi), 0,36–0,83%.
 
 Lendutan ex04 yang menjadi terburuk **bukan** tanda ketidaksesuaian: ia dibatasi resolusi
 ekspor 1 µm yang setara 0,91% pada contoh sekaku itu (§5.2).

@@ -483,7 +483,7 @@ Sistem satuan internal: {config.SI_UNIT_SYSTEM}
 |---------|-------|
 | Luas pilecap | {geom.pilecap_area:.6f} m^2 |
 | Titik sudut polygon pilecap | {geom.pilecap.n_vertices} |
-| Tebal pilecap | {to_mm(geom.thickness):.0f} {unit_len} |
+| Tebal pilecap | {io_utils.thickness_label(geom, ".0f")} |
 | Jumlah pile | {geom.n_piles} |
 | Diameter pile (min) | {to_mm(geom.min_pile_diameter):.0f} {unit_len} |
 | Jumlah pier | {geom.n_piers} |
@@ -715,7 +715,7 @@ def write_shear_rebar_csv(
                 smap = shear_maps[direction]
                 row += [
                     f"{to_disp(smap.v_u[i], 'shear_per_width'):.4f}",
-                    f"{to_disp(smap.phi_v_c, 'shear_per_width'):.4f}",
+                    f"{to_disp(_elem_value(smap.phi_v_c, i), 'shear_per_width'):.4f}",
                     f"{to_disp(smap.av_per_s[i], 'shear_steel_ratio'):.6f}",
                     f"{to_disp(smap.av_per_s_no_min[i], 'shear_steel_ratio'):.6f}",
                     f"{to_disp(smap.stirrup_diameter[i], 'length'):.1f}",
@@ -724,6 +724,12 @@ def write_shear_rebar_csv(
             writer.writerow(row)
     _log.debug("shear_rebar.csv ditulis: %s", path)
     return path
+
+
+def _elem_value(values: float | np.ndarray, index: int) -> float:
+    """Nilai elemen ke-`index` dari besaran yang skalar (seragam) atau array (tapper)."""
+    arr = np.asarray(values, dtype=np.float64)
+    return float(arr[index]) if arr.ndim else float(arr)
 
 
 def _selection_cell(selection: capacity_engine.RebarSelection, index: int) -> str:
@@ -816,7 +822,7 @@ def write_rebar_design_csv(
                 if selections:
                     row.append(_selection_cell(selections[key], i))
                 row.append(str(design.status[i]))
-            row.append(f"{to_disp(designs[keys[0]].as_min, 'steel_area'):.2f}")
+            row.append(f"{to_disp(designs[keys[0]].as_min_at(i), 'steel_area'):.2f}")
             writer.writerow(row)
     _log.debug("rebar_design.csv ditulis: %s", path)
     return path
@@ -1074,7 +1080,7 @@ def stirrup_section(
             [
                 direction.upper(),
                 f"{to_disp(float(np.nanmax(np.abs(smap.v_u))), 'shear_per_width'):,.1f}",
-                f"{to_disp(smap.phi_v_c, 'shear_per_width'):,.1f}",
+                io_utils.value_range_text(smap.phi_v_c, "shear_per_width", ",.1f"),
                 f"**{smap.n_needs_stirrup}**",
                 str(smap.n_av_min_only),
                 f"{to_disp(float(np.nanmax(smap.av_per_s)), 'shear_steel_ratio'):.4f}",
@@ -1104,7 +1110,9 @@ def stirrup_section(
 `Av/s` dihitung `shell_kit.rebar.calc_shear_Av_per_s`, diameter sengkang oleh
 `calc_shear_diameter` dengan luas per kaki `Av/s x s_long x s_trans`.
 Grid sengkang: **{inputs.stirrup_long_mm:,.0f} x {inputs.stirrup_trans_mm:,.0f} {unit_len}**
-(ditetapkan user). `dv` = {to_disp(any_map.d_shear, "length"):,.0f} {unit_len}, dihitung
+(ditetapkan user). `dv` = {io_utils.value_range_text(any_map.d_shear, "length")} {
+        unit_len
+    }, dihitung
 untuk **asumsi batang D16 di muka bawah** dan TIDAK diiterasi terhadap diameter sengkang
 terpilih -- asumsi ini memengaruhi `V_c` dan tidak dapat dibaca dari hasil.
 
@@ -1135,7 +1143,10 @@ def lokasi_governing(row: dict[str, Any], *, basis_elemen: bool) -> str:
     if not basis_elemen:
         return f"{row['pier_id']} {row['sisi']} lajur {row['strip']}"
     if row.get("as_min_governs"):
-        # Seluruh elemen seri di `As_min`; koordinat mana pun tidak istimewa.
+        # Seluruh elemen seri di `As_min`; koordinat mana pun tidak istimewa. Pada pilecap
+        # tapper tidak seri: `As_min` lokal, maksimumnya di bagian tertebal.
+        if row.get("as_min_varies"):
+            return "_As_min lokal, terbesar di bagian tertebal_"
         return "_seluruh elemen seri_"
     to_disp = io_utils.to_display
     return (
@@ -1170,7 +1181,11 @@ def _element_design_block(
     baris = []
     for r in rows:
         lokasi = (
-            "_seluruh elemen seri_"
+            (
+                "_As_min lokal, terbesar di bagian tertebal_"
+                if r.get("as_min_varies")
+                else "_seluruh elemen seri_"
+            )
             if r["as_min_governs"]
             else (
                 f"elem {r['elem_tag']} @ ({to_disp(r['centroid_x_m'], 'length'):,.0f}, "
@@ -1290,7 +1305,7 @@ def _flexure_section(
             ]
         )
 
-    as_min_disp = to_disp(next(iter(designs.values())).as_min, "steel_area")
+    as_min_disp = to_disp(next(iter(designs.values())).as_min_range[0], "steel_area")
 
     return f"""\
 ## 7a. DESAIN LENTUR - `As` perlu
@@ -1591,7 +1606,7 @@ Sistem satuan internal: {config.SI_UNIT_SYSTEM}
 | Besaran | Nilai |
 |---------|-------|
 | Luas pilecap | {geom.pilecap_area:.6f} m^2 |
-| Tebal pilecap `t` | {io_utils.to_display(geom.thickness, "length"):,.0f} {unit_len} |
+| Tebal pilecap `t` | {io_utils.thickness_label(geom)} |
 | Modulus elastisitas `E` | {material["E"] / 1e6:,.1f} MPa |
 | **Asal nilai `E`** | {material.get("E_source") or "TIDAK DICATAT"} |
 | Rasio Poisson `nu` | {material["nu"]:.3f} |
@@ -1618,7 +1633,20 @@ D = E t^3 / (12 (1 - nu^2))
   = {material["E"]:.6e} x {geom.thickness:.4f}^3 / (12 x (1 - {material["nu"]:.3f}^2))
   = {material["D"]:.6e} N.m
 ```
-
+{
+        ""
+        if geom.thickness_field is None
+        else f'''
+> [!IMPORTANT]
+> **Pilecap tapper.** `t` dan `D` di atas adalah nilai pada tebal MAKSIMUM (plateau).
+> Tebal tiap elemen diambil di titik beratnya lalu dibulatkan ke kelipatan
+> {io_utils.to_display(geom.thickness_field.step, "length"):,.0f} {unit_len}; elemen bertebal
+> sama berbagi satu penampang (satu pita). Penampang FEM, ID `*THICKNESS` di `model.mct`,
+> berat sendiri, dan desain tulangan memakai tebal pita yang SAMA. Rentang tebal pelat:
+> {io_utils.thickness_label(geom)}; tebal per elemen di `00_Model/element_thickness.csv`.
+> Bidang acuan pelat tanpa offset (z = 0), sama dengan model Midas pembanding.
+'''
+    }
 | Besaran | Jumlah |
 |---------|--------|
 | Node | {mesh.n_nodes:,} |
@@ -1707,7 +1735,21 @@ Geser satu arah diintegrasi pada jarak `d = t - cover` dari muka pier. Geser pon
 dihitung dari **keseimbangan gaya** pada penampang `d/2` dari muka pier, bukan dari
 resultant shell -- elemen shell 2D tidak memodelkan mekanisme keruntuhan pons tiga
 dimensi (PRD Bagian 8.3 keterbatasan #7).
-
+{
+        ""
+        if geom.thickness_field is None
+        else '''
+> [!IMPORTANT]
+> **Pilecap tapper: `d` di tabel ini adalah `d` SETARA sepanjang penampang.** Penampang
+> satu arah memotong seluruh lebar pilecap, dari plateau sampai tepi yang tipis, jadi
+> tidak punya satu `t`. `d` setara = rata-rata `t - cover` elemen yang terpotong,
+> berbobot lebar potongannya. Karena `V_c`, `V_s`, dan `V_s,maks` linier dalam `d`,
+> kapasitas satu lajur ber-`d` setara sama dengan jumlah kapasitas per pias. Letak
+> penampang diselesaikan sebagai titik tetap `jarak = d setara(jarak)`; `d` terkecil
+> sepanjang penampang dicatat di `shear_checks.csv`. Pons memakai rata-rata `t - cover`
+> sepanjang keliling kritisnya.
+'''
+    }
 {
         _markdown_table(
             [
@@ -1759,7 +1801,9 @@ saja tidak cukup** dan diperlukan tulangan geser sebesar `Av/s`.
 ### Rasio bentang geser terhadap tinggi efektif
 
 `a/d` minimum = **{deep_ratio["min_a_over_d"]:.3f}** (pada {deep_ratio["min_at"]}),
-dengan `d` = {io_utils.to_display(deep_ratio["d_m"], "length"):,.0f} {unit_len}.
+dengan `d` = {io_utils.to_display(deep_ratio["d_m"], "length"):,.0f} {unit_len}{
+        " (d LOKAL di pile tersebut -- pilecap tapper)" if geom.thickness_field is not None else ""
+    }.
 
 > **{deep_ratio["verdict"]}.** {deep_ratio["note"]}
 
@@ -2003,7 +2047,7 @@ Sistem satuan internal: {config.SI_UNIT_SYSTEM}
 | Besaran | Nilai |
 |---------|-------|
 | Luas pilecap | {geom.pilecap_area:.6f} m^2 |
-| Tebal | {io_utils.to_display(geom.thickness, "length"):,.0f} mm |
+| Tebal | {io_utils.thickness_label(geom)} |
 | Pile | {geom.n_piles} |
 | Pier | {geom.n_piers} |
 | Node / elemen | {mesh.n_nodes:,} / {mesh.n_elements:,} |

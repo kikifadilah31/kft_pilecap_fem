@@ -43,7 +43,9 @@ from pilecap_fem import (
     provenance,
     renderer,
     reporter,
+    validators,
 )
+from pilecap_fem import thickness as thickness_mod
 from pilecap_fem.geometry_builder import GeometryModel
 from pilecap_fem.validators import InputError, PilecapError
 
@@ -242,6 +244,23 @@ def run(args: argparse.Namespace, command: str) -> Path:
     geom = _load_geometry(model_dir)
     mesh = mesh_model.from_csv(model_dir / "nodes.csv", model_dir / "elements.csv")
     _log.info("Mesh dibaca ulang dari CSV: %d node, %d elemen", mesh.n_nodes, mesh.n_elements)
+    # Pilecap tapper: tebal per elemen dibangun ulang dari medan tebal di geometry.json pada
+    # mesh TERSIMPAN -- pita yang sama persis dengan penampang FEM dan `*THICKNESS` Midas.
+    # Desain, cek geser, dan a/d memakai tebal lokal ini; tanpa itu `d` plateau akan dipakai
+    # justru di zona tipis, tempat pile tepi berada -- tidak konservatif.
+    bands = (
+        thickness_mod.element_bands(geom.thickness_field, geom.thickness, mesh.elem_centroid)
+        if geom.thickness_field is not None
+        else None
+    )
+    elem_thickness = bands.elem_thickness if bands is not None else None
+    if bands is not None:
+        _log.info(
+            "Pilecap tapper: desain per elemen dengan tebal lokal %.0f-%.0f mm (%d pita)",
+            float(bands.elem_thickness.min()) * 1e3,
+            float(bands.elem_thickness.max()) * 1e3,
+            bands.n_bands,
+        )
 
     warnings: list[str] = []
     if not args.no_verify_hash:
@@ -282,6 +301,7 @@ def run(args: argparse.Namespace, command: str) -> Path:
             )
     cover_m = float(design.get("cover") or 0.0)
     mesh_size = float(((cfg.get("mesh") or {}).get("size_global")) or 0.1)
+    validators.validate_rebar_basis_for_geometry(cfg, geom)
 
     if cover_m <= 0.0:
         raise InputError(
@@ -292,7 +312,9 @@ def run(args: argparse.Namespace, command: str) -> Path:
     # Dibangun SEBELUM plot apa pun: `CapacityInputs.from_config` memanggil
     # `validators.validate_design`, sehingga config yang kurang lengkap gagal dalam
     # hitungan milidetik, bukan setelah seluruh kontur selesai digambar (Core 3).
-    capacity_inputs = capacity_engine.CapacityInputs.from_config(cfg)
+    capacity_inputs = capacity_engine.CapacityInputs.from_config(cfg).with_element_thickness(
+        elem_thickness
+    )
     style = renderer.PlotStyle.from_args(args)
     # Dibangun sekali lalu diteruskan: identitas proyek harus sama persis di seluruh plot.
     base_block = _project_block(manifest, geom).with_assumptions(
@@ -332,6 +354,20 @@ def run(args: argparse.Namespace, command: str) -> Path:
         style=style,
         block=base_block,
     )
+    if elem_thickness is not None:
+        # Tebal yang benar-benar dipakai FEM DAN desain, per elemen. Satu-satunya cara
+        # memeriksa dengan mata bahwa plateau dan bidang miringnya sesuai gambar.
+        renderer.render_contour(
+            model_dir / config.FILE_CONTOUR_THICKNESS,
+            geom,
+            mesh,
+            elem_thickness,
+            quantity="length",
+            title="Tebal elemen (pita)",
+            diverging=False,
+            style=style,
+            block=base_block,
+        )
     results_by_combo: dict[str, postproc_engine.ElementResults] = {}
     designs_by_combo: dict[str, dict[tuple[str, str], capacity_engine.FlexureDesign]] = {}
     strip_design_by_combo: dict[str, list[dict[str, Any]]] = {}
@@ -493,10 +529,19 @@ def _assumption_lines(inputs: capacity_engine.CapacityInputs) -> tuple[str, ...]
     (SNI 2847:2019)") berakhir bersarang dua kali, yang terbaca berantakan di kop cetak.
     """
     mode_label = _REBAR_MODE_LABELS.get(inputs.rebar_mode, inputs.rebar_mode)
+    if inputs.elem_thickness is not None:
+        # Satu angka "Tebal" pada pilecap tapper akan terbaca sebagai tebal desain seluruh
+        # pelat -- padahal setiap elemen didesain dengan tebalnya sendiri.
+        tebal = (
+            f"Tebal {inputs.elem_thickness.min() * 1e3:,.0f}-"
+            f"{inputs.elem_thickness.max() * 1e3:,.0f} mm (tapper, "
+            f"{np.unique(inputs.elem_thickness).size} pita)"
+        )
+    else:
+        tebal = f"Tebal {inputs.thickness_mm:,.0f} mm"
     lines = [
         f"f'c {inputs.fc_mpa:,.0f} MPa · fy {inputs.fy_mpa:,.0f} MPa",
-        f"Tebal {inputs.thickness_mm:,.0f} mm · selimut {inputs.cover_mm:,.0f} mm · "
-        f"mode tulangan {mode_label}",
+        f"{tebal} · selimut {inputs.cover_mm:,.0f} mm · mode tulangan {mode_label}",
         f"φ lentur {inputs.phi_flexure:,.2f} · φ geser {inputs.phi_shear:,.2f}",
     ]
     if inputs.phi_source:
@@ -772,7 +817,14 @@ def _report_one_combo(
         reporter.write_strip_moments_csv(combo_dir / "strip_moments_x.csv", strip_rows, "x")
         reporter.write_strip_moments_csv(combo_dir / "strip_moments_y.csv", strip_rows, "y")
 
-    shear_checks = postproc_engine.shear_demand(results, mesh, geom, pz_by_pile, cover_m=cover_m)
+    shear_checks = postproc_engine.shear_demand(
+        results,
+        mesh,
+        geom,
+        pz_by_pile,
+        cover_m=cover_m,
+        elem_thickness=capacity_inputs.elem_thickness,
+    )
     reporter.write_shear_checks_csv(combo_dir / "shear_checks.csv", shear_checks)
 
     # --- kapasitas (shell-kit) ----------------------------------------------

@@ -4,6 +4,64 @@ Format mengikuti template PRD Bagian 16C.
 
 ## [Unreleased]
 
+### Added — pilecap tapper (tebal bervariasi), Fase 1: analisis dan ekspor Midas
+
+Pilecap dengan bawah datar dan atas miring ke empat sisi (atap perisai) kini dapat
+dianalisis. Tebal didefinisikan dengan salah satu dari:
+
+* **profil parametrik** — `pilecap.edge_thickness` (tebal tepi) dan `pilecap.taper_shoulder`
+  (lebar bahu datar di sekeliling pier); `pilecap.thickness` menjadi tebal maksimum di plateau.
+  Butuh satu pier persegi dan pilecap segiempat;
+* **CSV per bidang** `*cap*thick*.csv` (kolom `face, x, y, t`) untuk bentuk lain. Bidang
+  ditulis eksplisit, bukan titik yang ditriangulasi otomatis, karena triangulasi otomatis dari
+  sedikit titik tidak dijamin mengikuti garis jurai. CSV ditolak bila bidangnya bercelah,
+  tumpang tindih, atau tebalnya melompat di tepi bersama.
+
+Elemen shell — di OpenSees maupun Midas — hanya punya satu tebal, sehingga pilecap tapper
+dilihat sebagai tangga per elemen (tebal di titik berat elemen), dibulatkan ke kelipatan
+`pilecap.thickness_step` (bawaan 10 mm). Elemen bertebal sama berbagi satu penampang OpenSees
+dan satu ID `*THICKNESS` di `model.mct`, sehingga model Midas melihat tangga yang identik.
+Bidang acuan tetap z = 0 (tanpa offset), sama dengan model pembanding.
+
+**Desain tulangan dengan tebal lokal.** `pilecap-report` mendesain pilecap tapper per
+elemen dengan tebal pita masing-masing elemen, yaitu tebal yang sama dengan penampang FEM dan
+`*THICKNESS` Midas. Tidak ada rumus baru: `shell-kit` dipanggil sekali per pita dengan satu
+`h`. Yang mengikuti tebal lokal: `d`, `As` perlu, `As_min` (kini berbeda per elemen), batas
+spasi, `dv`, `φVc`, dan `Av/s`. Untuk tebal yang sama, hasil tiap elemen identik dengan
+pilecap seragam setebal itu; ini diuji untuk ketiga mode tulangan.
+
+* **Geser satu arah** memakai `d` setara sepanjang penampang kritis (rata-rata `t − cover`
+  berbobot lebar potongan). Hasilnya eksak karena `Vc`, `Vs`, dan `Vs,maks` linier dalam `d`.
+  Letak penampang diselesaikan sebagai titik tetap jarak = `d`(jarak); `d` terkecil sepanjang
+  penampang dicatat. Pons memakai rata-rata sepanjang keliling kritis.
+* **`a/d`** memakai `d` lokal di pusat tiap pile, bukan `d` plateau.
+* **`design.rebar_basis = "strip"` ditolak** untuk pilecap tapper, sudah di `pilecap-mesh`.
+* Kontur tebal per elemen di `00_Model/contour_thickness.png`. Calc sheet, ringkasan, kop
+  gambar, dan PDF mencetak rentang tebal, bukan tebal maksimum saja.
+
+Contoh `examples/ex05_tapered_p2` (P2: trapesium, 2000 → 1000 mm, bahu 500, 16 pile) belum
+didaftarkan sebagai golden.
+
+Diverifikasi: medan tebal identik dengan rumus analitik atap perisai (galat 1e-15 m);
+tebal tepi = tebal plateau memberi hasil FEM identik bit demi bit dengan pilecap seragam pada
+mesh yang sama, termasuk berat sendiri; seluruh config lama tidak berubah.
+
+**Divalidasi silang terhadap Midas Civil (VC-6, kasus kelima `ex05`).** Midas tanpa offset,
+diimpor dari `model.mct` kita (blok `*NODE`/`*ELEMENT`/`*THICKNESS` identik): RMS momen
+0,047%, geser 0,091%, lendutan 0,033%, reaksi 0,051%, momen puncak 0,83% (gate 2%). Data
+di `tests/data/vc6/ex05`; bila pita tebal diabaikan, 9 test VC-6 ex05 gagal. Varian Midas
+dengan offset tidak dipakai sebagai pembanding: ia menurunkan puncak momen 2–4% tetapi
+memunculkan gaya membran sampai ±530 kN/m tarik / ±890 kN/m tekan yang tidak dimodelkan.
+
+README memuat hasil ex05 setara contoh lain: kolom ex05 di tabel kesesuaian, bagian
+tersendiri, dan gambar sebaran + peta untuk 5 gaya dan lendutan × 2 kombinasi.
+Dihasilkan `tools/plot_vc6_perbandingan.py --ex05` sebagai set terpisah
+(`docs/img/vc6-ex05-*.png`, 24 berkas, 2,4 MB), dengan garis bidang tebal pada peta.
+Gambar empat contoh dan `vc6-ringkasan.json` untuk Lampiran C panduan tidak berubah —
+diperiksa identik piksel demi piksel setelah alatnya diubah. Yang terukur: 91–99% dari 1%
+elemen terburuk berada dalam 300 mm dari tepi pile atau pier (zona 36% luas pelat), tidak
+di garis jurai. Puncak momen Midas 0,36–0,83% lebih besar pada keempat puncak.
+
 ### Fixed — test wx dan Qt dalam satu sesi pytest mematikan prosesnya
 
 `pytest tests/test_ui_wxgui.py tests/test_ui_qtgui.py` mati dengan "Windows fatal exception:

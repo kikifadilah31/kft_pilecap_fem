@@ -30,6 +30,7 @@ from pilecap_fem import (
     provenance,
     renderer,
     reporter,
+    thickness,
     validators,
 )
 from pilecap_fem import mesh_model as mesh_model_mod
@@ -212,6 +213,9 @@ class PreparedModel:
     #: Peringatan dari `validate_geometry` (mis. tumpang tindih pile-pier). Dibawa di sini
     #: supaya SATU sumber mengalir ke manifest, laporan, dan kop gambar.
     geometry_warnings: tuple[str, ...] = ()
+    #: Tebal per elemen dalam pita. Dihitung SEKALI di sini dan dipakai FEM serta ekspor
+    #: MCT, supaya keduanya tidak mungkin melihat tangga tebal yang berbeda.
+    bands: thickness.ThicknessBands | None = None
 
     @property
     def project_name(self) -> str:
@@ -281,6 +285,7 @@ def prepare_model(
     for baris in geometry_warnings:
         _log.warning("%s", baris)
     validators.validate_mesh_vs_geometry(loaded.si, geom)
+    validators.validate_rebar_basis_for_geometry(loaded.si, geom)
 
     options = mesh_engine.MeshOptions.from_config(loaded.si)
 
@@ -289,6 +294,8 @@ def prepare_model(
     for res in (sources.resolution.pilecap, sources.resolution.pile, sources.resolution.pier):
         if res.file is not None:
             manifest.add_input(res.file, res.sha256)
+    if sources.thickness_file is not None:
+        manifest.add_input(sources.thickness_file, sources.thickness_sha256)
     manifest.set_geometry_resolution(sources.resolution)
     manifest.set_standards(loaded.si.get("design"))
     manifest.set_parameters(
@@ -333,6 +340,16 @@ def prepare_model(
 
     material, fc = _material_if_available(loaded.si, required=require_material)
 
+    bands = thickness.element_bands(geom.thickness_field, geom.thickness, mesh.elem_centroid)
+    if geom.thickness_field is not None:
+        _log.info(
+            "Pilecap tapper (%s): tebal elemen %.0f-%.0f mm dalam %d pita (thickness_step %g mm)",
+            geom.thickness_field.source,
+            bands.values[0] * 1e3,
+            bands.values[-1] * 1e3,
+            bands.n_bands,
+            geom.thickness_field.step * 1e3,
+        )
     return PreparedModel(
         loaded=loaded,
         sources=sources,
@@ -344,6 +361,7 @@ def prepare_model(
         material=material,
         fc=fc,
         geometry_warnings=tuple(geometry_warnings),
+        bands=bands,
     )
 
 
@@ -367,6 +385,27 @@ def _material_if_available(
     return material, float(fc_raw) if fc_raw else None
 
 
+def _bands_for_export(prepared: PreparedModel) -> thickness.ThicknessBands | None:
+    """Pita untuk FEM/MCT: hanya bila tapper. Seragam -> `None`, jalur lama apa adanya."""
+    return prepared.bands if prepared.geom.thickness_field is not None else None
+
+
+def write_element_thickness_csv(path: Path, prepared: PreparedModel) -> Path:
+    """Tebal tiap elemen: nilai eksak di titik berat dan nilai pitanya (audit tapper)."""
+    assert prepared.geom.thickness_field is not None and prepared.bands is not None
+    mesh = prepared.mesh
+    eksak = prepared.geom.thickness_field.thickness_at(mesh.elem_centroid)
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        fh.write("element_tag,xc_m,yc_m,t_exact_m,band_id,t_band_m\n")
+        for i, tag in enumerate(mesh.elem_tags):
+            b = int(prepared.bands.elem_band[i])
+            fh.write(
+                f"{int(tag)},{mesh.elem_centroid[i, 0]:.6f},{mesh.elem_centroid[i, 1]:.6f},"
+                f"{eksak[i]:.6f},{b + 1},{prepared.bands.values[b]:.6f}\n"
+            )
+    return path
+
+
 def write_model_artifacts(
     prepared: PreparedModel,
     run_dir: Path,
@@ -382,6 +421,8 @@ def write_model_artifacts(
     """
     prepared.mesh.write_nodes_csv(model_dir / "nodes.csv")
     prepared.mesh.write_elements_csv(model_dir / "elements.csv")
+    if prepared.geom.thickness_field is not None and prepared.bands is not None:
+        write_element_thickness_csv(model_dir / "element_thickness.csv", prepared)
     write_mct(
         model_dir / config.FILE_MODEL_MCT,
         prepared.geom,
@@ -390,6 +431,7 @@ def write_model_artifacts(
         project_name=prepared.project_name,
         command=command,
         fc_pa=prepared.fc,
+        bands=_bands_for_export(prepared),
     )
     reporter.write_mesh_summary(
         model_dir / "mesh_summary.md",

@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from pilecap_fem import config, validators
+from pilecap_fem import thickness as thickness_mod
 from pilecap_fem.geometry_builder import (
     EntityResolution,
     GeometryResolution,
@@ -41,6 +42,9 @@ _LENGTH_SCALARS: tuple[tuple[str, str], ...] = (
     ("pilecap", "length_x"),
     ("pilecap", "length_y"),
     ("pilecap", "thickness"),
+    ("pilecap", "edge_thickness"),
+    ("pilecap", "taper_shoulder"),
+    ("pilecap", "thickness_step"),
     ("pile", "diameter"),
     ("pile", "spacing_x"),
     ("pile", "spacing_y"),
@@ -102,6 +106,33 @@ def display_unit(quantity: str) -> str:
             f"Besaran {quantity!r} tidak ada di config.DISPLAY_UNITS. "
             f"Tersedia: {sorted(config.DISPLAY_UNITS)}"
         ) from exc
+
+
+def thickness_label(geom: Any, fmt: str = ",.0f") -> str:
+    """Tebal pilecap untuk ditampilkan: satu angka, atau rentang pada pilecap tapper.
+
+    Pada pilecap tapper `geom.thickness` adalah tebal MAKSIMUM (plateau). Mencetaknya
+    sendirian sebagai "tebal pilecap" membuat pembaca mengira seluruh pelat setebal itu.
+    """
+    unit = display_unit("length")
+    t_max = float(to_display(geom.thickness, "length"))
+    field_ = getattr(geom, "thickness_field", None)
+    if field_ is None:
+        return f"{format(t_max, fmt)} {unit}"
+    t_min, t_maks = format(float(to_display(field_.t_min, "length")), fmt), format(t_max, fmt)
+    return f"{t_min}-{t_maks} {unit} (tapper; {t_maks} di plateau)"
+
+
+def value_range_text(values: float | np.ndarray, quantity: str, fmt: str = ",.0f") -> str:
+    """Satu angka, atau `min-maks` bila `values` array yang tidak seragam (pilecap tapper)."""
+    arr = np.asarray(to_display(np.asarray(values, dtype=np.float64), quantity)).reshape(-1)
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return "-"
+    lo, hi = float(finite.min()), float(finite.max())
+    if lo == hi:
+        return format(lo, fmt)
+    return f"{format(lo, fmt)}-{format(hi, fmt)}"
 
 
 def to_display(value: float | np.ndarray, quantity: str) -> Any:
@@ -352,6 +383,34 @@ def load_pier_polygons(path: Path, length_factor: float) -> tuple[tuple[str, Pol
         )
     _log.info("%s: %d pier terbaca (%s)", path.name, len(result), ", ".join(p for p, _ in result))
     return tuple(result)
+
+
+def load_thickness_faces(
+    path: Path, length_factor: float
+) -> tuple[thickness_mod.ThicknessFace, ...]:
+    """CSV tebal per bidang: kolom `face, x, y, t` (satuan panjang input).
+
+    Baris satu bidang ditulis berurutan mengelilingi bidang itu; urutan antar bidang bebas.
+    Tiap bidang 3 atau 4 titik -- lihat `thickness.py` untuk alasannya.
+    """
+    frame = _read_csv(path, ("face", "x", "y", "t"))
+    if frame["face"].isna().any():
+        baris = int(frame.index[frame["face"].isna()][0]) + 2
+        raise InputError(f"{path.name}: kolom `face` kosong di baris {baris}.")
+    validators.check_numeric_no_nan(frame, ("x", "y", "t"), path)
+    faces = []
+    for face_id, group in frame.groupby(frame["face"].astype(str), sort=False):
+        try:
+            faces.append(
+                thickness_mod.ThicknessFace(
+                    str(face_id),
+                    group[["x", "y"]].to_numpy(dtype=np.float64) * length_factor,
+                    group["t"].to_numpy(dtype=np.float64) * length_factor,
+                )
+            )
+        except InputError as exc:
+            raise InputError(f"{path.name}: {exc}") from exc
+    return tuple(faces)
 
 
 def load_pile_coords(path: Path, length_factor: float, default_diameter: float) -> tuple[Pile, ...]:
@@ -644,11 +703,35 @@ def resolve_geometry_sources(
     resolution = GeometryResolution(pilecap=res_cap, pile=res_pile, pier=res_pier)
     _log.info("Resolusi geometri: %s", resolution.as_summary_line())
 
+    # Tebal tapper per bidang. Bukan entitas geometri keempat di `GeometryResolution`:
+    # sumbernya dicatat di medan tebal itu sendiri, supaya seluruh kode yang mengiterasi
+    # tiga entitas geometri tidak tersentuh oleh fitur yang opsional ini.
+    thickness_file: Path | None = None
+    thickness_faces: tuple[thickness_mod.ThicknessFace, ...] | None = None
+    if not no_custom and input_dir is not None:
+        thickness_file = autodetect(input_dir, "pilecap_thickness", required=False)
+    if thickness_file is not None:
+        thickness_faces = load_thickness_faces(thickness_file, length_factor)
+        diabaikan = [
+            k
+            for k in ("edge_thickness", "taper_shoulder")
+            if (raw_cfg.get("pilecap") or {}).get(k) is not None
+        ]
+        _log.warning(
+            "Tebal pilecap diambil dari %s (%d bidang)%s.",
+            thickness_file.name,
+            len(thickness_faces),
+            f"; field pilecap.{', pilecap.'.join(diabaikan)} DIABAIKAN" if diabaikan else "",
+        )
+
     return ResolvedGeometrySources(
         resolution=resolution,
         pilecap_polygon=pilecap_polygon,
         piles=piles,
         pier_polygons=pier_polygons,
+        thickness_faces=thickness_faces,
+        thickness_file=thickness_file,
+        thickness_sha256=sha256_file(thickness_file) if thickness_file is not None else None,
     )
 
 

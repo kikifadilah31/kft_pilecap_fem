@@ -187,6 +187,7 @@ def _run_inner(
         command=command,
         fc_pa=prepared.fc,
         loads=reactions.values,
+        bands=cli_pilecap_mesh._bands_for_export(prepared),
     )
 
     options = fem_engine.AnalysisOptions.from_config(prepared.loaded.si)
@@ -202,10 +203,15 @@ def _run_inner(
     )
 
     _log.info(
-        "Model FEM: %s + %s | t = %.3f m | E = %.0f MPa (%s) | nu = %.3f",
+        "Model FEM: %s + %s | t = %s | E = %.0f MPa (%s) | nu = %.3f",
         options.shell_element,
         options.section,
-        material.thickness,
+        (
+            f"{material.thickness:.3f} m"
+            if prepared.bands is None or prepared.geom.thickness_field is None
+            else f"{prepared.bands.values[0]:.3f}-{prepared.bands.values[-1]:.3f} m "
+            f"(tapper, {prepared.bands.n_bands} pita)"
+        ),
         material.E / 1e6,
         material.E_source or "sumber tidak dicatat",
         material.nu,
@@ -233,6 +239,7 @@ def _run_inner(
             combo=combo,
             pz_by_pile=reactions.values[combo],
             load_strategy=load_strategy,
+            bands=cli_pilecap_mesh._bands_for_export(prepared),
         )
         results = postproc_engine.compute_element_results(result, prepared.mesh)
 

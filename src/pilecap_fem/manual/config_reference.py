@@ -43,6 +43,8 @@ SYARAT_TAMPIL: dict[str, str] = {
     "design.strips_x": "basis angka desain `strip`",
     "design.strips_y": "basis angka desain `strip`",
     "design.moment_at": "basis angka desain `strip`",
+    "pilecap.taper_shoulder": "tebal tepi `pilecap.edge_thickness` diisi (pilecap tapper)",
+    "pilecap.thickness_step": "tebal tepi `pilecap.edge_thickness` diisi (pilecap tapper)",
 }
 
 #: Nama jenis isian dalam bahasa yang dimengerti pembaca non-teknis.

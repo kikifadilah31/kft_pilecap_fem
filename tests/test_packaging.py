@@ -414,6 +414,7 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
         "postproc_engine",
         "renderer",
         "reporter",
+        "thickness",
     ):
         assert f"pilecap_fem/{module}.py" in names, f"modul {module} tidak ikut terkemas"
 

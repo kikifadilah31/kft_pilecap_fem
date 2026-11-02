@@ -334,10 +334,7 @@ def chapter_input(data: ReportData, figs: FigureStore) -> str:
             ["Besaran", "Nilai"],
             [
                 ["Luas pilecap", f"{geom.pilecap.area:.6f} {_unit('area')}"],
-                [
-                    "Tebal pilecap `t`",
-                    f"{_disp(geom.thickness, 'length', ',.0f')} {_unit('length')}",
-                ],
+                ["Tebal pilecap `t`", io_utils.thickness_label(geom)],
                 ["Jumlah pile", str(geom.n_piles)],
                 ["Jumlah pier", str(geom.n_piers)],
             ],
@@ -790,7 +787,7 @@ def _flexure_summary(data: ReportData, ci: reporter.CalcSheetInputs) -> str:
                 arah.upper(),
                 muka,
                 _disp(design.as_governing, "steel_area", ",.0f"),
-                _disp(float(design.as_min), "steel_area", ",.0f"),
+                io_utils.value_range_text(design.as_min, "steel_area"),
                 reporter.selection_range(sel) if sel is not None else _UNSET,
                 str(design.n_inadequate),
             ]

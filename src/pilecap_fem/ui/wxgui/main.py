@@ -170,7 +170,7 @@ class MainFrame(wx.Frame):
     def _bangun_formulir(self, induk: wx.Window) -> wx.Window:
         """Seksi sebagai daftar di kiri, field seksi terpilih di kanan.
 
-        60 field dalam satu kolom bergulir setinggi ribuan piksel membuat pengguna berburu.
+        63 field dalam satu kolom bergulir setinggi ribuan piksel membuat pengguna berburu.
         Pohon seksi mencerminkan Bab 5 panduan, yang menyusun dokumentasinya persis per
         seksi -- jadi pembaca panduan menemukan tempat yang sama.
         """

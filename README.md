@@ -221,7 +221,7 @@ seluruh masukan, tekan **Jalankan analisis**, selesai. Tidak perlu menulis
 
 Yang tersedia di formulir:
 
-* **Penjelasan pada setiap field.** Seluruh 60 field dan 11 bagian punya tooltip yang
+* **Penjelasan pada setiap field.** Seluruh 63 field dan 11 bagian punya tooltip yang
   ditulis untuk pembaca yang tidak akrab dengan FEM: apa yang diisi, satuannya, dan akibat
   memilih salah. Cakupannya dijaga test — field baru tanpa penjelasan akan menggagalkan
   suite. Penjelasan versi panjang beserta ilustrasinya ada di
@@ -242,7 +242,7 @@ Perbedaan yang ada hanya pada penyajian, bukan pada hasil:
 | Extra | `gui` (wxPython) | `ui` (Streamlit) | `qt` (PySide6) |
 | Perintah | `pilecap-gui` | `pilecap-ui` | `pilecap-qt` |
 | Port jaringan | tidak ada | `localhost:8501` | tidak ada |
-| Susunan 60 field | 12 halaman berseksi | satu kolom bergulir | 12 halaman berseksi |
+| Susunan 63 field | 12 halaman berseksi | satu kolom bergulir | 12 halaman berseksi |
 | Teks bantuan | teks polos (tanda `**` tampil mentah) | markdown dirender | markdown dirender |
 | Ilustrasi | PNG hasil rasterisasi Typst | SVG langsung | PNG hasil rasterisasi Typst |
 
@@ -590,6 +590,9 @@ Seluruh blok ini boleh dihilangkan; bawaannya **mm / kN / MPa**.
 | `pilecap.length_x` | panjang | `—` | Ukuran arah X. **Diabaikan** bila ada CSV poligon pilecap. |
 | `pilecap.length_y` | panjang | `—` | Ukuran arah Y. Sama, diabaikan bila ada CSV poligon. |
 | `pilecap.origin` | panjang | `—` | Koordinat **titik pusat**, bukan sudut. |
+| `pilecap.edge_thickness` | panjang | `null` | Kosong = tebal seragam. Diisi = pilecap **tapper**: bawah datar, atas miring ke empat sisi (atap perisai), dari `pilecap.thickness` di plateau sekitar pier menipis linear ke nilai ini di tepi. Butuh satu pier persegi dan pilecap segiempat; bentuk lain lewat CSV tebal per bidang (`*cap*thick*.csv`, kolom `face, x, y, t`). Desain tulangan memakai tebal lokal tiap elemen dan hanya per elemen (`design.rebar_basis` = `element`); lihat [Pilecap tapper: rumus yang sama, `h` lokal](#pilecap-tapper-rumus-yang-sama-h-lokal). |
+| `pilecap.taper_shoulder` | panjang | `—` | Lebar bahu datar di sekeliling pier sebelum bidang miring dimulai; `0` = miring langsung dari muka pier. **Wajib** bila `edge_thickness` diisi (formulir mengusulkan 500), diabaikan bila tidak. |
+| `pilecap.thickness_step` | panjang | `10` | Tebal tiap elemen (di titik beratnya) dibulatkan ke kelipatan nilai ini; elemen bertebal sama berbagi satu ID `*THICKNESS` di Midas. Halusnya tangga tebal terutama ditentukan ukuran mesh. Hanya dibaca bila tebal tidak seragam. |
 
 ### `pile` — tiang
 
@@ -1141,6 +1144,42 @@ berpengaruh sama sekali.
 > menentukan, hasil kedua φ memang sama dan itu benar. Hanya berdampak bila `phi_shear` diisi
 > selain 0,75.
 
+### Pilecap tapper: rumus yang sama, `h` lokal
+
+Pada pilecap tapper tidak ada rumus baru. Setiap elemen didesain dengan rumus di atas memakai
+**tebalnya sendiri** `h_e`, yaitu tebal pita yang juga dipakai penampang FEM dan ID
+`*THICKNESS` Midas. `shell-kit` dipanggil sekali per pita dengan satu `h`, lalu hasilnya
+dirangkai kembali. Yang mengikuti `h_e`:
+
+| Besaran | Pada pilecap tapper |
+|---------|---------------------|
+| `d` lentur, `A_s` perlu | dari `h_e` tiap elemen |
+| `A_s,min` | `0,0018 · h_e · b / 2` per muka, jadi **berbeda per elemen** |
+| batas spasi `s_maks = min(2h, 450)` | dari `h_e` |
+| `d_v`, `φV_c`, `A_v/s` per elemen | dari `h_e` |
+| geser satu arah di penampang kritis | `d` **setara** sepanjang penampang (lihat di bawah) |
+| `a/d` | `d` **lokal di pusat tiap pile** |
+
+**Geser satu arah.** Penampang kritis memotong seluruh lebar pilecap, dari plateau sampai tepi
+yang tipis, jadi tidak punya satu `d`. Yang dipakai adalah `d` setara, yaitu rata-rata
+`h_e − cover` elemen yang terpotong, berbobot lebar potongannya `w_e`:
+
+```math
+d_{\text{setara}} = \frac{\sum_e w_e\,(h_e - c)}{\sum_e w_e}
+```
+
+Ini bukan pilihan bebas. `V_c = 0,17 λ √f'c · b · d`, `V_s`, dan `V_s,maks` seluruhnya
+linier dalam `d`, sehingga kapasitas satu lajur ber-`d` setara sama persis dengan
+jumlah kapasitas per pias. Dasarnya sama dengan `V_u`, yang juga diintegrasi sepanjang seluruh
+lebar. Karena letak penampang (`d` dari muka pier) bergantung pada `d` itu sendiri, letaknya
+diselesaikan sebagai titik tetap: jarak = `d` setara di jarak tersebut. `d` terkecil sepanjang
+penampang dicatat di `shear_checks.csv`. Pons memakai rata-rata `h − cover` sepanjang keliling
+kritisnya, dan kapasitasnya tetap belum dievaluasi.
+
+**Mode lajur ditolak.** `design.rebar_basis = "strip"` tidak dapat dipakai untuk pilecap
+tapper. Satu lajur memotong plateau dan bidang miring sekaligus, sehingga tidak punya satu `d`.
+Penolakannya terjadi di `pilecap-mesh`, sebelum analisis.
+
 ## Contoh
 
 | Folder | Isi |
@@ -1149,6 +1188,7 @@ berpengaruh sama sekali.
 | `examples/ex02_standard_12pile/` | Grid 4×3, pier lingkaran |
 | `examples/ex03_custom_polygon/` | Pilecap poligon L, pile custom non-grid, **dua** pier poligon. Sekaligus acuan format ketiga CSV geometri. |
 | `examples/ex04_pile_overlap_pier/` | Dua dari enam pile **menindih pier** (`f` = 7,2%). Contoh satu-satunya yang memakai `pier.max_pile_overlap_fraction`. |
+| `examples/ex05_tapered_p2/` | Pilecap **tapper** P2: denah trapesium, 16 pile, tebal 2000 mm di plateau menipis ke 1000 mm di tepi. Desain tulangan memakai tebal lokal tiap elemen; `pilecap-report` juga menggambar kontur tebal di `00_Model/contour_thickness.png`. Reaksi pile masih placeholder `[CONTOH]`. |
 
 Jalankan `ex03` untuk melihat mekanisme **override geometri**: setiap entitas yang datang
 dari CSV diteriakkan sebagai WARNING 5 baris, dicatat di `run_manifest.json`, dan muncul
@@ -1326,16 +1366,22 @@ Sejak v0.8.0 `VC-6` berjalan sebagai **release gate**: setiap contoh bawaan dimo
 ulang di Midas Civil — diimpor dari `model.mct` yang ditulis tool ini sendiri, sehingga
 penomoran node & elemennya identik 1:1 — lalu hasilnya dibandingkan elemen demi elemen.
 Sejak v0.9.0 cakupannya **keempat** contoh, termasuk `ex04` yang pile-nya menindih pier.
+Kasus kelima, `ex05`, adalah **pilecap tapper** (tebal 1000–2000 mm dalam 100 pita),
+dibandingkan dengan Midas **tanpa offset** — asumsi yang sama dengan tool ini.
 
-Kesesuaian yang terukur (RMS terhadap nilai puncak, 4 contoh × 2 kombinasi):
+Kesesuaian yang terukur (RMS terhadap nilai puncak, terburuk dari 2 kombinasi):
 
-| Besaran | RMS terburuk | Korelasi minimum |
-|---------|-------------:|-----------------:|
-| Momen `m_xx`, `m_yy`, `m_xy` | 0,144% | 0,99991 |
-| Geser `q_x`, `q_y` | 0,265% | 0,99993 |
-| Lendutan per node `uz` | 0,258% | 0,999971 |
-| Reaksi tumpuan `Rz` | 0,539% | 0,999596 |
-| Momen **puncak** (penentu tulangan) | 0,515% | — |
+| Besaran | ex01–ex04: RMS terburuk | Korelasi minimum | ex05 tapper: RMS terburuk | Korelasi minimum |
+|---------|------------------------:|-----------------:|--------------------------:|-----------------:|
+| Momen `m_xx`, `m_yy`, `m_xy` | 0,144% | 0,99991 | 0,047% | 0,999985 |
+| Geser `q_x`, `q_y` | 0,265% | 0,99993 | 0,091% | 0,999968 |
+| Lendutan per node `uz` | 0,258% | 0,999971 | 0,033% | > 0,999999 |
+| Reaksi tumpuan `Rz` | 0,539% | 0,999596 | 0,051% | 0,999993 |
+| Momen **puncak** (penentu tulangan) | 0,515% | — | **0,83%** | — |
+
+Varian Midas **dengan offset** (bidang acuan di muka pelat) menurunkan puncak momen 2–4%
+tetapi memunculkan gaya membran sampai ±530 kN/m tarik dan ±890 kN/m tekan, yang tidak
+dimodelkan tool ini — lihat `tests/data/vc6/SUMBER.md` Bagian 1.2 dan bagian ex05 di bawah.
 
 ### Selisihnya per elemen, bukan hanya angka ringkasnya
 
@@ -1397,13 +1443,58 @@ Sebagai efek samping, `Σ FZ` reaksi Midas sama dengan `Σ Pz` masukan sampai ~9
 berarti — ini memvalidasi **ekspor `model.mct`** secara end-to-end, satu-satunya cek yang
 menyentuh sisi Midas yang sesungguhnya. Rincian lengkap: `tests/data/vc6/SUMBER.md`.
 
+### ex05: pilecap tapper
+
+`ex05` menguji apa yang tidak disentuh keempat contoh lain — **tebal yang tidak seragam**.
+Tebal 8.002 elemennya dibulatkan ke kelipatan 10 mm menjadi **100 pita** (1010–2000 mm).
+OpenSees memakai satu penampang per pita, dan `model.mct` memuat satu ID `*THICKNESS` per
+pita, sehingga kedua program melihat tangga tebal yang sama persis. Test VC-6 memastikan
+pita yang dibangun ulang dari `geometry.json` **identik** dengan pita yang dulu dikirim ke
+Midas. Bila pita itu diabaikan (seluruh pelat dianggap 2000 mm), 9 dari 13 test ex05 gagal.
+
+![Selisih m_yy per elemen ex05, 1.2D+1.6L](docs/img/vc6-ex05-sebaran-m_yy-1_2D_1_6L.png)
+
+![Letak selisih m_yy ex05, 1.2D+1.6L](docs/img/vc6-ex05-peta-m_yy-1_2D_1_6L.png)
+
+Garis tipis pada peta adalah batas bidang tebal: plateau di sekitar pier dan keempat jurai.
+Yang terukur:
+
+- **Selisih terbesar tidak berada di perubahan kemiringan.** Dari 1% elemen terburuk tiap
+  gaya dan kombinasi (81 elemen), **91–99%** berada dalam 300 mm dari tepi cakram pile atau
+  tepi pier. Zona itu hanya 36% luas pelat. Paling banyak 1 dari 81 elemen itu berada di
+  dekat garis jurai atau tepi plateau tanpa dekat pile atau pier. Polanya sama dengan
+  keempat contoh lain. Pada P2, keempat pile dalam (PB3–PB6) jatuh praktis tepat di sudut plateau (≤ 12 mm),
+  sehingga kelompok terbesarnya berada di antara pile itu dan sudut pier.
+- **Puncak momen Midas selalu sedikit lebih besar.** Pada keempat puncak (`m_xx`, `m_yy` ×
+  2 kombinasi), puncak tool ini 0,36–0,83% lebih kecil, misalnya `m_yy` 1.2D+1.6L:
+  6.077,9 vs 6.128,2 kNm/m. Masih 2,4× di bawah gate 2%, tetapi arahnya konsisten: angka
+  desain dari tool ini berada di sisi yang sedikit tidak konservatif terhadap Midas.
+- **Lendutan menunjukkan bias yang sama dengan ex02.** Midas melendut ~0,07% lebih besar
+  (median pada node yang lendutannya di atas separuh puncak), sebanding dengan lendutannya.
+  Penyebabnya belum teridentifikasi; lihat butir lendutan di atas. Lendutan maksimum
+  2,67 mm, dan 32–45% node berada di dalam pembulatan ekspor Midas.
+- **Reaksi:** himpunan 345 node jepit identik di kedua program, dan `Σ FZ` = `Σ Pz`
+  (14.400 kN dan 11.200 kN).
+
+Yang **tidak** dibuktikan ex05:
+
+- **Benar tidaknya asumsi tanpa offset.** Kedua model menaruh bidang acuan pelat di z = 0.
+  Varian Midas dengan offset adalah model fisis yang lain (lihat atas). Bagian yang paling
+  penting: varian itu punya gaya membran tarik, sedangkan tool ini tidak memodelkannya.
+- **Kelayakan teori pelat untuk pilecap setebal 2 m.** Dengan spasi pile ±2,4–3,5 m,
+  pilecap ini kemungkinan *deep pile cap*.
+- **Angka desain P2.** Reaksi pile ex05 masih placeholder `[CONTOH]`; kedua program
+  menerima beban yang sama, jadi kesesuaiannya sah, tetapi besar gayanya bukan milik P2.
+
 
 #### Seluruh gaya dalam, kedua kombinasi beban
 
-Kedua gambar di atas menyajikan `m_xx` pada kombinasi gravitasi. Set lengkapnya —
-**5 gaya dan lendutan × 2 kombinasi × 4 contoh** — ada di bawah ini, dikelompokkan per besaran.
+Gambar-gambar di atas hanya menyajikan satu gaya pada kombinasi gravitasi. Set lengkapnya —
+**5 gaya dan lendutan × 2 kombinasi × 5 contoh** — ada di bawah ini, dikelompokkan per besaran.
 Seluruhnya dihasilkan `tools/plot_vc6_perbandingan.py` dari data yang sama dengan gate
-VC-6, dan angkanya tersedia sebagai tabel di **Lampiran C panduan**.
+VC-6. Di tiap kelompok, ex05 tampil sesudah gambar keempat contoh lain, dalam gambar
+tersendiri (`--ex05`). Angka keempat contoh tersedia sebagai tabel di **Lampiran C
+panduan**; lampiran itu belum mencakup ex05.
 
 <details>
 <summary><b>Momen lentur arah X</b> — <code>m_xx</code></summary>
@@ -1419,6 +1510,18 @@ VC-6, dan angkanya tersedia sebagai tabel di **Lampiran C panduan**.
 ![Sebaran selisih m_xx, 1.2D+1.0W](docs/img/vc6-sebaran-m_xx-1_2D_1_0W.png)
 
 ![Letak selisih m_xx, 1.2D+1.0W](docs/img/vc6-peta-m_xx-1_2D_1_0W.png)
+
+**ex05 tapper — kombinasi 1.2D+1.6L**
+
+![Selisih m_xx ex05, 1.2D+1.6L](docs/img/vc6-ex05-sebaran-m_xx-1_2D_1_6L.png)
+
+![Letak selisih m_xx ex05, 1.2D+1.6L](docs/img/vc6-ex05-peta-m_xx-1_2D_1_6L.png)
+
+**ex05 tapper — kombinasi 1.2D+1.0W**
+
+![Selisih m_xx ex05, 1.2D+1.0W](docs/img/vc6-ex05-sebaran-m_xx-1_2D_1_0W.png)
+
+![Letak selisih m_xx ex05, 1.2D+1.0W](docs/img/vc6-ex05-peta-m_xx-1_2D_1_0W.png)
 
 </details>
 
@@ -1437,6 +1540,18 @@ VC-6, dan angkanya tersedia sebagai tabel di **Lampiran C panduan**.
 
 ![Letak selisih m_yy, 1.2D+1.0W](docs/img/vc6-peta-m_yy-1_2D_1_0W.png)
 
+**ex05 tapper — kombinasi 1.2D+1.6L**
+
+![Selisih m_yy ex05, 1.2D+1.6L](docs/img/vc6-ex05-sebaran-m_yy-1_2D_1_6L.png)
+
+![Letak selisih m_yy ex05, 1.2D+1.6L](docs/img/vc6-ex05-peta-m_yy-1_2D_1_6L.png)
+
+**ex05 tapper — kombinasi 1.2D+1.0W**
+
+![Selisih m_yy ex05, 1.2D+1.0W](docs/img/vc6-ex05-sebaran-m_yy-1_2D_1_0W.png)
+
+![Letak selisih m_yy ex05, 1.2D+1.0W](docs/img/vc6-ex05-peta-m_yy-1_2D_1_0W.png)
+
 </details>
 
 <details>
@@ -1453,6 +1568,18 @@ VC-6, dan angkanya tersedia sebagai tabel di **Lampiran C panduan**.
 ![Sebaran selisih m_xy, 1.2D+1.0W](docs/img/vc6-sebaran-m_xy-1_2D_1_0W.png)
 
 ![Letak selisih m_xy, 1.2D+1.0W](docs/img/vc6-peta-m_xy-1_2D_1_0W.png)
+
+**ex05 tapper — kombinasi 1.2D+1.6L**
+
+![Selisih m_xy ex05, 1.2D+1.6L](docs/img/vc6-ex05-sebaran-m_xy-1_2D_1_6L.png)
+
+![Letak selisih m_xy ex05, 1.2D+1.6L](docs/img/vc6-ex05-peta-m_xy-1_2D_1_6L.png)
+
+**ex05 tapper — kombinasi 1.2D+1.0W**
+
+![Selisih m_xy ex05, 1.2D+1.0W](docs/img/vc6-ex05-sebaran-m_xy-1_2D_1_0W.png)
+
+![Letak selisih m_xy ex05, 1.2D+1.0W](docs/img/vc6-ex05-peta-m_xy-1_2D_1_0W.png)
 
 </details>
 
@@ -1471,6 +1598,18 @@ VC-6, dan angkanya tersedia sebagai tabel di **Lampiran C panduan**.
 
 ![Letak selisih q_x, 1.2D+1.0W](docs/img/vc6-peta-q_x-1_2D_1_0W.png)
 
+**ex05 tapper — kombinasi 1.2D+1.6L**
+
+![Selisih q_x ex05, 1.2D+1.6L](docs/img/vc6-ex05-sebaran-q_x-1_2D_1_6L.png)
+
+![Letak selisih q_x ex05, 1.2D+1.6L](docs/img/vc6-ex05-peta-q_x-1_2D_1_6L.png)
+
+**ex05 tapper — kombinasi 1.2D+1.0W**
+
+![Selisih q_x ex05, 1.2D+1.0W](docs/img/vc6-ex05-sebaran-q_x-1_2D_1_0W.png)
+
+![Letak selisih q_x ex05, 1.2D+1.0W](docs/img/vc6-ex05-peta-q_x-1_2D_1_0W.png)
+
 </details>
 
 <details>
@@ -1487,6 +1626,18 @@ VC-6, dan angkanya tersedia sebagai tabel di **Lampiran C panduan**.
 ![Sebaran selisih q_y, 1.2D+1.0W](docs/img/vc6-sebaran-q_y-1_2D_1_0W.png)
 
 ![Letak selisih q_y, 1.2D+1.0W](docs/img/vc6-peta-q_y-1_2D_1_0W.png)
+
+**ex05 tapper — kombinasi 1.2D+1.6L**
+
+![Selisih q_y ex05, 1.2D+1.6L](docs/img/vc6-ex05-sebaran-q_y-1_2D_1_6L.png)
+
+![Letak selisih q_y ex05, 1.2D+1.6L](docs/img/vc6-ex05-peta-q_y-1_2D_1_6L.png)
+
+**ex05 tapper — kombinasi 1.2D+1.0W**
+
+![Selisih q_y ex05, 1.2D+1.0W](docs/img/vc6-ex05-sebaran-q_y-1_2D_1_0W.png)
+
+![Letak selisih q_y ex05, 1.2D+1.0W](docs/img/vc6-ex05-peta-q_y-1_2D_1_0W.png)
 
 </details>
 <details>
@@ -1510,6 +1661,18 @@ sistematis yang diuraikan di atas, bukan derau.
 ![Sebaran selisih uz, 1.2D+1.0W](docs/img/vc6-sebaran-uz-1_2D_1_0W.png)
 
 ![Letak selisih uz, 1.2D+1.0W](docs/img/vc6-peta-uz-1_2D_1_0W.png)
+
+**ex05 tapper — kombinasi 1.2D+1.6L**
+
+![Selisih uz ex05, 1.2D+1.6L](docs/img/vc6-ex05-sebaran-uz-1_2D_1_6L.png)
+
+![Letak selisih uz ex05, 1.2D+1.6L](docs/img/vc6-ex05-peta-uz-1_2D_1_6L.png)
+
+**ex05 tapper — kombinasi 1.2D+1.0W**
+
+![Selisih uz ex05, 1.2D+1.0W](docs/img/vc6-ex05-sebaran-uz-1_2D_1_0W.png)
+
+![Letak selisih uz ex05, 1.2D+1.0W](docs/img/vc6-ex05-peta-uz-1_2D_1_0W.png)
 
 </details>
 

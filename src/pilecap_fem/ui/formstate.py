@@ -11,7 +11,7 @@ Streamlit menjalankan ulang seluruh skrip pada tiap interaksi, dan di situlah vi
 serta label diputuskan. Frontend event-driven seperti wx tidak mendapatkannya gratis.
 
 Alih-alih melacak "field mana memengaruhi field mana", `layout_state` menghitung ULANG
-keadaan seluruh field dari `values`. Dengan 60 field itu praktis gratis, dan ia melenyapkan
+keadaan seluruh field dari `values`. Dengan 63 field itu praktis gratis, dan ia melenyapkan
 satu kelas bug sepenuhnya: ketergantungan yang terlewat didaftarkan. Frontend cukup
 memanggilnya setelah perubahan apa pun.
 """

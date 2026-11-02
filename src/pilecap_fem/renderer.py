@@ -714,9 +714,8 @@ def render_geometry_plan(
     st = style or PlotStyle()
     _use_agg(st.preview)
 
-    unit = io_utils.display_unit("length")
     block = _with_geometry_context(block, geom).with_assumptions(
-        f"Luas {geom.pilecap_area:,.2f} m² · t {_to_mm(geom.thickness):,.0f} {unit} · "
+        f"Luas {geom.pilecap_area:,.2f} m² · t {io_utils.thickness_label(geom)} · "
         f"{geom.n_piles} pile · {geom.n_piers} pier"
     )
 

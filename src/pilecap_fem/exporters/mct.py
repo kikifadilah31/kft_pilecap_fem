@@ -46,6 +46,7 @@ if TYPE_CHECKING:  # pragma: no cover
     # Hanya anotasi. Mengimpornya saat runtime menarik openseespy, padahal ekspor MCT
     # tidak menjalankan solver apa pun.
     from pilecap_fem.fem_engine import MaterialProperties
+    from pilecap_fem.thickness import ThicknessBands
 
 _log = config.get_logger("exporters.mct")
 
@@ -137,12 +138,16 @@ def _node_section(mesh: MeshModel) -> list[str]:
     return lines
 
 
-def _element_section(mesh: MeshModel) -> list[str]:
-    """`iEL,PLATE,iMAT,iPRO,n1,n2,n3,n4,iSUB,iWID` -- 10 field, tanpa ANGLE/EXVAL."""
+def _element_section(mesh: MeshModel, bands: ThicknessBands | None = None) -> list[str]:
+    """`iEL,PLATE,iMAT,iPRO,n1,n2,n3,n4,iSUB,iWID` -- 10 field, tanpa ANGLE/EXVAL.
+
+    `iPRO` = ID tebal: selalu 1 untuk pilecap seragam, ID pita untuk pilecap tapper.
+    """
     lines = ["*ELEMENT"]
     for i, tag in enumerate(mesh.elem_tags):
         n1, n2, n3, n4 = (int(mesh.node_tags[j]) for j in mesh.elem_conn[i])
-        lines.append(f"{int(tag)},PLATE,1,1, {n1}, {n2}, {n3}, {n4},{_PLATE_THICK},0")
+        ipro = 1 if bands is None or bands.step is None else int(bands.elem_band[i]) + 1
+        lines.append(f"{int(tag)},PLATE,1,{ipro}, {n1}, {n2}, {n3}, {n4},{_PLATE_THICK},0")
     return lines
 
 
@@ -173,8 +178,26 @@ def _material_section(material: MaterialProperties, fc_pa: float | None) -> list
     ]
 
 
-def _thickness_section(material: MaterialProperties) -> list[str]:
-    return ["*THICKNESS", f"1, VALUE, 1, YES, {_num(material.thickness)}, 0, NO, 0, 0"]
+def _thickness_section(
+    material: MaterialProperties, bands: ThicknessBands | None = None
+) -> list[str]:
+    """Satu ID tebal per pita. Pilecap seragam: satu ID, persis seperti sebelumnya.
+
+    Pilecap tapper: tebal tiap ID sama PERSIS dengan penampang OpenSees pita yang sama,
+    sehingga model Midas dan model pilecap-fem melihat tangga tebal yang identik. Tanpa
+    offset (bidang acuan tetap z = 0), sesuai model pembanding.
+    """
+    if bands is None or bands.step is None:
+        return ["*THICKNESS", f"1, VALUE, 1, YES, {_num(material.thickness)}, 0, NO, 0, 0"]
+    lines = [
+        f"; Pilecap tapper: {bands.n_bands} ID tebal (thickness_step "
+        f"{bands.step * 1e3:g} mm), {_num(float(bands.values[0]))}-"
+        f"{_num(float(bands.values[-1]))} m, tanpa offset.",
+        "*THICKNESS",
+    ]
+    for tag, t in enumerate(bands.values, start=1):
+        lines.append(f"{tag}, VALUE, 1, YES, {_num(float(t))}, 0, NO, 0, 0")
+    return lines
 
 
 def _constraint_section(mesh: MeshModel, geom: GeometryModel) -> list[str]:
@@ -236,6 +259,7 @@ def write_mct(
     fc_pa: float | None = None,
     loads: Mapping[str, Mapping[str, float]] | None = None,
     now: datetime | None = None,
+    bands: ThicknessBands | None = None,
 ) -> Path:
     """Tulis model ke berkas Midas Civil `.mct`.
 
@@ -261,11 +285,11 @@ def write_mct(
     lines.append("*UNIT")
     lines.append(f"{MCT_FORCE_UNIT}, {MCT_LENGTH_UNIT}, {MCT_HEAT_UNIT}, {MCT_TEMP_UNIT}")
     lines += _node_section(mesh)
-    lines += _element_section(mesh)
+    lines += _element_section(mesh, bands)
     lines += _group_section(mesh)
     if material is not None:
         lines += _material_section(material, fc_pa)
-        lines += _thickness_section(material)
+        lines += _thickness_section(material, bands)
     else:
         lines.append("; TANPA *MATERIAL dan *THICKNESS: `material.E` tidak diisi di konfigurasi.")
         lines.append("; pilecap-fem tidak menurunkan E dari f'c (PRD Bagian 7.4), sehingga")

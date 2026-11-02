@@ -16,6 +16,10 @@ konvensinya ada di `tests/data/vc6/SUMBER.md`.
 pier, sehingga node lensa dijepit SEKALIGUS dibebani. Ia menguji `*CONSTRAINT` dan
 `*PRESSURE` pada ekspor MCT terhadap Midas -- lihat SUMBER.md Bagian 1.1.
 
+`ex05` menambahkan pilecap TAPPER (tebal 1000-2000 mm dalam 100 pita): satu penampang per
+pita di OpenSees dan satu ID `*THICKNESS` per pita di MCT, dibandingkan dengan Midas TANPA
+offset -- asumsi yang sama dengan pilecap-fem. Lihat SUMBER.md Bagian 1.2.
+
 Kalibrasi tanda (`config.MOMENT_SIGN_FACTOR`, `config.SHEAR_SIGN_FACTOR`) TIDAK
 bergantung pada koefisien buku: VC-3 memakai pelat satu arah bertumpuan sederhana, yang
 statis tertentu sehingga momen & gesernya mengikuti kesetimbangan saja.
@@ -51,6 +55,7 @@ from pilecap_fem import (
     postproc_engine,
     validators,
 )
+from pilecap_fem import thickness as thickness_mod
 
 pytestmark = pytest.mark.slow
 
@@ -527,12 +532,12 @@ def test_opensees_state_dibersihkan_antar_kombinasi(ex01_model):
 # mengubah angka gate mana pun di bawah.
 
 VC6_DATA = Path(__file__).resolve().parent / "data" / "vc6"
-VC6_KASUS = ("ex01", "ex02", "ex03", "ex04")
+VC6_KASUS = ("ex01", "ex02", "ex03", "ex04", "ex05")
 #: (nama tampilan, slug Midas). Urutannya sama dengan urutan subcase di `.log`/`.out`.
 VC6_KOMBINASI = (("1.2D+1.6L", "1_2D_1_6L"), ("1.2D+1.0W", "1_2D_1_0W"))
 
 #: Gate. Memberi margin 3-7x terhadap nilai terburuk yang benar-benar diamati; jangan
-#: dilonggarkan tanpa mengukur ulang KEEMPAT kasus. Tabel lengkapnya di SUMBER.md Bagian 7.
+#: dilonggarkan tanpa mengukur ulang SELURUH kasus. Tabel lengkapnya di SUMBER.md Bagian 7.
 VC6_KORELASI_MIN = 0.999
 VC6_RMS_MOMEN = 0.010  # terburuk terukur 0,144% (ex04: 0,134%)
 VC6_RMS_GESER = 0.015  # terburuk terukur 0,265% (ex04: 0,114%)
@@ -563,6 +568,14 @@ def _vc6_jalankan(kasus: str, combo: str):
     reactions = io_utils.load_reactions(
         folder / "pile_reactions.csv", config.FORCE_TO_SI[loaded.input_units["force"]]
     )
+    # Pilecap tapper: pita dibangun ulang dari medan tebal di geometry.json, pada mesh
+    # TERSIMPAN yang sama. `test_vc6_pita_tapper_sama_dengan_yang_diekspor_ke_midas`
+    # memastikan hasilnya identik dengan pita yang dulu ditulis ke model.mct.
+    bands = (
+        thickness_mod.element_bands(geom.thickness_field, geom.thickness, mesh.elem_centroid)
+        if geom.thickness_field is not None
+        else None
+    )
     hasil = fem_engine.analyze_combo(
         mesh,
         geom,
@@ -573,13 +586,14 @@ def _vc6_jalankan(kasus: str, combo: str):
         load_strategy=fem_engine.make_load_strategy(
             (loaded.si.get("pile") or {}).get("modeling", "pressure")
         ),
+        bands=bands,
     )
     return mesh, hasil, postproc_engine.compute_element_results(hasil, mesh), reactions
 
 
 @pytest.fixture(scope="module")
 def vc6_hasil() -> dict[tuple[str, str], tuple]:
-    """Delapan analisis (4 kasus x 2 kombinasi) dijalankan sekali; terukur ~8 detik total.
+    """Seluruh kasus x 2 kombinasi dijalankan sekali (ex01-ex04 terukur ~8 detik).
 
     Secepat itu justru KARENA mesh dimuat dari CSV -- gmsh tidak pernah dijalankan.
     """
@@ -700,7 +714,7 @@ def test_vc6_rotasi_lokal_ke_global_cocok_dengan_midas(kasus: str, combo: str, s
 @pytest.mark.parametrize("kasus", VC6_KASUS)
 @pytest.mark.parametrize(("combo", "slug"), VC6_KOMBINASI)
 def test_vc6_lendutan_per_node_cocok_dengan_midas(vc6_hasil, kasus: str, combo: str, slug: str):
-    """Lendutan vertikal per node vs Midas, KEEMPAT contoh.
+    """Lendutan vertikal per node vs Midas, SELURUH contoh.
 
     Ekspor ex03 semula salah -- isinya reaksi, bukan lendutan -- sehingga jalur ini sempat
     hanya mencakup ex01 & ex02. Pemilik proyek memperbaikinya; riwayat itu tetap tercatat di
@@ -738,7 +752,7 @@ def test_vc6_lendutan_per_node_cocok_dengan_midas(vc6_hasil, kasus: str, combo: 
 def test_vc6_lendutan_maksimum_cocok_dengan_log_midas(vc6_hasil, kasus: str):
     """`MAXIMUM TRANSLATION` di `.log` solver Midas vs lendutan maksimum kami.
 
-    Tersedia untuk KEEMPAT kasus, tidak bergantung pada ekspor per-node.
+    Tersedia untuk SELURUH kasus, tidak bergantung pada ekspor per-node.
     """
     acuan = validation_helpers.midas_max_translation(VC6_DATA / kasus / "midas_solver.log")
     assert len(acuan) == len(VC6_KOMBINASI), (
@@ -756,7 +770,7 @@ def test_vc6_lendutan_maksimum_cocok_dengan_log_midas(vc6_hasil, kasus: str):
 @pytest.mark.parametrize("kasus", VC6_KASUS)
 @pytest.mark.parametrize(("combo", "slug"), VC6_KOMBINASI)
 def test_vc6_reaksi_tumpuan_cocok_dengan_midas(vc6_hasil, kasus: str, combo: str, slug: str):
-    """Reaksi vertikal per node jepit vs Midas, pada keempat kasus.
+    """Reaksi vertikal per node jepit vs Midas, pada seluruh kasus.
 
     Untuk ex04 test ini sekaligus menguji `fem_engine.fixed_support_nodes`: asersi
     kesamaan indeks di bawah menuntut himpunan node jepit Midas SAMA PERSIS dengan milik
@@ -870,3 +884,28 @@ def _midspan_element_indices(mesh: mesh_model.MeshModel, nx: int, ny: int) -> np
     """Indeks elemen pada kolom tengah bentang untuk grid terstruktur nx x ny."""
     column = nx // 2
     return np.array([j * nx + column for j in range(ny)], dtype=np.int64)
+
+
+def test_vc6_pita_tapper_sama_dengan_yang_diekspor_ke_midas():
+    """Pita yang dibangun ulang VC-6 harus PERSIS pita yang dulu dikirim ke Midas.
+
+    Model Midas ex05 dibuat dari `model.mct`, yang memuat satu ID tebal per pita. Bila
+    pembulatan atau evaluasi medan tebal berubah, pita yang dibangun ulang di sini akan
+    berbeda dari yang dijalankan Midas, dan seluruh perbandingan ex05 diam-diam
+    membandingkan dua model yang berlainan. `element_thickness.csv` adalah catatan pita
+    yang benar-benar diekspor.
+    """
+    folder = VC6_DATA / "ex05"
+    geom = geometry_builder.GeometryModel.from_json_dict(
+        json.loads((folder / "geometry.json").read_text(encoding="utf-8"))
+    )
+    mesh = mesh_model.from_csv(folder / "nodes.csv", folder / "elements.csv")
+    assert geom.thickness_field is not None
+    bands = thickness_mod.element_bands(geom.thickness_field, geom.thickness, mesh.elem_centroid)
+    tercatat = pd.read_csv(folder / "element_thickness.csv").set_index("element_tag")
+
+    assert np.array_equal(tercatat.loc[mesh.elem_tags, "band_id"].to_numpy(), bands.elem_band + 1)
+    assert np.allclose(
+        tercatat.loc[mesh.elem_tags, "t_band_m"].to_numpy(), bands.elem_thickness, atol=1e-9
+    )
+    assert bands.n_bands == 100

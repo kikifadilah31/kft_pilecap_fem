@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from shapely.geometry import Point
 
 from pilecap_fem import config, math_engine
 from pilecap_fem.geometry_builder import GeometryModel, Pier
@@ -409,7 +410,12 @@ class ShearCheck:
 
 
 def effective_depth(geom: GeometryModel, cover_m: float) -> float:
-    """Tinggi efektif `d = t - cover` [m] (PRD Bagian 7.2(7))."""
+    """Tinggi efektif `d = t - cover` [m] (PRD Bagian 7.2(7)).
+
+    Pada pilecap tapper `geom.thickness` adalah tebal MAKSIMUM, sehingga nilai ini hanya
+    titik awal iterasi; penampang geser memakai `d` lokal (`one_way_shear`,
+    `punching_shear`, `shear_span_ratio`).
+    """
     d = geom.thickness - cover_m
     if d <= 0.0:
         raise ValueError(
@@ -419,18 +425,61 @@ def effective_depth(geom: GeometryModel, cover_m: float) -> float:
     return d
 
 
+#: Toleransi iterasi letak penampang geser pilecap tapper [m].
+_TOL_D_ITERASI = 1e-6
+_MAKS_ITERASI_D = 100
+
+
+def _cut_depth(
+    coords: np.ndarray,
+    mesh: MeshModel,
+    *,
+    cut_axis: int,
+    position: float,
+    elem_thickness: np.ndarray,
+    cover_m: float,
+) -> tuple[float, float]:
+    """(`d` setara, `d` terkecil) sepanjang satu potongan [m].
+
+    `d` setara = rata-rata `t - cover` elemen yang terpotong, berbobot lebar potongannya.
+    Itu bukan pilihan bebas: `V_c = 0,17 lambda sqrt(f'c) b d`, `V_s` dan `V_s,maks`
+    seluruhnya LINIER dalam `d`, sehingga jumlah kapasitas per pias sepanjang potongan sama
+    persis dengan kapasitas satu lajur ber-`d` setara. Dasarnya sama dengan `V_u` yang juga
+    diintegrasi sepanjang seluruh lebar potongan.
+    """
+    mask = math_engine.select_elements_crossing_cut(
+        coords, cut_axis=cut_axis, cut_position=position
+    )
+    widths = math_engine.cut_element_widths(
+        coords, mesh.elem_area, cut_axis=cut_axis, cut_position=position
+    )
+    w = np.nan_to_num(widths[mask])
+    d_local = elem_thickness[mask] - cover_m
+    if w.sum() <= 0.0:
+        return float("nan"), float("nan")
+    return float(np.sum(w * d_local) / w.sum()), float(d_local.min())
+
+
 def one_way_shear(
     results: ElementResults,
     mesh: MeshModel,
     pier: Pier,
     *,
     d: float,
+    elem_thickness: np.ndarray | None = None,
+    cover_m: float | None = None,
 ) -> list[ShearCheck]:
     """Geser satu arah pada jarak `d` dari muka pier, kedua sisi, kedua arah.
 
     `q` global diintegrasi memakai jalur yang SAMA dengan momen lajur
     (`select_elements_crossing_cut` + lebar potongan eksak), sehingga definisi "lebar"
     konsisten antara momen dan geser.
+
+    **Pilecap tapper** (`elem_thickness` diisi): `d` berubah sepanjang arah normal muka
+    pier, sehingga letak penampang `x` dan `d` di sana saling bergantung. Diselesaikan
+    sebagai titik tetap `x = d_setara(x)` (lihat `_cut_depth`), mulai dari `d` maksimum;
+    iterasinya kontraktif karena kemiringan tebal jauh di bawah 1. `d` terkecil sepanjang
+    penampang ikut dicatat di kolom catatan.
     """
     faces = pier_face_cuts(pier)
     coords = mesh.node_xy[mesh.elem_conn]
@@ -442,13 +491,48 @@ def one_way_shear(
         low_bound = float(mesh.elem_centroid[:, cut_axis].min())
         high_bound = float(mesh.elem_centroid[:, cut_axis].max())
 
-        for side, position in (("min", lo - d), ("maks", hi + d)):
+        for side, face_pos, sign in (("min", lo, -1.0), ("maks", hi, 1.0)):
+            d_side = d
+            catatan_tapper = ""
+            position = face_pos + sign * d_side
+            if elem_thickness is not None:
+                if cover_m is None:
+                    raise ValueError("one_way_shear tapper membutuhkan cover_m.")
+                d_min = float("nan")
+                for _ in range(_MAKS_ITERASI_D):
+                    position = face_pos + sign * d_side
+                    if not low_bound <= position <= high_bound:
+                        break
+                    d_baru, d_min = _cut_depth(
+                        coords,
+                        mesh,
+                        cut_axis=cut_axis,
+                        position=position,
+                        elem_thickness=elem_thickness,
+                        cover_m=cover_m,
+                    )
+                    if not np.isfinite(d_baru):
+                        break
+                    selisih = abs(d_baru - d_side)
+                    d_side = d_baru
+                    if selisih <= _TOL_D_ITERASI:
+                        break
+                else:
+                    raise RuntimeError(
+                        f"Letak penampang geser {pier.pier_id} {direction}/{side} tidak "
+                        f"konvergen dalam {_MAKS_ITERASI_D} iterasi."
+                    )
+                position = face_pos + sign * d_side
+                catatan_tapper = (
+                    f"Pilecap tapper: d = {d_side:.4f} m adalah d setara (rata-rata t - cover "
+                    f"berbobot lebar) sepanjang penampang; d terkecil {d_min:.4f} m. "
+                )
             if not low_bound <= position <= high_bound:
                 checks.append(
                     ShearCheck(
                         pier_id=pier.pier_id,
                         kind=f"one_way_{direction}_{side}",
-                        d_m=d,
+                        d_m=d_side,
                         location_m=position,
                         b_o_m=None,
                         V_u_N=float("nan"),
@@ -475,13 +559,13 @@ def one_way_shear(
                 ShearCheck(
                     pier_id=pier.pier_id,
                     kind=f"one_way_{direction}_{side}",
-                    d_m=d,
+                    d_m=d_side,
                     location_m=position,
                     b_o_m=width_total,
                     V_u_N=v_u,
-                    v_u_Pa=(abs(v_u) / (width_total * d) if width_total > 0 else None),
+                    v_u_Pa=(abs(v_u) / (width_total * d_side) if width_total > 0 else None),
                     capacity_status=CAPACITY_NOT_EVALUATED,
-                    note=_CAPACITY_NOTE,
+                    note=catatan_tapper + _CAPACITY_NOTE,
                 )
             )
     return checks
@@ -493,6 +577,7 @@ def punching_shear(
     pz_by_pile: dict[str, float],
     *,
     d: float,
+    cover_m: float | None = None,
 ) -> ShearCheck:
     """Geser pons dari KESEIMBANGAN GAYA, bukan dari resultant shell.
 
@@ -504,7 +589,14 @@ def punching_shear(
 
     Penampang dibentuk dengan `buffer(d/2, join_style="mitre")` sehingga sudutnya siku,
     bukan membulat -- dan definisi itu berlaku juga untuk pier poligon.
+
+    Pilecap tapper: `d` = rata-rata `t - cover` sepanjang keliling kritis (bagian yang
+    berada di dalam pilecap), diselesaikan sebagai titik tetap karena keliling itu sendiri
+    bergantung pada `d`. Kapasitas pons tetap NOT_EVALUATED.
     """
+    catatan_tapper = ""
+    if geom.thickness_field is not None and cover_m is not None:
+        d, catatan_tapper = _punching_depth(geom, pier, d, cover_m)
     critical = pier.to_shapely().buffer(d / 2.0, join_style="mitre")
     b_o = float(critical.exterior.length)
 
@@ -516,7 +608,7 @@ def punching_shear(
         else:
             outside += float(pz_by_pile.get(pile.pile_id, 0.0))
 
-    note = _CAPACITY_NOTE
+    note = catatan_tapper + _CAPACITY_NOTE
     if inside_ids:
         note = (
             f"Pile {inside_ids} berada DI DALAM penampang kritis pons sehingga "
@@ -536,6 +628,32 @@ def punching_shear(
     )
 
 
+def _punching_depth(
+    geom: GeometryModel, pier: Pier, d0: float, cover_m: float
+) -> tuple[float, str]:
+    """`d` setara sepanjang keliling kritis pons pilecap tapper, beserta catatannya."""
+    assert geom.thickness_field is not None
+    cap = geom.pilecap.to_shapely()
+    d = d0
+    for _ in range(_MAKS_ITERASI_D):
+        ring = pier.to_shapely().buffer(d / 2.0, join_style="mitre").exterior
+        jarak = np.linspace(0.0, ring.length, 400, endpoint=False)
+        titik = np.array([ring.interpolate(float(j)).coords[0] for j in jarak])
+        di_dalam = np.array([cap.covers(Point(p)) for p in titik])
+        if not di_dalam.any():
+            return d, ""
+        d_lokal = geom.thickness_field.thickness_at(titik[di_dalam]) - cover_m
+        d_baru = float(d_lokal.mean())
+        selisih = abs(d_baru - d)
+        d = d_baru
+        if selisih <= _TOL_D_ITERASI:
+            return d, (
+                f"Pilecap tapper: d = {d:.4f} m adalah rata-rata t - cover sepanjang keliling "
+                f"kritis; d terkecil {float(d_lokal.min()):.4f} m. "
+            )
+    raise RuntimeError(f"d pons {pier.pier_id} tidak konvergen dalam {_MAKS_ITERASI_D} iterasi.")
+
+
 def shear_span_ratio(geom: GeometryModel, cover_m: float) -> dict[str, Any]:
     """Rasio bentang geser terhadap tinggi efektif, `a / d` (PRD Bagian 8.3 poin 1).
 
@@ -547,13 +665,25 @@ def shear_span_ratio(geom: GeometryModel, cover_m: float) -> dict[str, Any]:
     pasal berarti tool memberi kesimpulan yang tidak dapat dipertanggungjawabkan --
     justru yang dilarang PRD Bagian 1.3 poin 2. Yang disajikan adalah angkanya saja,
     supaya engineer menilai sendiri.
+
+    Pilecap tapper: `d` diambil LOKAL di pusat tiap pile. Pile tepi justru berada di zona
+    tertipis, sehingga `d` maksimum akan membuat `a/d`-nya tampak lebih deep daripada
+    sebenarnya -- dan `d` plateau bukan `d` tempat geser pile itu masuk ke pelat.
     """
     d = effective_depth(geom, cover_m)
+    d_pile: dict[str, float] = {}
+    if geom.thickness_field is not None:
+        pusat = np.array([[pile.x, pile.y] for pile in geom.piles], dtype=np.float64)
+        tebal = geom.thickness_field.thickness_at(pusat)
+        d_pile = {
+            pile.pile_id: float(t) - cover_m for pile, t in zip(geom.piles, tebal, strict=True)
+        }
     rows: list[dict[str, Any]] = []
     for pier in geom.piers:
         poly = pier.to_shapely()
         face = poly.exterior
         for pile in geom.piles:
+            d_here = d_pile.get(pile.pile_id, d)
             centroid = pile.to_shapely().centroid
             # Pusat pile DI DALAM pier -> bentang gesernya nol.
             #
@@ -566,13 +696,15 @@ def shear_span_ratio(geom: GeometryModel, cover_m: float) -> dict[str, Any]:
                     "pier_id": pier.pier_id,
                     "pile_id": pile.pile_id,
                     "a_m": a,
-                    "d_m": d,
-                    "a_over_d": a / d,
+                    "d_m": d_here,
+                    "a_over_d": a / d_here,
                 }
             )
     minimum = min(rows, key=lambda r: r["a_over_d"]) if rows else None
     return {
-        "d_m": d,
+        # `d` pada baris penentu: pada pilecap seragam sama dengan `d` mana pun, pada
+        # pilecap tapper `d` lokal di pile yang memberi `a/d` terkecil.
+        "d_m": (minimum["d_m"] if minimum else d),
         "rows": rows,
         "min_a_over_d": (minimum["a_over_d"] if minimum else float("nan")),
         "min_at": (f"{minimum['pier_id']} - {minimum['pile_id']}" if minimum else "-"),
@@ -592,13 +724,28 @@ def shear_demand(
     pz_by_pile: dict[str, float],
     *,
     cover_m: float,
+    elem_thickness: np.ndarray | None = None,
 ) -> list[ShearCheck]:
-    """Seluruh cek geser untuk semua pier: satu arah + pons. DEMAND saja."""
+    """Seluruh cek geser untuk semua pier: satu arah + pons. DEMAND saja.
+
+    Pilecap tapper WAJIB memberi `elem_thickness` (tebal pita per elemen); tanpa itu cek
+    geser akan diam-diam memakai `d` maksimum di seluruh penampang.
+    """
+    if geom.thickness_field is not None and elem_thickness is None:
+        raise ValueError("Pilecap tapper: shear_demand membutuhkan elem_thickness.")
     d = effective_depth(geom, cover_m)
     checks: list[ShearCheck] = []
     for pier in geom.piers:
-        checks.extend(one_way_shear(results, mesh, pier, d=d))
-        checks.append(punching_shear(geom, pier, pz_by_pile, d=d))
+        if elem_thickness is None:
+            checks.extend(one_way_shear(results, mesh, pier, d=d))
+            checks.append(punching_shear(geom, pier, pz_by_pile, d=d))
+        else:
+            checks.extend(
+                one_way_shear(
+                    results, mesh, pier, d=d, elem_thickness=elem_thickness, cover_m=cover_m
+                )
+            )
+            checks.append(punching_shear(geom, pier, pz_by_pile, d=d, cover_m=cover_m))
     return checks
 
 

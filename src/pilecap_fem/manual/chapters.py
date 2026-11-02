@@ -702,6 +702,10 @@ _ISI_BERKAS: dict[str, str] = {
     "pile_coords": "Koordinat pusat tiap tiang",
     "pilecap_polygon": "Denah pilecap sebagai poligon, bila bentuknya tidak persegi",
     "pier_polygon": ("Denah pier sebagai poligon, bila bentuknya tidak persegi maupun lingkaran"),
+    "pilecap_thickness": (
+        "Tebal pilecap tapper per bidang, bila tebalnya tidak seragam dan tidak dapat "
+        "dinyatakan dengan profil parametrik"
+    ),
 }
 
 

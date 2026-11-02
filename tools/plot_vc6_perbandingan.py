@@ -10,6 +10,10 @@ plus `vc6-ringkasan.json`: RMS/p50/p99/maksimum tiap (contoh, kombinasi, gaya). 
 membaca berkas itu untuk tabelnya, sehingga angka di dokumen berasal dari perhitungan yang
 SAMA dengan gambarnya dan tidak dapat menyimpang darinya.
 
+Dengan `--ex05` dihasilkan set TERPISAH untuk pilecap tapper, `vc6-ex05-<jenis>-...png`,
+satu panel per gambar dan bergaris bidang tebal (plateau & jurai). Set itu hanya dipakai
+README; gambar empat contoh dan `vc6-ringkasan.json` milik Lampiran C tidak disentuh.
+
 .. rubric:: Mengapa ini skrip, bukan bagian dari paket
 
 Data pembandingnya ada di `tests/data/vc6/`, yang TIDAK ikut ke dalam wheel -- ia arsip
@@ -27,10 +31,12 @@ dan pemilihan baris centroid karena itu diambil dari modul yang dipakai test.
 Jalankan dari akar repo::
 
     uv run python tools/plot_vc6_perbandingan.py
+    uv run python tools/plot_vc6_perbandingan.py --ex05
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -51,7 +57,6 @@ sys.path.insert(0, str(REPO / "tests"))
 import validation_helpers as vh  # noqa: E402
 from test_validation_cases import (  # noqa: E402
     VC6_DATA,
-    VC6_KASUS,
     VC6_KOMBINASI,
     _vc6_jalankan,
 )
@@ -79,18 +84,35 @@ LABEL_MEDAN: dict[str, str] = {
 #: sekali lagi saat diturunkan skalanya.
 LEBAR_PX = config.PDF_IMAGE_MAX_PX
 
-WARNA = {"ex01": "#1f5f9c", "ex02": "#b45309", "ex03": "#15803d", "ex04": "#8b1e1e"}
+#: Kasus yang digambar untuk Lampiran C panduan. SENGAJA bukan `VC6_KASUS`: gerbang VC-6
+#: sudah mencakup ex05 (pilecap tapper), tetapi lampiran panduan -- teks, ringkasan 40
+#: butir, dan test-nya -- masih menguraikan empat contoh. Mengikuti `VC6_KASUS` akan
+#: diam-diam menambah ex05 ke gambar pada regenerasi berikutnya dan mematahkan panduan.
+VC6_KASUS = ("ex01", "ex02", "ex03", "ex04")
+
+#: Set terpisah `--ex05`. Tidak digabung ke kisi 2x2 di atas: denahnya potret dan bidang
+#: tebalnya perlu digaris, dan menambah panel kelima akan mengubah gambar Lampiran C.
+KASUS_TAPPER = ("ex05",)
+
+WARNA = {
+    "ex01": "#1f5f9c",
+    "ex02": "#b45309",
+    "ex03": "#15803d",
+    "ex04": "#8b1e1e",
+    "ex05": "#6d28d9",
+}
 JUDUL_KASUS = {
     "ex01": "ex01 - 4 tiang",
     "ex02": "ex02 - 12 tiang",
     "ex03": "ex03 - poligon",
     "ex04": "ex04 - tiang menindih pier",
+    "ex05": "ex05 - tapper 2000/1000",
 }
 
 
-def nama_berkas(jenis: str, medan: str, slug: str) -> str:
+def nama_berkas(jenis: str, medan: str, slug: str, awalan: str = "vc6") -> str:
     """Nama berkas gambar. Dipakai skrip ini DAN dijaga test panduan."""
-    return f"vc6-{jenis}-{medan}-{slug}.png"
+    return f"{awalan}-{jenis}-{medan}-{slug}.png"
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +201,39 @@ def _gaya_sumbu(ax) -> None:
     ax.set_axisbelow(True)
 
 
+def _garis_bidang_tebal(ax, kasus: str) -> None:
+    """Garis batas bidang tebal (plateau & jurai), hanya pada pilecap tapper.
+
+    Tanpa garis ini pembaca peta ex05 tidak dapat menilai apakah selisih berkumpul di
+    perubahan kemiringan -- satu-satunya tempat pilecap tapper berbeda dari pelat seragam.
+    Pilecap seragam tidak punya `thickness_field`, sehingga gambarnya tidak berubah.
+    """
+    geom = json.loads((VC6_DATA / kasus / "geometry.json").read_text(encoding="utf-8"))
+    for bidang in (geom.get("thickness_field") or {}).get("faces") or ():
+        xy = np.asarray(bidang["xy_m"] + bidang["xy_m"][:1], dtype=np.float64)
+        ax.plot(
+            io_utils.to_display(xy[:, 0], "length"),
+            io_utils.to_display(xy[:, 1], "length"),
+            color=TEMA.text,
+            linewidth=0.6,
+            alpha=0.55,
+            zorder=4,
+        )
+
+
+def _kisi_peta(n: int, tinggi_kisi: float) -> tuple:
+    """Gambar & sumbu peta: kisi 2x2 untuk Lampiran C, satu panel potret untuk set tapper.
+
+    Mengembalikan juga sisi terpanjang [inci], supaya `_simpan` tetap menjaga sisi
+    terpanjang = `LEBAR_PX` pada gambar potret.
+    """
+    if n == 1:
+        fig, ax = plt.subplots(1, 1, figsize=(7.4, 8.6), facecolor=TEMA.background)
+        return fig, [ax], 8.6
+    fig, sumbu = plt.subplots(2, 2, figsize=(_LEBAR_PETA, tinggi_kisi), facecolor=TEMA.background)
+    return fig, list(sumbu.ravel()), _LEBAR_PETA
+
+
 def _simpan(fig, jalur: Path, lebar_inci: float) -> Path:
     """Simpan, lalu kuantisasi paletnya.
 
@@ -202,7 +257,7 @@ def _simpan(fig, jalur: Path, lebar_inci: float) -> Path:
 _LEBAR_SEBARAN = 11.0
 
 
-def gambar_sebaran(data: dict, medan: str, combo: str, slug: str) -> Path:
+def gambar_sebaran(data: dict, medan: str, combo: str, slug: str, awalan: str = "vc6") -> Path:
     """Dua panel: struktur selisih terhadap besar nilai, dan sebaran kumulatifnya."""
     fig, (kiri, kanan) = plt.subplots(
         1, 2, figsize=(_LEBAR_SEBARAN, 4.6), facecolor=TEMA.background
@@ -212,7 +267,7 @@ def gambar_sebaran(data: dict, medan: str, combo: str, slug: str) -> Path:
     # titiknya runtuh ke garis y=x dan gambarnya tidak memberi tahu apa pun selain "cocok".
     # Yang dapat dilihat justru STRUKTUR selisihnya -- derau terpusat di nol, atau kemiringan
     # sistematis yang berarti salah satu program keliru.
-    for kasus in VC6_KASUS:
+    for kasus in data:
         kami, midas = data[kasus]["kami"][medan], data[kasus]["midas"][medan]
         kiri.scatter(
             midas / float(np.max(np.abs(kami))),
@@ -235,13 +290,13 @@ def gambar_sebaran(data: dict, medan: str, combo: str, slug: str) -> Path:
     _gaya_sumbu(kiri)
     pegangan = [
         Line2D([], [], marker="o", linestyle="", markersize=5, color=WARNA[k], label=JUDUL_KASUS[k])
-        for k in VC6_KASUS
+        for k in data
     ]
     pegangan.append(Line2D([], [], linestyle="--", color=TEMA.text, label="selisih nol"))
     kiri.legend(handles=pegangan, fontsize=7, loc="upper left", framealpha=0.9, ncol=2)
 
     contoh_baca: tuple[str, float] | None = None
-    for kasus in VC6_KASUS:
+    for kasus in data:
         selisih = np.abs(_selisih_relatif(data[kasus]["midas"][medan], data[kasus]["kami"][medan]))
         terurut = np.sort(selisih)
         pangsa = np.arange(1, terurut.size + 1) / terurut.size * 100.0
@@ -291,7 +346,7 @@ def gambar_sebaran(data: dict, medan: str, combo: str, slug: str) -> Path:
         fontweight="bold",
     )
     fig.tight_layout(rect=(0, 0, 1, 0.93))
-    return _simpan(fig, KELUARAN / nama_berkas("sebaran", medan, slug), _LEBAR_SEBARAN)
+    return _simpan(fig, KELUARAN / nama_berkas("sebaran", medan, slug, awalan), _LEBAR_SEBARAN)
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +356,7 @@ def gambar_sebaran(data: dict, medan: str, combo: str, slug: str) -> Path:
 _LEBAR_PETA = 11.0
 
 
-def gambar_peta(data: dict, medan: str, combo: str, slug: str) -> Path:
+def gambar_peta(data: dict, medan: str, combo: str, slug: str, awalan: str = "vc6") -> Path:
     """Kisi 2x2 letak selisih pada denah, satu panel per contoh.
 
     Inilah gambar yang membedakan "cocok" dari "kebetulan cocok rata-rata". Bila selisihnya
@@ -311,10 +366,10 @@ def gambar_peta(data: dict, medan: str, combo: str, slug: str) -> Path:
     berbeda sampai sepuluh kali lipat, dan skala bersama akan membuat tiga panel tampak
     kosong sehingga polanya justru hilang.
     """
-    fig, sumbu = plt.subplots(2, 2, figsize=(_LEBAR_PETA, 9.4), facecolor=TEMA.background)
+    fig, sumbu, lebar = _kisi_peta(len(data), 9.4)
     satuan = io_utils.display_unit("length")
 
-    for ax, kasus in zip(sumbu.ravel(), VC6_KASUS, strict=True):
+    for ax, kasus in zip(sumbu, data, strict=True):
         mesh = data[kasus]["mesh"]
         selisih = _selisih_relatif(data[kasus]["midas"][medan], data[kasus]["kami"][medan])
         x, y = mesh.elem_centroid[:, 0], mesh.elem_centroid[:, 1]
@@ -365,16 +420,18 @@ def gambar_peta(data: dict, medan: str, combo: str, slug: str) -> Path:
         )
         ax.set_aspect("equal")
         _gaya_sumbu(ax)
+        _garis_bidang_tebal(ax, kasus)
 
+    skala = "skala warna per panel, " if len(data) > 1 else "garis tipis = batas bidang tebal; "
     fig.suptitle(
         f"Letak selisih {LABEL_MEDAN[medan]} pada denah - kombinasi {combo}\n"
-        "skala warna per panel, dipotong pada persentil 99,5",
+        f"{skala}dipotong pada persentil 99,5",
         color=TEMA.text,
         fontsize=11.5,
         fontweight="bold",
     )
     fig.tight_layout(rect=(0, 0, 1, 0.94))
-    return _simpan(fig, KELUARAN / nama_berkas("peta", medan, slug), _LEBAR_PETA)
+    return _simpan(fig, KELUARAN / nama_berkas("peta", medan, slug, awalan), lebar)
 
 
 # ---------------------------------------------------------------------------
@@ -402,7 +459,7 @@ def _selisih_um(midas: np.ndarray, kami: np.ndarray) -> np.ndarray:
     return (midas - kami) * 1e6
 
 
-def gambar_sebaran_lendutan(data: dict, combo: str, slug: str) -> Path:
+def gambar_sebaran_lendutan(data: dict, combo: str, slug: str, awalan: str = "vc6") -> Path:
     """Struktur & sebaran selisih lendutan, dengan pita pembulatan ekspor Midas.
 
     Pita itu yang membuat gambar ini jujur. Tanpa dia, selisih ex04 -- yang 91% nodenya
@@ -414,7 +471,7 @@ def gambar_sebaran_lendutan(data: dict, combo: str, slug: str) -> Path:
     )
 
     kiri.axhspan(-PEMBULATAN_UM, PEMBULATAN_UM, color=TEMA.grid, alpha=0.7, zorder=0)
-    for kasus in VC6_KASUS:
+    for kasus in data:
         ld = data[kasus]["lendutan"]
         kiri.scatter(
             ld["midas"] / float(np.max(np.abs(ld["kami"]))),
@@ -435,7 +492,7 @@ def gambar_sebaran_lendutan(data: dict, combo: str, slug: str) -> Path:
     _gaya_sumbu(kiri)
     pegangan = [
         Line2D([], [], marker="o", linestyle="", markersize=5, color=WARNA[k], label=JUDUL_KASUS[k])
-        for k in VC6_KASUS
+        for k in data
     ]
     pegangan.append(
         Line2D([], [], linewidth=7, color=TEMA.grid, label=f"±{_angka(PEMBULATAN_UM, 1)} µm")
@@ -444,7 +501,7 @@ def gambar_sebaran_lendutan(data: dict, combo: str, slug: str) -> Path:
     # sudut itu kosong. Sudut kiri-atas justru tempat titik ex02/ex03 naik.
     kiri.legend(handles=pegangan, fontsize=7, loc="lower right", framealpha=0.9, ncol=2)
 
-    for kasus in VC6_KASUS:
+    for kasus in data:
         ld = data[kasus]["lendutan"]
         selisih = np.sort(np.abs(_selisih_um(ld["midas"], ld["kami"])))
         pangsa = np.arange(1, selisih.size + 1) / selisih.size * 100.0
@@ -487,10 +544,10 @@ def gambar_sebaran_lendutan(data: dict, combo: str, slug: str) -> Path:
         fontweight="bold",
     )
     fig.tight_layout(rect=(0, 0, 1, 0.93))
-    return _simpan(fig, KELUARAN / nama_berkas("sebaran", "uz", slug), _LEBAR_SEBARAN)
+    return _simpan(fig, KELUARAN / nama_berkas("sebaran", "uz", slug, awalan), _LEBAR_SEBARAN)
 
 
-def gambar_peta_lendutan(data: dict, combo: str, slug: str) -> Path:
+def gambar_peta_lendutan(data: dict, combo: str, slug: str, awalan: str = "vc6") -> Path:
     """Kisi 2x2 letak selisih lendutan pada denah, dengan skala warna BERSAMA.
 
     Kebalikan dari peta gaya, dan disengaja. Pada gaya, skala per panel perlu karena puncak
@@ -502,7 +559,7 @@ def gambar_peta_lendutan(data: dict, combo: str, slug: str) -> Path:
     # Lebih tinggi daripada peta gaya: judul panelnya dua baris (jumlah node + pangsa di
     # dalam pembulatan), dan tanpa ruang tambahan label sumbu x panel atas menabrak judul
     # panel di bawahnya.
-    fig, sumbu = plt.subplots(2, 2, figsize=(_LEBAR_PETA, 10.4), facecolor=TEMA.background)
+    fig, sumbu, lebar = _kisi_peta(len(data), 10.4)
     satuan = io_utils.display_unit("length")
     batas = max(
         float(
@@ -511,7 +568,7 @@ def gambar_peta_lendutan(data: dict, combo: str, slug: str) -> Path:
         for d in data.values()
     )
 
-    for ax, kasus in zip(sumbu.ravel(), VC6_KASUS, strict=True):
+    for ax, kasus in zip(sumbu, data, strict=True):
         ld = data[kasus]["lendutan"]
         selisih = _selisih_um(ld["midas"], ld["kami"])
         x, y = ld["xy"][:, 0], ld["xy"][:, 1]
@@ -542,17 +599,19 @@ def gambar_peta_lendutan(data: dict, combo: str, slug: str) -> Path:
         )
         ax.set_aspect("equal")
         _gaya_sumbu(ax)
+        _garis_bidang_tebal(ax, kasus)
 
+    skala = "skala warna BERSAMA; " if len(data) > 1 else ""
     fig.suptitle(
         f"Letak selisih lendutan $u_z$ pada denah - kombinasi {combo}\n"
-        f"skala warna BERSAMA; garis putus pada skala = pembulatan ekspor Midas "
+        f"{skala}garis putus pada skala = pembulatan ekspor Midas "
         f"(±{_angka(PEMBULATAN_UM, 1)} µm)",
         color=TEMA.text,
         fontsize=11,
         fontweight="bold",
     )
     fig.tight_layout(rect=(0, 0, 1, 0.94))
-    return _simpan(fig, KELUARAN / nama_berkas("peta", "uz", slug), _LEBAR_PETA)
+    return _simpan(fig, KELUARAN / nama_berkas("peta", "uz", slug, awalan), lebar)
 
 
 # ---------------------------------------------------------------------------
@@ -560,8 +619,8 @@ def gambar_peta_lendutan(data: dict, combo: str, slug: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def ringkasan(semua: dict) -> Path:
-    """Tulis RMS/p50/p99/maksimum tiap (kombinasi, gaya, contoh) sebagai JSON.
+def ringkasan(semua: dict, jalur: Path | None = None) -> dict:
+    """RMS/p50/p99/maksimum tiap (kombinasi, gaya, contoh); ditulis sebagai JSON bila `jalur`.
 
     Panduan membaca berkas ini alih-alih mengetik ulang angkanya. Data VC-6 tidak ikut ke
     dalam wheel, sehingga panduan tidak dapat menghitungnya sendiri di komputer pengguna --
@@ -570,7 +629,7 @@ def ringkasan(semua: dict) -> Path:
     keluaran: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
     for (combo, _slug), data in semua.items():
         for medan in MEDAN:
-            for kasus in VC6_KASUS:
+            for kasus in data:
                 kami, midas = data[kasus]["kami"][medan], data[kasus]["midas"][medan]
                 s = _selisih_relatif(midas, kami)
                 keluaran.setdefault(combo, {}).setdefault(medan, {})[kasus] = {
@@ -585,7 +644,7 @@ def ringkasan(semua: dict) -> Path:
                     "maks": round(float(np.max(np.abs(s))), 6),
                     "n_elemen": int(s.size),
                 }
-        for kasus in VC6_KASUS:
+        for kasus in data:
             ld = data[kasus]["lendutan"]
             s = _selisih_relatif(ld["midas"], ld["kami"])
             d_um = _selisih_um(ld["midas"], ld["kami"])
@@ -600,12 +659,21 @@ def ringkasan(semua: dict) -> Path:
                 "dalam_pembulatan": round(float(np.mean(np.abs(d_um) <= PEMBULATAN_UM)) * 100, 6),
                 "n_node": int(d_um.size),
             }
-    jalur = KELUARAN / "vc6-ringkasan.json"
-    jalur.write_text(json.dumps(keluaran, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return jalur
+    if jalur is not None:
+        teks = json.dumps(keluaran, indent=2, ensure_ascii=False) + "\n"
+        jalur.write_text(teks, encoding="utf-8")
+    return keluaran
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    parser.add_argument(
+        "--ex05",
+        action="store_true",
+        help="hasilkan set terpisah pilecap tapper (vc6-ex05-*.png) untuk README",
+    )
+    args = parser.parse_args(argv)
+    kasus_dipilih, awalan = (KASUS_TAPPER, "vc6-ex05") if args.ex05 else (VC6_KASUS, "vc6")
     KELUARAN.mkdir(parents=True, exist_ok=True)
 
     # Analisis dijalankan sekali per (contoh, kombinasi) lalu dipakai ulang untuk kelima
@@ -613,7 +681,7 @@ def main() -> int:
     semua: dict[tuple[str, str], dict] = {}
     for combo, slug in VC6_KOMBINASI:
         data: dict = {}
-        for kasus in VC6_KASUS:
+        for kasus in kasus_dipilih:
             mesh, kami, midas, lendutan = _muat(kasus, combo, slug)
             data[kasus] = {
                 "mesh": mesh,
@@ -626,11 +694,18 @@ def main() -> int:
     dibuat: list[Path] = []
     for (combo, slug), data in semua.items():
         for medan in MEDAN:
-            dibuat.append(gambar_sebaran(data, medan, combo, slug))
-            dibuat.append(gambar_peta(data, medan, combo, slug))
-        dibuat.append(gambar_sebaran_lendutan(data, combo, slug))
-        dibuat.append(gambar_peta_lendutan(data, combo, slug))
-    dibuat.append(ringkasan(semua))
+            dibuat.append(gambar_sebaran(data, medan, combo, slug, awalan))
+            dibuat.append(gambar_peta(data, medan, combo, slug, awalan))
+        dibuat.append(gambar_sebaran_lendutan(data, combo, slug, awalan))
+        dibuat.append(gambar_peta_lendutan(data, combo, slug, awalan))
+    if args.ex05:
+        # Angkanya dicetak, tidak ditulis: `vc6-ringkasan.json` milik Lampiran C, dan README
+        # mengutip angka ex05 langsung dari keluaran ini.
+        print(json.dumps(ringkasan(semua), indent=2, ensure_ascii=False))
+    else:
+        jalur = KELUARAN / "vc6-ringkasan.json"
+        ringkasan(semua, jalur)
+        dibuat.append(jalur)
 
     total = sum(p.stat().st_size for p in dibuat)
     for p in dibuat:

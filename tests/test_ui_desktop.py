@@ -149,6 +149,10 @@ def test_setiap_field_bersyarat_dapat_tampil_dan_dapat_tersembunyi():
                 pilihan = tuple(pengendali.options())
             except Exception:  # sumber pilihan di luar paket ini
                 continue
+        elif pengendali.kind == "number" and pengendali.optional:
+            # Angka opsional juga dapat mengendalikan: kosong vs diisi (mis. tebal tepi
+            # pilecap tapper menampilkan lebar bahu dan langkah pembulatan tebal).
+            pilihan = (None, 1.0)
         else:
             continue
         for opsi in pilihan:

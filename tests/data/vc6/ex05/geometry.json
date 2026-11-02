@@ -1,0 +1,312 @@
+{
+  "unit_system": "SI (N, m, Pa)",
+  "thickness_m": 2.0,
+  "pilecap_polygon_m": [
+    [
+      0.23800000000000002,
+      0.0
+    ],
+    [
+      9.1,
+      0.0
+    ],
+    [
+      9.338000000000001,
+      12.098
+    ],
+    [
+      0.0,
+      12.098
+    ]
+  ],
+  "piles": [
+    {
+      "pile_id": "PE1",
+      "x_m": 1.0225,
+      "y_m": 0.8,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PB1",
+      "x_m": 3.4535,
+      "y_m": 0.8,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PB2",
+      "x_m": 5.8845,
+      "y_m": 0.8,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PE2",
+      "x_m": 8.3155,
+      "y_m": 0.8,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PE3",
+      "x_m": 0.9535,
+      "y_m": 4.3,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PB3",
+      "x_m": 3.4305,
+      "y_m": 4.3,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PB4",
+      "x_m": 5.9075,
+      "y_m": 4.3,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PE4",
+      "x_m": 8.384500000000001,
+      "y_m": 4.3,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PE5",
+      "x_m": 0.8845000000000001,
+      "y_m": 7.799,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PB5",
+      "x_m": 3.4075,
+      "y_m": 7.799,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PB6",
+      "x_m": 5.9305,
+      "y_m": 7.799,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PE6",
+      "x_m": 8.4535,
+      "y_m": 7.799,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PE7",
+      "x_m": 0.8155,
+      "y_m": 11.298,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PB7",
+      "x_m": 3.3845,
+      "y_m": 11.298,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PB8",
+      "x_m": 5.9535,
+      "y_m": 11.298,
+      "diameter_m": 0.8
+    },
+    {
+      "pile_id": "PE8",
+      "x_m": 8.5225,
+      "y_m": 11.298,
+      "diameter_m": 0.8
+    }
+  ],
+  "piers": [
+    {
+      "pier_id": "PIER1",
+      "shape": "rectangular",
+      "centerline_m": [
+        4.6690000000000005,
+        6.049
+      ],
+      "polygon_m": null,
+      "width_x_m": 1.5,
+      "width_y_m": 2.5,
+      "diameter_m": null
+    }
+  ],
+  "geometry_resolution": {
+    "pilecap": {
+      "source": "csv_autodetect",
+      "file": "ref/model_pembanding_midas/ex05_tapered_p2/input/pilecap_polygon.csv",
+      "sha256": "b9dd04a5426d24d35cf65ba718b45cd5a6192b928e1b5973ece5857761b5f3a8",
+      "overridden_json_keys": [
+        "pilecap.length_x",
+        "pilecap.length_y",
+        "pilecap.origin"
+      ]
+    },
+    "pile": {
+      "source": "csv_autodetect",
+      "file": "ref/model_pembanding_midas/ex05_tapered_p2/input/custom_pile_coords.csv",
+      "sha256": "a913c260d18dd2815d21581d585f79ec940625716a075ea305809c02488c8431",
+      "overridden_json_keys": [
+        "pile.n_col",
+        "pile.n_row",
+        "pile.spacing_x",
+        "pile.spacing_y",
+        "pile.grid_origin"
+      ]
+    },
+    "pier": {
+      "source": "json_standard",
+      "file": null,
+      "sha256": null,
+      "overridden_json_keys": []
+    }
+  },
+  "pile_pier_overlaps": [],
+  "thickness_field": {
+    "source": "parametrik",
+    "step_m": 0.01,
+    "file": null,
+    "params_m": {
+      "thickness": 2.0,
+      "edge_thickness": 1.0,
+      "taper_shoulder": 0.5
+    },
+    "faces": [
+      {
+        "face": "PLATEAU",
+        "xy_m": [
+          [
+            3.4190000000000005,
+            4.299
+          ],
+          [
+            5.9190000000000005,
+            4.299
+          ],
+          [
+            5.9190000000000005,
+            7.799
+          ],
+          [
+            3.4190000000000005,
+            7.799
+          ]
+        ],
+        "t_m": [
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ]
+      },
+      {
+        "face": "MIRING_1",
+        "xy_m": [
+          [
+            0.23800000000000002,
+            0.0
+          ],
+          [
+            9.1,
+            0.0
+          ],
+          [
+            5.9190000000000005,
+            4.299
+          ],
+          [
+            3.4190000000000005,
+            4.299
+          ]
+        ],
+        "t_m": [
+          1.0,
+          1.0,
+          2.0,
+          2.0
+        ]
+      },
+      {
+        "face": "MIRING_2",
+        "xy_m": [
+          [
+            9.1,
+            0.0
+          ],
+          [
+            9.338000000000001,
+            12.098
+          ],
+          [
+            5.9190000000000005,
+            7.799
+          ],
+          [
+            5.9190000000000005,
+            4.299
+          ]
+        ],
+        "t_m": [
+          1.0,
+          1.0,
+          2.0,
+          2.0
+        ]
+      },
+      {
+        "face": "MIRING_3",
+        "xy_m": [
+          [
+            9.338000000000001,
+            12.098
+          ],
+          [
+            0.0,
+            12.098
+          ],
+          [
+            3.4190000000000005,
+            7.799
+          ],
+          [
+            5.9190000000000005,
+            7.799
+          ]
+        ],
+        "t_m": [
+          1.0,
+          1.0,
+          2.0,
+          2.0
+        ]
+      },
+      {
+        "face": "MIRING_4",
+        "xy_m": [
+          [
+            0.0,
+            12.098
+          ],
+          [
+            0.23800000000000002,
+            0.0
+          ],
+          [
+            3.4190000000000005,
+            4.299
+          ],
+          [
+            3.4190000000000005,
+            7.799
+          ]
+        ],
+        "t_m": [
+          1.0,
+          1.0,
+          2.0,
+          2.0
+        ]
+      }
+    ]
+  }
+}

@@ -852,6 +852,26 @@ def _batas_cukup(fraction: float) -> str:
     return f"{min(math.ceil(fraction * 100.0 - 1e-9) / 100.0, 1.0):.2f}"
 
 
+def validate_rebar_basis_for_geometry(cfg: dict, geom: GeometryModel) -> None:
+    """Pilecap tapper hanya boleh didesain per elemen (`design.rebar_basis = "element"`).
+
+    Satu lajur desain memotong plateau DAN bidang miring sekaligus, sehingga ia tidak punya
+    satu `d`: memakai `d` plateau tidak konservatif di bagian tipis, memakai `d` terkecil
+    memboroskan seluruh lajur. Ditolak di sini -- dipanggil `pilecap-mesh` dan
+    `pilecap-report` -- supaya gagal SEBELUM analisis, bukan setelah semua kontur digambar.
+    """
+    if geom.thickness_field is None:
+        return
+    basis = str((cfg.get("design") or {}).get("rebar_basis") or config.REBAR_BASIS_DEFAULT)
+    if basis == "strip":
+        raise InputError(
+            '`design.rebar_basis` = "strip" tidak dapat dipakai untuk pilecap tapper (tebal '
+            "tidak seragam): satu lajur memotong plateau dan bidang miring, sehingga tidak "
+            'punya satu tinggi efektif d. Gunakan "element" -- desain per elemen dengan '
+            "tebal lokal."
+        )
+
+
 def validate_mesh_vs_geometry(cfg: dict, geom: GeometryModel) -> None:
     """Rule 7 & 7a -- ukuran mesh terhadap dimensi pilecap dan diameter pile.
 

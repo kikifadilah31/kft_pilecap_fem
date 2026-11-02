@@ -140,6 +140,10 @@ def _is_circular(v: dict[str, Any]) -> bool:
     return v.get("pier.shape") == "circular"
 
 
+def _is_tapered(v: dict[str, Any]) -> bool:
+    return v.get("pilecap.edge_thickness") is not None
+
+
 def _is_graded(v: dict[str, Any]) -> bool:
     return v.get("mesh.size_mode") == "graded"
 
@@ -262,7 +266,46 @@ SECTIONS: tuple[Section, ...] = (
                 help="Tebal pelat, dipakai untuk kekakuan lentur, tinggi efektif tulangan, "
                 "dan kapasitas geser. Ini besaran paling berpengaruh di seluruh model: "
                 "kekakuan lentur pelat sebanding dengan tebal **pangkat tiga**, sehingga tebal "
-                "yang meleset 10% menggeser lendutan sekitar 30%.",
+                "yang meleset 10% menggeser lendutan sekitar 30%. Pada pilecap tapper, ini "
+                "tebal **maksimum** -- tebal plateau di sekitar pier.",
+            ),
+            Field(
+                "pilecap.edge_thickness",
+                "Tebal tepi (pilecap tapper)",
+                "number",
+                None,
+                unit="length",
+                optional=True,
+                min_value=0.0,
+                help="Kosong = tebal seragam. Diisi = pilecap **tapper**: bawah datar, atas "
+                "miring ke empat sisi seperti atap perisai, dari tebal di atas (plateau sekitar "
+                "pier) menipis linear ke tebal ini di tepi. Butuh tepat satu pier persegi dan "
+                "pilecap segiempat; bentuk lain diberikan lewat CSV tebal per bidang. "
+                "Desain tulangan memakai tebal lokal tiap elemen, hanya mode per elemen.",
+            ),
+            Field(
+                "pilecap.taper_shoulder",
+                "Lebar bahu datar",
+                "number",
+                500.0,
+                unit="length",
+                min_value=0.0,
+                visible_when=_is_tapered,
+                help="Lebar bagian datar di sekeliling pier sebelum bidang miring dimulai. "
+                "Isi 0 bila kemiringan langsung dimulai dari muka pier.",
+            ),
+            Field(
+                "pilecap.thickness_step",
+                "Langkah pembulatan tebal",
+                "number",
+                10.0,
+                unit="length",
+                min_value=0.0,
+                visible_when=_is_tapered,
+                help="Elemen shell hanya punya satu tebal, jadi tebal tiap elemen diambil di "
+                "titik beratnya lalu dibulatkan ke kelipatan nilai ini. Elemen bertebal sama "
+                "berbagi satu ID tebal di Midas; nilai lebih besar = ID lebih sedikit, tangga "
+                "lebih kasar. Halusnya tangga terutama ditentukan ukuran mesh, bukan nilai ini.",
             ),
             Field(
                 "pilecap.length_x",

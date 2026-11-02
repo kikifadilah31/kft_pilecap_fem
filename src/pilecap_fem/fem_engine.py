@@ -37,6 +37,7 @@ import openseespy.opensees as ops
 from pilecap_fem import config, math_engine
 from pilecap_fem.geometry_builder import GeometryModel
 from pilecap_fem.mesh_model import MeshModel
+from pilecap_fem.thickness import ThicknessBands
 from pilecap_fem.validators import AnalysisError, InputError
 
 _log = config.get_logger("fem_engine")
@@ -672,26 +673,44 @@ def check_mesh_leak(
 # ---------------------------------------------------------------------------
 
 
-def _define_section(material: MaterialProperties, options: AnalysisOptions) -> None:
+def _define_section(
+    material: MaterialProperties,
+    options: AnalysisOptions,
+    bands: ThicknessBands | None = None,
+) -> None:
+    """Satu penampang per pita tebal (tag = indeks pita + 1).
+
+    Tanpa `bands` (pilecap seragam) yang terbentuk satu penampang bertag 1 bertebal
+    `material.thickness` -- panggilan OpenSees yang persis sama dengan sebelum fitur tapper.
+    """
     ops.nDMaterial("ElasticIsotropic", 1, material.E, material.nu)
-    if options.section == "PlateFiber":
-        ops.section("PlateFiber", 1, 1, material.thickness)
-        return
-    layer_t = material.thickness / options.n_layers
-    args: list[Any] = []
-    for _ in range(options.n_layers):
-        args.extend([1, layer_t])
-    ops.section("LayeredShell", 1, options.n_layers, *args)
+    tebal = [material.thickness] if bands is None else [float(t) for t in bands.values]
+    for tag, t in enumerate(tebal, start=1):
+        if options.section == "PlateFiber":
+            ops.section("PlateFiber", tag, 1, t)
+            continue
+        layer_t = t / options.n_layers
+        args: list[Any] = []
+        for _ in range(options.n_layers):
+            args.extend([1, layer_t])
+        ops.section("LayeredShell", tag, options.n_layers, *args)
 
 
-def _self_weight_nodal(mesh: MeshModel, material: MaterialProperties) -> np.ndarray:
+def _self_weight_nodal(
+    mesh: MeshModel, material: MaterialProperties, bands: ThicknessBands | None = None
+) -> np.ndarray:
     """Berat sendiri sebagai beban nodal ke BAWAH [N] per node.
 
-    `density` dalam N/m^3, sehingga beban per satuan luas = density x tebal.
+    `density` dalam N/m^3, sehingga beban per satuan luas = density x tebal -- tebal tiap
+    elemen bila pilecap tapper (`bands`), tebal seragam bila tidak.
     Diterapkan lewat beban nodal karena `eleLoad -shellSelfWeight` tidak bekerja pada
     ShellMITC4 versi ini (lihat catatan modul).
     """
-    per_area = material.density * material.thickness
+    per_area: Any = (
+        material.density * material.thickness
+        if bands is None
+        else material.density * bands.elem_thickness[:, None]
+    )
     coords = mesh.node_xy[mesh.elem_conn]
     factors = consistent_quad_load_factors(coords)
     nodal = np.zeros(mesh.n_nodes, dtype=np.float64)
@@ -763,6 +782,7 @@ def analyze_combo(
     pz_by_pile: dict[str, float],
     load_strategy: PileLoadStrategy | None = None,
     support_strategy: SupportStrategy | None = None,
+    bands: ThicknessBands | None = None,
 ) -> ComboResult:
     """Bangun model, analisis satu kombinasi, dan kembalikan hasil MENTAH.
 
@@ -780,13 +800,18 @@ def analyze_combo(
 
     ops.wipe()
     ops.model("basic", "-ndm", 3, "-ndf", 6)
-    _define_section(material, options)
+    _define_section(material, options, bands)
 
     for index, (x, y) in enumerate(mesh.node_xy):
         ops.node(index + 1, float(x), float(y), 0.0)
 
+    # `bands` = pilecap tapper: tiap elemen memakai penampang pitanya. Tanpa itu seluruh
+    # elemen memakai penampang 1, persis seperti sebelumnya.
+    sec_tag = np.ones(mesh.n_elements, dtype=np.int64) if bands is None else bands.elem_band + 1
     for etag, conn in enumerate(mesh.elem_conn, start=1):
-        ops.element(options.shell_element, etag, *(int(n) + 1 for n in conn), 1)
+        ops.element(
+            options.shell_element, etag, *(int(n) + 1 for n in conn), int(sec_tag[etag - 1])
+        )
 
     fixed_nodes = support_strategy.apply(mesh, geom)
 
@@ -823,7 +848,7 @@ def analyze_combo(
 
     self_weight_total = 0.0
     if options.include_self_weight:
-        self_weight = _self_weight_nodal(mesh, material)
+        self_weight = _self_weight_nodal(mesh, material, bands)
         self_weight_total = float(self_weight.sum())
         nodal_fz = nodal_fz + self_weight
         _log.info("Berat sendiri diaktifkan: %.1f kN", self_weight_total / 1e3)

@@ -15,12 +15,17 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from shapely.geometry import Point, Polygon, box
 
 from pilecap_fem import config
+
+if TYPE_CHECKING:  # pragma: no cover
+    # Diimpor malas di dalam fungsi: `validators` mengimpor modul ini, dan `thickness`
+    # mengimpor `validators`.
+    from pilecap_fem.thickness import ThicknessFace, ThicknessField
 
 PierShape = Literal["rectangular", "circular", "polygon"]
 GeometrySource = Literal["cli_flag", "csv_autodetect", "json_standard", "json_grid"]
@@ -333,6 +338,10 @@ class ResolvedGeometrySources:
     pilecap_polygon: Polygon2D | None = None
     piles: tuple[Pile, ...] | None = None
     pier_polygons: tuple[tuple[str, Polygon2D], ...] | None = None
+    #: Bidang tebal dari CSV per bidang (pilecap tapper); `None` = tidak ada CSV tebal.
+    thickness_faces: tuple[ThicknessFace, ...] | None = None
+    thickness_file: Path | None = None
+    thickness_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -348,6 +357,10 @@ class GeometryModel:
     #: Pasangan pile-pier yang tumpang tindih, bila `pier.max_pile_overlap_fraction` diisi.
     #: Kosong = tidak ada overlap, dan seluruh jalur terkait tidak aktif sama sekali.
     overlaps: tuple[PileOverlap, ...] = field(default=())
+    #: Medan tebal pilecap tapper; `None` = tebal seragam `thickness` (perilaku semula).
+    #: Bila diisi, `thickness` adalah tebal MAKSIMUM. Tidak ikut perbandingan `==`
+    #: karena berisi array numpy; bolak-balik JSON-nya diuji terpisah.
+    thickness_field: ThicknessField | None = field(default=None, compare=False)
 
     @property
     def n_piles(self) -> int:
@@ -382,7 +395,7 @@ class GeometryModel:
         input asli, yang bisa saja sudah pindah atau berubah. Checker pun melihat
         geometri yang BENAR-BENAR dianalisis, bukan sekadar nama file asalnya.
         """
-        return {
+        data: dict[str, Any] = {
             "unit_system": config.SI_UNIT_SYSTEM,
             "thickness_m": self.thickness,
             "pilecap_polygon_m": self.pilecap.vertices.tolist(),
@@ -413,6 +426,11 @@ class GeometryModel:
                 for o in self.overlaps
             ],
         }
+        # Hanya ditulis bila tebal tidak seragam: geometry.json run seragam tetap sama
+        # persis dengan versi sebelumnya.
+        if self.thickness_field is not None:
+            data["thickness_field"] = self.thickness_field.to_json_dict()
+        return data
 
     @classmethod
     def from_json_dict(cls, data: dict[str, Any]) -> GeometryModel:
@@ -455,6 +473,11 @@ class GeometryModel:
             )
             for o in (data.get("pile_pier_overlaps") or [])
         )
+        thickness_field = None
+        if data.get("thickness_field"):
+            from pilecap_fem.thickness import ThicknessField
+
+            thickness_field = ThicknessField.from_json_dict(data["thickness_field"])
         return cls(
             pilecap=Polygon2D(np.asarray(data["pilecap_polygon_m"], dtype=np.float64)),
             thickness=float(data["thickness_m"]),
@@ -462,6 +485,7 @@ class GeometryModel:
             piers=piers,
             resolution=GeometryResolution.from_manifest(data["geometry_resolution"]),
             overlaps=overlaps,
+            thickness_field=thickness_field,
         )
 
 
@@ -632,11 +656,27 @@ def build_geometry_model(cfg: dict, sources: ResolvedGeometrySources) -> Geometr
     Tidak memvalidasi -- pemanggil WAJIB menjalankan `validators.validate_geometry()`
     setelah ini (PRD Bagian 3.2).
     """
+    from pilecap_fem import thickness as thickness_mod
+
     piles = build_piles(cfg, sources)
     piers = build_piers(cfg, sources)
+    pilecap = build_pilecap(cfg, sources)
+    thickness_field = thickness_mod.build_field(
+        cfg,
+        cap_xy=pilecap.vertices,
+        piers=[p.to_shapely() for p in piers],
+        pier_shapes=[p.shape for p in piers],
+        csv_faces=sources.thickness_faces,
+        csv_file=sources.thickness_file.name if sources.thickness_file is not None else None,
+    )
     return GeometryModel(
-        pilecap=build_pilecap(cfg, sources),
-        thickness=cfg["pilecap"]["thickness"],
+        pilecap=pilecap,
+        # Tebal MAKSIMUM bila tapper; untuk CSV per bidang itu diambil dari CSV, bukan dari
+        # `pilecap.thickness`, supaya keduanya tidak dapat saling bertentangan diam-diam.
+        thickness=(
+            thickness_field.t_max if thickness_field is not None else cfg["pilecap"]["thickness"]
+        ),
+        thickness_field=thickness_field,
         piles=piles,
         piers=piers,
         resolution=sources.resolution,
