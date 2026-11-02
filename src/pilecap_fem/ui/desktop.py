@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pilecap_fem.ui import argv as argv_builder
-from pilecap_fem.ui import runner, runopts, schema
+from pilecap_fem.ui import detect, runner, runopts, schema
 from pilecap_fem.ui.launcher import CWD_ENV
 
 #: Jeda sebelum lintasan penyegaran dijalankan, dalam milidetik.
@@ -119,6 +119,24 @@ def teks_override(berkas: str) -> str:
         f"Diabaikan -- di-override {berkas}. Nilai tetap ditulis ke config supaya terlihat "
         "apa yang dilewati."
     )
+
+
+def teks_seksi(entitas: str, terdeteksi: dict[str, str]) -> str | None:
+    """Seluruh penanda CSV untuk satu seksi, atau `None` bila tidak ada.
+
+    Seksi Pilecap dapat menerima DUA penanda sekaligus: denahnya dari `pilecap_polygon`
+    dan tebalnya dari CSV per bidang. Digabung di sini supaya wx dan Qt menampilkan hal
+    yang sama.
+    """
+    baris = []
+    berkas = detect.override_terdeteksi(terdeteksi).get(entitas)
+    if berkas:
+        baris.append(teks_override(berkas))
+    if entitas == detect.TEBAL_ENTITY:
+        tebal = detect.catatan_tebal(terdeteksi)
+        if tebal:
+            baris.append(tebal)
+    return "\n".join(baris) or None
 
 
 # ---------------------------------------------------------------------------

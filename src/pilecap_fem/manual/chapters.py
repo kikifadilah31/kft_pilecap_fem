@@ -464,6 +464,10 @@ _CONTOH: dict[str, str] = {
         "Tiang yang sebagian tertutup pier. Kasus khusus dengan penanganan tersendiri, "
         "dijelaskan pada bab dasar teori."
     ),
+    "ex05_tapered_p2": (
+        "Pilecap tapper: denah trapesium, 16 tiang, tebal 2000 mm di sekitar pier menipis "
+        "ke 1000 mm di tepi. Contoh profil tebal parametrik dan desain dengan tebal lokal."
+    ),
 }
 
 
@@ -691,8 +695,112 @@ def chapter_input_data(figs: FigureStore) -> str:
             caption="Satuan tampilan hasil perhitungan.",
         )
     )
+    b.extend(_bagian_tapper())
     b.append(tk.pagebreak())
     return "\n\n".join(b)
+
+
+def _bagian_tapper() -> list[str]:
+    """Pilecap tapper: cara mendefinisikan tebal, cara tool memakainya, dan batasnya."""
+    b = [tk.heading(2, "Pilecap tapper (tebal bervariasi)")]
+    b.append(
+        _md(
+            "Pilecap tapper berbawah datar dan beratas miring, menipis dari plateau di "
+            "sekitar pier ke tepi. Tebalnya diberikan dengan **salah satu** dari dua cara. "
+            "Bila keduanya ada, berkas CSV yang dipakai."
+        )
+    )
+    b.append(
+        tk.table(
+            ["Cara", "Yang diisi", "Cocok untuk"],
+            [
+                [
+                    "Profil parametrik",
+                    "`pilecap.thickness` (tebal plateau), `pilecap.edge_thickness` (tebal "
+                    "tepi), `pilecap.taper_shoulder` (lebar bahu datar di sekeliling pier)",
+                    "Atas miring ke empat sisi (atap perisai), satu pier persegi, pilecap "
+                    "segiempat",
+                ],
+                [
+                    "CSV per bidang",
+                    f"Berkas `{config.FILE_PATTERNS['pilecap_thickness']}`, kolom `face, x, y, t`",
+                    "Bentuk lain: beberapa pier, denah bukan segiempat, kemiringan tidak simetris",
+                ],
+            ],
+            align=["left", "left", "left"],
+            caption="Dua cara mendefinisikan tebal pilecap tapper.",
+        )
+    )
+    b.append(
+        _md(
+            "Pada CSV, setiap **bidang** ditulis sebagai 3 atau 4 titik sudut berurutan "
+            "dengan tebal di tiap titiknya, persis garis pada gambar denah struktur. Contoh "
+            "dua dari lima bidang pilecap P2 (satuan mm), yaitu plateau dan bidang miring "
+            "sisi selatan:"
+        )
+    )
+    b.append(
+        tk.table(
+            ["face", "x", "y", "t"],
+            [
+                ["PLATEAU", "3419", "4299", "2000"],
+                ["PLATEAU", "5919", "4299", "2000"],
+                ["PLATEAU", "5919", "7799", "2000"],
+                ["PLATEAU", "3419", "7799", "2000"],
+                ["SELATAN", "238", "0", "1000"],
+                ["SELATAN", "9100", "0", "1000"],
+                ["SELATAN", "5919", "4299", "2000"],
+                ["SELATAN", "3419", "4299", "2000"],
+            ],
+            align=["left", "right", "right", "right"],
+            caption="Potongan CSV tebal per bidang.",
+        )
+    )
+    b.append(
+        tk.callout(
+            "WARNING",
+            _md(
+                "CSV **ditolak** bila bidang-bidangnya bercelah, saling tumpang tindih, "
+                "tidak menutup seluruh pilecap, atau bila titik yang berimpit diberi tebal "
+                "berbeda. Lompatan tebal di tepi bersama hampir selalu salah ketik, jadi "
+                "tidak ditebak."
+            ),
+        )
+    )
+    b.append(
+        _md(
+            "**Cara tool memakainya.** Elemen pelat, di perangkat lunak ini maupun di Midas "
+            "Civil, hanya punya satu tebal. Tebal tiap elemen diambil di titik beratnya lalu "
+            "dibulatkan ke kelipatan `pilecap.thickness_step` (bawaan 10 mm). Elemen bertebal "
+            "sama berbagi satu penampang, satu **pita**. Penampang analisis, berat sendiri, "
+            "ID `*THICKNESS` pada `model.mct`, dan desain tulangan memakai tebal pita yang "
+            "sama, sehingga model Midas yang diimpor melihat pelat yang identik. Bidang "
+            "acuan pelat tidak digeser (tanpa *offset*), sama dengan model Midas pembanding."
+        )
+    )
+    b.append(
+        _md(
+            "**Desain.** Setiap elemen didesain dengan tebalnya sendiri, memakai rumus yang "
+            "sama dengan pelat rata: `d`, `As` perlu, `As` minimum, batas spasi, `dv`, dan "
+            "`phi Vc` mengikuti tebal lokal. Geser satu arah di penampang kritis memakai `d` "
+            "setara sepanjang penampang, yaitu rata-rata tebal efektif elemen yang terpotong "
+            "berbobot lebarnya. Rasio `a/d` memakai `d` di pusat tiap tiang. Mode lajur "
+            '(`design.rebar_basis = "strip"`) ditolak untuk pilecap tapper, karena satu lajur '
+            "memotong plateau dan bidang miring sekaligus dan tidak punya satu `d`."
+        )
+    )
+    b.append(
+        tk.callout(
+            "IMPORTANT",
+            _md(
+                "Pilecap tapper umumnya tebal terhadap jarak tiangnya, sehingga peringatan "
+                "*deep pile cap* lebih sering relevan di sini. Tiang tepi juga berada di zona "
+                "tertipis. Kontur tebal (`00_Model/contour_thickness.png`) dan kolom `d` pada "
+                "berkas desain menunjukkan tebal yang benar-benar dipakai di setiap tempat."
+            ),
+        )
+    )
+    return b
 
 
 #: Keterangan tiap pola berkas masukan, BERKUNCI `config.FILE_PATTERNS`.

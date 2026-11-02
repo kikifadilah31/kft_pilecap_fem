@@ -54,4 +54,32 @@ def override_terdeteksi(terdeteksi: dict[str, str]) -> dict[str, str]:
     return {OVERRIDE_ENTITY[k]: v for k, v in terdeteksi.items() if k in OVERRIDE_ENTITY}
 
 
-__all__ = ["AMBIGU", "OVERRIDE_ENTITY", "deteksi", "override_terdeteksi"]
+#: Seksi tempat catatan CSV tebal ditampilkan.
+TEBAL_ENTITY = "pilecap"
+
+
+def catatan_tebal(terdeteksi: dict[str, str]) -> str | None:
+    """Catatan untuk seksi Pilecap bila tebal diambil dari CSV per bidang.
+
+    Bukan override SELURUH seksi seperti `pilecap_polygon`: yang digantikan hanya field
+    tebal, sedangkan dimensi dan titik asal pilecap tetap dipakai. Karena itu ia catatan
+    tersendiri, bukan entri `OVERRIDE_ENTITY` yang akan menandai seluruh seksi diabaikan.
+    """
+    berkas = terdeteksi.get("pilecap_thickness")
+    if not berkas or berkas.startswith(AMBIGU):
+        return None
+    return (
+        f"Tebal diambil dari {berkas} (CSV per bidang) -- pilecap tapper. "
+        "Field pilecap.thickness, pilecap.edge_thickness, dan pilecap.taper_shoulder "
+        "DIABAIKAN; tebal maksimum = tebal terbesar di CSV."
+    )
+
+
+__all__ = [
+    "AMBIGU",
+    "OVERRIDE_ENTITY",
+    "TEBAL_ENTITY",
+    "catatan_tebal",
+    "deteksi",
+    "override_terdeteksi",
+]

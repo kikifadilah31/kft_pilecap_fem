@@ -312,17 +312,16 @@ class JendelaUtama(QMainWindow):
     def _perbarui_deteksi(self, *_args: Any) -> None:
         folder = self._input_dir.text()
         terdeteksi = detect.deteksi(folder)
-        override = detect.override_terdeteksi(terdeteksi)
 
         status = desktop.status_folder_input(folder, terdeteksi)
         self._status_input.setText(status.isi)
         self._status_input.setStyleSheet(fields.gaya_tingkat(status.tingkat))
 
         for entitas, tanda in self._tanda_override.items():
-            berkas = override.get(entitas)
-            if berkas:
-                tanda.setText(desktop.teks_override(berkas))
-            tanda.setVisible(bool(berkas))
+            teks = desktop.teks_seksi(entitas, terdeteksi)
+            if teks:
+                tanda.setText(teks)
+            tanda.setVisible(bool(teks))
 
     def _pada_pilih_config(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

@@ -245,6 +245,31 @@ def test_override_terdeteksi_memetakan_ke_entitas_seksi():
     assert peta == {"pile": "pile_coords.csv"}
 
 
+def test_csv_tebal_terdeteksi_dan_ditandai_di_seksi_pilecap(tmp_path):
+    """CSV tebal bukan override SELURUH seksi: dimensi pilecap tetap dipakai, hanya field
+    tebal yang dilewati -- jadi ia catatan tersendiri, dan tidak masuk `OVERRIDE_ENTITY`."""
+    (tmp_path / "pilecap_thickness.csv").write_text("face,x,y,t\n", encoding="utf-8")
+    terdeteksi = detect.deteksi(tmp_path)
+    assert terdeteksi.get("pilecap_thickness") == "pilecap_thickness.csv"
+    assert detect.override_terdeteksi(terdeteksi) == {}
+    catatan = detect.catatan_tebal(terdeteksi)
+    assert catatan is not None and "pilecap_thickness.csv" in catatan
+    for kunci in ("pilecap.thickness", "pilecap.edge_thickness", "pilecap.taper_shoulder"):
+        assert kunci in catatan
+    assert detect.TEBAL_ENTITY in {s.override_entity for s in schema.SECTIONS}
+
+
+def test_teks_seksi_menggabungkan_override_denah_dan_csv_tebal():
+    terdeteksi = {"pilecap_polygon": "poly.csv", "pilecap_thickness": "thick.csv"}
+    teks = desktop.teks_seksi("pilecap", terdeteksi)
+    assert teks is not None
+    baris = teks.split("\n")
+    assert len(baris) == 2 and "poly.csv" in baris[0] and "thick.csv" in baris[1]
+    assert desktop.teks_seksi("pile", terdeteksi) is None
+    assert desktop.teks_seksi("pilecap", {}) is None
+    assert detect.catatan_tebal({"pilecap_thickness": detect.AMBIGU + "dua berkas"}) is None
+
+
 def test_entitas_override_cocok_dengan_skema():
     """Peta override harus menunjuk `Section.override_entity` yang benar-benar ada."""
     entitas_skema = {s.override_entity for s in schema.SECTIONS if s.override_entity}

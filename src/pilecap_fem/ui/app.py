@@ -324,6 +324,10 @@ with st.form("masukan", border=False):
                     f":material/rule: Diabaikan — di-override `{sumber_override}`. "
                     "Nilai tetap ditulis ke config supaya terlihat apa yang dilewati."
                 )
+            if section.override_entity == detect.TEBAL_ENTITY:
+                catatan = detect.catatan_tebal(detected)
+                if catatan:
+                    st.caption(f":material/layers: {catatan}")
             for f in section.fields:
                 if f.visible_when is not None and not f.visible_when(values):
                     continue

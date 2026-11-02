@@ -48,6 +48,7 @@ from pilecap_fem import (
     postproc_engine,
     reporter,
 )
+from pilecap_fem import thickness as thickness_mod
 from pilecap_fem.geometry_builder import GeometryModel
 
 pytestmark = pytest.mark.slow
@@ -194,6 +195,21 @@ def _probe_values(
     results = reporter.read_element_resultants_csv(
         combo_dir / "element_resultants.csv", combo_dir.name
     )
+    probes, sigma, weight = _probe_kernel(mesh, geom)
+    total = weight.sum(axis=1)
+    return {
+        "probe_xy_m": probes.tolist(),
+        "sigma_m": sigma,
+        "values_si": {
+            field: ((weight @ getattr(results, field)) / total).tolist() for field in FIELDS
+        },
+    }
+
+
+def _probe_kernel(
+    mesh: mesh_model.MeshModel, geom: GeometryModel
+) -> tuple[np.ndarray, float, np.ndarray]:
+    """(probe yang dipakai, sigma, bobot kernel Gauss berbobot luas per probe x elemen)."""
     probes = _probe_grid(geom)
     sigma = 1.5 * float(np.sqrt(np.median(mesh.elem_area)))
 
@@ -208,15 +224,39 @@ def _probe_values(
     kept = total > 0.01 * float(total.max())
     if not kept.any():
         raise AssertionError("tidak ada satu pun probe yang memuat elemen")
+    return probes[kept], sigma, weight[kept]
 
-    return {
-        "probe_xy_m": probes[kept].tolist(),
-        "sigma_m": sigma,
-        "values_si": {
-            field: ((weight[kept] @ getattr(results, field)) / total[kept]).tolist()
-            for field in FIELDS
-        },
-    }
+
+def _element_design_probes(
+    run_dir: Path, combo_dir: Path, mesh: mesh_model.MeshModel, geom: GeometryModel
+) -> dict[str, list[float]]:
+    """`As` pakai per elemen pilecap tapper, dirata-rata kernel Gauss pada probe.
+
+    Pilecap tapper tidak punya desain per lajur (mode lajur ditolak), dan `As` puncak per
+    elemen jatuh di sudut pier yang singular -- berbeda antar run karena mesh gmsh tidak
+    reproducible. Rata-rata kernel pada probe tetap adalah besaran desain yang mulus,
+    memakai tebal lokal yang sama dengan `pilecap-report`.
+    """
+    cfg = (_manifest(run_dir).get("parameters") or {}).get("config_si") or {}
+    results = reporter.read_element_resultants_csv(
+        combo_dir / "element_resultants.csv", combo_dir.name
+    )
+    assert geom.thickness_field is not None
+    bands = thickness_mod.element_bands(geom.thickness_field, geom.thickness, mesh.elem_centroid)
+    inputs = capacity_engine.CapacityInputs.from_config(cfg).with_element_thickness(
+        bands.elem_thickness
+    )
+    designs = capacity_engine.design_all_faces(
+        {d: getattr(results, f) for d, f in config.REBAR_MOMENT_FIELD.items()}, inputs
+    )
+    _, _, weight = _probe_kernel(mesh, geom)
+    out: dict[str, list[float]] = {}
+    for (direction, face), design in designs.items():
+        values = capacity_engine.as_design_array(design)
+        ok = np.isfinite(values)
+        w = weight * ok[None, :]
+        out[f"{direction}_{face}"] = ((w @ np.where(ok, values, 0.0)) / w.sum(axis=1)).tolist()
+    return out
 
 
 def _strip_design(
@@ -269,10 +309,18 @@ def _snapshot(run_dir: Path) -> dict[str, Any]:
     combos: dict[str, Any] = {}
     for combo, slug in manifest["combo_slug_map"].items():
         combo_dir = run_dir / f"Combo_{slug}"
-        combos[combo] = {
-            "probes": _probe_values(combo_dir, mesh, geom),
-            "strip_design": _strip_design(run_dir, combo_dir, mesh, geom),
-        }
+        if geom.thickness_field is None:
+            combos[combo] = {
+                "probes": _probe_values(combo_dir, mesh, geom),
+                "strip_design": _strip_design(run_dir, combo_dir, mesh, geom),
+            }
+        else:
+            # Pilecap tapper: mode lajur ditolak, jadi angka desainnya per elemen.
+            combos[combo] = {
+                "probes": _probe_values(combo_dir, mesh, geom),
+                "strip_design": [],
+                "element_design": _element_design_probes(run_dir, combo_dir, mesh, geom),
+            }
     return {"mesh_stats": _mesh_stats(run_dir), "combos": combos}
 
 
@@ -390,6 +438,24 @@ def test_desain_tulangan_per_lajur_cocok_dengan_golden(golden_case):
                 assert _close(got[column], gold[column], DESIGN_RTOL), (
                     f"{name} [{combo}] {key} {column}: {got[column]} vs golden {gold[column]}"
                 )
+
+
+def test_desain_per_elemen_tapper_cocok_dengan_golden(golden_case):
+    """`As` pakai per elemen (tebal lokal) pada probe -- hanya pilecap tapper."""
+    name, expected, actual = golden_case
+    kasus = [c for c, e in expected["combos"].items() if "element_design" in e]
+    if not kasus:
+        pytest.skip(f"{name}: pilecap seragam, angka desainnya per lajur")
+    for combo in kasus:
+        for key, gold_list in expected["combos"][combo]["element_design"].items():
+            gold = np.asarray(gold_list, dtype=np.float64)
+            got = np.asarray(actual["combos"][combo]["element_design"][key], dtype=np.float64)
+            atol = NEAR_ZERO_FRACTION * float(np.nanmax(np.abs(gold)) or 1.0)
+            bad = ~np.isclose(got, gold, rtol=FIELD_RTOL, atol=atol)
+            assert not bad.any(), (
+                f"{name} [{combo}] As {key}: {int(bad.sum())} dari {gold.size} probe berbeda; "
+                f"contoh golden={gold[bad][0]:.6e} hasil={got[bad][0]:.6e}"
+            )
 
 
 def _close(got: float, gold: float, rtol: float) -> bool:

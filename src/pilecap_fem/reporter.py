@@ -124,6 +124,48 @@ def open_blockers_block() -> str:
     )
 
 
+def thickness_rows(geom: GeometryModel, mesh: MeshModel | None = None) -> list[tuple[str, str]]:
+    """Baris tambahan "sumber tebal" untuk pilecap tapper; kosong pada pilecap seragam.
+
+    Satu sumber untuk calc sheet, mesh summary, dan PDF, supaya ketiganya menyebut sumber,
+    diskretisasi, dan tebal di pile dengan kata-kata yang sama.
+    """
+    field_ = geom.thickness_field
+    if field_ is None:
+        return []
+    from pilecap_fem import thickness as thickness_mod
+
+    unit = io_utils.display_unit("length")
+
+    def mm(v: float) -> str:
+        return f"{io_utils.to_display(v, 'length'):,.0f}"
+
+    if field_.source == "parametrik":
+        p = field_.params
+        sumber = (
+            f"profil parametrik atap perisai: plateau {mm(p['thickness'])}, tepi "
+            f"{mm(p['edge_thickness'])}, bahu {mm(p['taper_shoulder'])} {unit}"
+        )
+    else:
+        sumber = f"CSV per bidang `{field_.file}` ({len(field_.faces)} bidang)"
+    pita = f"kelipatan {mm(field_.step)} {unit}"
+    if mesh is not None:
+        bands = thickness_mod.element_bands(field_, geom.thickness, mesh.elem_centroid)
+        pita += f", {bands.n_bands} pita ({mm(bands.values.min())}-{mm(bands.values.max())} {unit})"
+    pusat = np.array([[pile.x, pile.y] for pile in geom.piles], dtype=np.float64)
+    di_pile = field_.thickness_at(pusat)
+    return [
+        ("Sumber tebal", sumber),
+        ("Diskretisasi tebal", pita),
+        ("Tebal di pusat pile", f"{mm(float(di_pile.min()))}-{mm(float(di_pile.max()))} {unit}"),
+    ]
+
+
+def _thickness_md_rows(geom: GeometryModel, mesh: MeshModel | None = None) -> str:
+    """`thickness_rows` sebagai baris tabel markdown, DIAWALI baris baru (atau kosong)."""
+    return "".join(f"\n| {k} | {v} |" for k, v in thickness_rows(geom, mesh))
+
+
 def geometry_resolution_table(resolution: GeometryResolution) -> str:
     """Tabel resolusi sumber geometri (PRD Bagian 9.4 bagian 1a) -- WAJIB."""
     lines = [
@@ -483,7 +525,7 @@ Sistem satuan internal: {config.SI_UNIT_SYSTEM}
 |---------|-------|
 | Luas pilecap | {geom.pilecap_area:.6f} m^2 |
 | Titik sudut polygon pilecap | {geom.pilecap.n_vertices} |
-| Tebal pilecap | {io_utils.thickness_label(geom, ".0f")} |
+| Tebal pilecap | {io_utils.thickness_label(geom, ".0f")} |{_thickness_md_rows(geom, mesh)}
 | Jumlah pile | {geom.n_piles} |
 | Diameter pile (min) | {to_mm(geom.min_pile_diameter):.0f} {unit_len} |
 | Jumlah pier | {geom.n_piers} |
@@ -1606,7 +1648,7 @@ Sistem satuan internal: {config.SI_UNIT_SYSTEM}
 | Besaran | Nilai |
 |---------|-------|
 | Luas pilecap | {geom.pilecap_area:.6f} m^2 |
-| Tebal pilecap `t` | {io_utils.thickness_label(geom)} |
+| Tebal pilecap `t` | {io_utils.thickness_label(geom)} |{_thickness_md_rows(geom, mesh)}
 | Modulus elastisitas `E` | {material["E"] / 1e6:,.1f} MPa |
 | **Asal nilai `E`** | {material.get("E_source") or "TIDAK DICATAT"} |
 | Rasio Poisson `nu` | {material["nu"]:.3f} |

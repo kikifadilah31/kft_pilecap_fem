@@ -326,17 +326,16 @@ class MainFrame(wx.Frame):
     def _perbarui_deteksi(self) -> None:
         folder = self._input_dir.GetValue()
         terdeteksi = detect.deteksi(folder)
-        override = detect.override_terdeteksi(terdeteksi)
 
         status = desktop.status_folder_input(folder, terdeteksi)
         self._status_input.SetLabel(status.isi)
         self._status_input.SetForegroundColour(WARNA[status.tingkat])
 
         for entitas, tanda in self._tanda_override.items():
-            berkas = override.get(entitas)
-            if berkas:
-                tanda.ganti(desktop.teks_override(berkas))
-            tanda.Show(bool(berkas))
+            teks = desktop.teks_seksi(entitas, terdeteksi)
+            if teks:
+                tanda.ganti(teks)
+            tanda.Show(bool(teks))
         for halaman in self._halaman:
             halaman.Layout()
             halaman.FitInside()

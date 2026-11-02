@@ -712,9 +712,10 @@ def resolve_geometry_sources(
         thickness_file = autodetect(input_dir, "pilecap_thickness", required=False)
     if thickness_file is not None:
         thickness_faces = load_thickness_faces(thickness_file, length_factor)
+        # `pilecap.thickness` juga dilewati: tebal maksimum diambil dari CSV.
         diabaikan = [
             k
-            for k in ("edge_thickness", "taper_shoulder")
+            for k in ("thickness", "edge_thickness", "taper_shoulder")
             if (raw_cfg.get("pilecap") or {}).get(k) is not None
         ]
         _log.warning(

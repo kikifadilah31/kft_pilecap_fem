@@ -335,6 +335,7 @@ def chapter_input(data: ReportData, figs: FigureStore) -> str:
             [
                 ["Luas pilecap", f"{geom.pilecap.area:.6f} {_unit('area')}"],
                 ["Tebal pilecap `t`", io_utils.thickness_label(geom)],
+                *[[k, _md(v)] for k, v in reporter.thickness_rows(geom, data.mesh)],
                 ["Jumlah pile", str(geom.n_piles)],
                 ["Jumlah pier", str(geom.n_piers)],
             ],
@@ -386,6 +387,14 @@ def chapter_input(data: ReportData, figs: FigureStore) -> str:
             from_earlier_phase=True,
         ).to_typst()
     )
+    if geom.thickness_field is not None:
+        bagian.append(
+            figs.resolve(
+                data.model_dir / config.FILE_CONTOUR_THICKNESS,
+                "Tebal tiap elemen (pita) -- tebal yang dipakai FEM, Midas, dan desain.",
+                reason="dihasilkan `pilecap-report` untuk pilecap tapper.",
+            ).to_typst()
+        )
 
     # -- material & asumsi desain ------------------------------------------
     bagian.append(tk.heading(2, "Material dan asumsi desain"))
@@ -413,7 +422,12 @@ def chapter_input(data: ReportData, figs: FigureStore) -> str:
             caption="Parameter material dan desain beserta sumber penetapannya.",
         )
     )
-    catatan = [prov.get("catatan_dv"), prov.get("catatan_as_min"), prov.get("catatan_pons")]
+    catatan = [
+        prov.get("catatan_tapper"),
+        prov.get("catatan_dv"),
+        prov.get("catatan_as_min"),
+        prov.get("catatan_pons"),
+    ]
     tersedia = [c for c in catatan if c]
     if tersedia:
         bagian.append(tk.callout("NOTE", "\n\n".join(_md(str(c)) for c in tersedia)))

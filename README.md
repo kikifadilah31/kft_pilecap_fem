@@ -108,7 +108,7 @@ git pull && uv sync --dev
 uvx --python 3.12 --from git+https://github.com/kikifadilah31/kft_pilecap_fem pilecap-mesh --init-example .
 ```
 
-Menyalin ketiga contoh bawaan ke folder saat ini. Berkas yang disalin adalah berkas yang
+Menyalin kelima contoh bawaan ke folder saat ini. Berkas yang disalin adalah berkas yang
 **sama persis** dengan yang dipakai test regresi, jadi tidak bisa basi diam-diam. Pada PC
 tanpa git, jalankan perintah yang sama dengan mengganti `--from git+...` menjadi
 `--from <URL wheel rilis>` seperti pada instalasi permanen di atas.
@@ -1196,6 +1196,13 @@ sebagai baris PERINGATAN berwarna di kop setiap gambar.
 
 Jalankan `ex04` untuk melihat penanganan **pile yang tumpang tindih dengan pier** — lihat
 bagian berikutnya.
+
+Jalankan `ex05` untuk melihat **pilecap tapper**. Pratinjau denah dan seluruh kontur
+menggambar batas bidang tebal (plateau dan jurai) sebagai garis putus-titik, dan `pilecap-report`
+mendesainnya dengan tebal lokal; lihat
+[Pilecap tapper: rumus yang sama, `h` lokal](#pilecap-tapper-rumus-yang-sama-h-lokal).
+Bila tebalnya diberikan sebagai CSV per bidang, formulir menandai seksi Pilecap: field tebal
+diabaikan dan tebal maksimum diambil dari CSV.
 
 ## Pile yang tumpang tindih dengan pier (`pier.max_pile_overlap_fraction`)
 

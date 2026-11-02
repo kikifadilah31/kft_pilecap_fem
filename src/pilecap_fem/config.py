@@ -837,6 +837,7 @@ EXAMPLE_NAMES: Final[tuple[str, ...]] = (
     "ex02_standard_12pile",
     "ex03_custom_polygon",
     "ex04_pile_overlap_pier",
+    "ex05_tapered_p2",
 )
 
 

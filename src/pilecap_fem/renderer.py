@@ -469,6 +469,22 @@ def _annotate_plan(
     cap = _to_mm(geom.pilecap.closed_vertices())
     ax.plot(cap[:, 0], cap[:, 1], color=th.outline, linewidth=1.8, zorder=5)
 
+    if geom.thickness_field is not None:
+        # Pilecap tapper: batas bidang tebal (plateau & jurai), seperti garis di gambar denah
+        # struktur. Tanpanya pembaca kontur tidak dapat mengaitkan pola gaya atau tulangan
+        # dengan perubahan kemiringan -- satu-satunya tempat tapper berbeda dari pelat rata.
+        for bidang in geom.thickness_field.faces:
+            tepi = _to_mm(np.vstack([bidang.xy, bidang.xy[:1]]))
+            ax.plot(
+                tepi[:, 0],
+                tepi[:, 1],
+                color=th.outline,
+                linewidth=0.8,
+                linestyle="-.",
+                alpha=0.6,
+                zorder=4,
+            )
+
     for pile in geom.piles:
         ax.add_patch(
             plt.Circle(

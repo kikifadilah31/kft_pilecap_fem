@@ -39,8 +39,20 @@ pilecap seragam setebal itu; ini diuji untuk ketiga mode tulangan.
 * Kontur tebal per elemen di `00_Model/contour_thickness.png`. Calc sheet, ringkasan, kop
   gambar, dan PDF mencetak rentang tebal, bukan tebal maksimum saja.
 
-Contoh `examples/ex05_tapered_p2` (P2: trapesium, 2000 → 1000 mm, bahu 500, 16 pile) belum
-didaftarkan sebagai golden.
+**Tampilan, laporan, dan contoh bawaan.**
+
+* Pratinjau denah dan seluruh kontur menggambar batas bidang tebal (plateau dan jurai).
+* Calc sheet, mesh summary, dan PDF mencatat sumber tebal (parametrik atau CSV),
+  diskretisasinya (kelipatan dan jumlah pita), dan rentang tebal di pusat pile. PDF memuat
+  kontur tebal dan catatan tapper di bagian asumsi.
+* Ketiga antarmuka menandai seksi Pilecap bila tebal diambil dari CSV per bidang:
+  `pilecap.thickness`, `pilecap.edge_thickness`, dan `pilecap.taper_shoulder` diabaikan. Log
+  `pilecap-mesh` kini juga menyebut `pilecap.thickness` sebagai field yang diabaikan.
+* Panduan (`pilecap-manual`) punya bagian "Pilecap tapper" di bab data masukan.
+* `examples/ex05_tapered_p2` (P2: trapesium, 2000 → 1000 mm, bahu 500, 16 pile) menjadi
+  contoh bawaan kelima, dengan golden. Golden tapper menyimpan `As` pakai per elemen (tebal
+  lokal) yang dirata-rata kernel pada probe, karena tapper tidak punya desain per lajur.
+  Golden ex01–ex04 tidak diregenerasi.
 
 Diverifikasi: medan tebal identik dengan rumus analitik atap perisai (galat 1e-15 m);
 tebal tepi = tebal plateau memberi hasil FEM identik bit demi bit dengan pilecap seragam pada

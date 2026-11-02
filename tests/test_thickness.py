@@ -19,7 +19,15 @@ import pytest
 from shapely.geometry import Polygon, box
 
 from pilecap_fem import capacity_engine as ce
-from pilecap_fem import config, fem_engine, io_utils, mesh_model, postproc_engine, validators
+from pilecap_fem import (
+    config,
+    fem_engine,
+    io_utils,
+    mesh_model,
+    postproc_engine,
+    reporter,
+    validators,
+)
 from pilecap_fem import thickness as th
 from pilecap_fem.exporters import mct
 from pilecap_fem.geometry_builder import (
@@ -699,3 +707,16 @@ def test_mode_lajur_tapper_ditolak_sebelum_analisis(examples_dir: Path, tmp_path
     )
     assert kode != 0
     assert not list((tmp_path / "out").glob("pilecap_*/Combo_*"))
+
+
+def test_baris_sumber_tebal_di_laporan(pelat):
+    """Seragam: tidak ada baris tambahan. Tapper: sumber, diskretisasi, tebal di pile."""
+    mesh, _, _ = pelat
+    assert reporter.thickness_rows(_geom(None), mesh) == []
+    baris = dict(reporter.thickness_rows(_geom(_linier_x(), 1.4), mesh))
+    assert baris["Sumber tebal"].startswith("CSV per bidang")
+    assert "kelipatan 10 mm" in baris["Diskretisasi tebal"]
+    # Tebal di pusat P1 (x = -1,5) = 1050 mm, P2 (x = 1,5) = 1350 mm -- medan linier.
+    assert baris["Tebal di pusat pile"] == "1,050-1,350 mm"
+    assert io_utils.thickness_label(_geom(None)) == "1,200 mm"
+    assert io_utils.thickness_label(_geom(_linier_x(), 1.4)).startswith("1,000-1,400 mm")
