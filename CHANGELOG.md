@@ -2,6 +2,16 @@
 
 Format mengikuti template PRD Bagian 16C.
 
+## [Unreleased]
+
+### Added — contoh `ex06_tapered_csv`: tebal dari CSV per bidang, bahu berbeda per arah
+
+Pilecap P2 yang sama dengan `ex05`, tetapi tebalnya diberikan sebagai `pilecap_thickness.csv`
+(lima bidang) dengan bahu datar 500 mm di arah memanjang dan 800 mm di arah melintang —
+kasus yang tidak dapat dinyatakan dengan satu `pilecap.taper_shoulder`. Contoh pertama yang
+memakai jalur CSV tebal, sekaligus acuan formatnya. Didaftarkan sebagai contoh bawaan keenam
+dengan golden; golden contoh lain tidak berubah.
+
 ## [0.16.0] — 2026-11-02 — Pilecap tapper (tebal bervariasi)
 
 ### Added — pilecap tapper (tebal bervariasi): analisis, ekspor Midas, desain tebal lokal

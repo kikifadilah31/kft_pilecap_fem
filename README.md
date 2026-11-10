@@ -108,7 +108,7 @@ git pull && uv sync --dev
 uvx --python 3.12 --from git+https://github.com/kikifadilah31/kft_pilecap_fem pilecap-mesh --init-example .
 ```
 
-Menyalin kelima contoh bawaan ke folder saat ini. Berkas yang disalin adalah berkas yang
+Menyalin keenam contoh bawaan ke folder saat ini. Berkas yang disalin adalah berkas yang
 **sama persis** dengan yang dipakai test regresi, jadi tidak bisa basi diam-diam. Pada PC
 tanpa git, jalankan perintah yang sama dengan mengganti `--from git+...` menjadi
 `--from <URL wheel rilis>` seperti pada instalasi permanen di atas.
@@ -590,7 +590,7 @@ Seluruh blok ini boleh dihilangkan; bawaannya **mm / kN / MPa**.
 | `pilecap.length_x` | panjang | `—` | Ukuran arah X. **Diabaikan** bila ada CSV poligon pilecap. |
 | `pilecap.length_y` | panjang | `—` | Ukuran arah Y. Sama, diabaikan bila ada CSV poligon. |
 | `pilecap.origin` | panjang | `—` | Koordinat **titik pusat**, bukan sudut. |
-| `pilecap.edge_thickness` | panjang | `null` | Kosong = tebal seragam. Diisi = pilecap **tapper**: bawah datar, atas miring ke empat sisi (atap perisai), dari `pilecap.thickness` di plateau sekitar pier menipis linear ke nilai ini di tepi. Butuh satu pier persegi dan pilecap segiempat; bentuk lain lewat CSV tebal per bidang (`*cap*thick*.csv`, kolom `face, x, y, t`). Desain tulangan memakai tebal lokal tiap elemen dan hanya per elemen (`design.rebar_basis` = `element`); lihat [Pilecap tapper: rumus yang sama, `h` lokal](#pilecap-tapper-rumus-yang-sama-h-lokal). |
+| `pilecap.edge_thickness` | panjang | `null` | Kosong = tebal seragam. Diisi = pilecap **tapper**: bawah datar, atas miring ke empat sisi (atap perisai), dari `pilecap.thickness` di plateau sekitar pier menipis linear ke nilai ini di tepi. Butuh satu pier persegi dan pilecap segiempat; bentuk lain, termasuk bahu yang berbeda per arah, lewat CSV tebal per bidang (`*cap*thick*.csv`, kolom `face, x, y, t`; contoh: `examples/ex06_tapered_csv`). Desain tulangan memakai tebal lokal tiap elemen dan hanya per elemen (`design.rebar_basis` = `element`); lihat [Pilecap tapper: rumus yang sama, `h` lokal](#pilecap-tapper-rumus-yang-sama-h-lokal). |
 | `pilecap.taper_shoulder` | panjang | `—` | Lebar bahu datar di sekeliling pier sebelum bidang miring dimulai; `0` = miring langsung dari muka pier. **Wajib** bila `edge_thickness` diisi (formulir mengusulkan 500), diabaikan bila tidak. |
 | `pilecap.thickness_step` | panjang | `10` | Tebal tiap elemen (di titik beratnya) dibulatkan ke kelipatan nilai ini; elemen bertebal sama berbagi satu ID `*THICKNESS` di Midas. Halusnya tangga tebal terutama ditentukan ukuran mesh. Hanya dibaca bila tebal tidak seragam. |
 
@@ -1191,6 +1191,7 @@ Penolakannya terjadi di `pilecap-mesh`, sebelum analisis.
 | `examples/ex03_custom_polygon/` | Pilecap poligon L, pile custom non-grid, **dua** pier poligon. Sekaligus acuan format ketiga CSV geometri. |
 | `examples/ex04_pile_overlap_pier/` | Dua dari enam pile **menindih pier** (`f` = 7,2%). Contoh satu-satunya yang memakai `pier.max_pile_overlap_fraction`. |
 | `examples/ex05_tapered_p2/` | Pilecap **tapper** P2: denah trapesium, 16 pile, tebal 2000 mm di plateau menipis ke 1000 mm di tepi. Desain tulangan memakai tebal lokal tiap elemen; `pilecap-report` juga menggambar kontur tebal di `00_Model/contour_thickness.png`. Reaksi pile masih placeholder `[CONTOH]`. |
+| `examples/ex06_tapered_csv/` | Pilecap P2 yang sama, tetapi tebalnya dari **CSV per bidang** (`pilecap_thickness.csv`) dengan bahu datar **berbeda per arah**: 500 mm memanjang (X), 800 mm melintang (Y). Acuan format CSV tebal. |
 
 Jalankan `ex03` untuk melihat mekanisme **override geometri**: setiap entitas yang datang
 dari CSV diteriakkan sebagai WARNING 5 baris, dicatat di `run_manifest.json`, dan muncul
@@ -1205,6 +1206,11 @@ mendesainnya dengan tebal lokal; lihat
 [Pilecap tapper: rumus yang sama, `h` lokal](#pilecap-tapper-rumus-yang-sama-h-lokal).
 Bila tebalnya diberikan sebagai CSV per bidang, formulir menandai seksi Pilecap: field tebal
 diabaikan dan tebal maksimum diambil dari CSV.
+
+Jalankan `ex06` untuk melihat **tebal dari CSV per bidang**. Pakai cara ini bila profil
+parametrik tidak cukup, misalnya bahu datar yang berbeda antara arah memanjang dan
+melintang. `pilecap_thickness.csv` di contoh itu berisi lima bidang (plateau dan empat bidang
+miring); sudut plateau-nya `x = 4669 ± (750 + bahu X)` dan `y = 6049 ± (1250 + bahu Y)`.
 
 ## Pile yang tumpang tindih dengan pier (`pier.max_pile_overlap_fraction`)
 

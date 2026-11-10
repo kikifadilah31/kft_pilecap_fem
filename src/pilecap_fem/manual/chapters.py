@@ -468,6 +468,10 @@ _CONTOH: dict[str, str] = {
         "Pilecap tapper: denah trapesium, 16 tiang, tebal 2000 mm di sekitar pier menipis "
         "ke 1000 mm di tepi. Contoh profil tebal parametrik dan desain dengan tebal lokal."
     ),
+    "ex06_tapered_csv": (
+        "Pilecap P2 yang sama, tetapi tebalnya diberikan sebagai CSV per bidang dengan bahu "
+        "datar berbeda per arah (500 mm memanjang, 800 mm melintang). Acuan format CSV tebal."
+    ),
 }
 
 
