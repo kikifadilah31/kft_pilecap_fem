@@ -108,6 +108,17 @@ RUN_SECTION: Section = Section(
             "membutuhkan gambar itu dan bersedia menunggu.",
         ),
         Field(
+            "run.s2k_load",
+            "Beban pile di model.s2k (SAP2000)",
+            "select",
+            config.S2K_LOAD_MODES[0],
+            choices=config.S2K_LOAD_MODES,
+            help="Cara beban pile ditulis di `00_Model/model.s2k` untuk SAP2000. `area`: "
+            "beban merata pada elemen cakram pile, sama dengan `*PRESSURE` di `model.mct` "
+            "Midas. `joint`: gaya nodal yang persis dipasang di model OpenSees. Hanya "
+            "mengubah berkas ekspor, tidak mengubah hasil analisis.",
+        ),
+        Field(
             "run.no_rebar_plots",
             "Lewati plot tulangan (lebih cepat)",
             "bool",

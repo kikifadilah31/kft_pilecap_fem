@@ -96,6 +96,7 @@ def _header(
     n_groups: int,
     combos: Sequence[str],
     now: datetime,
+    self_weight: bool = False,
 ) -> list[str]:
     lines = [
         "; " + "=" * 74,
@@ -121,6 +122,13 @@ def _header(
         ";      menuntut E diisi user beserta sumbernya dan TIDAK pernah menurunkannya",
         ";      dari f'c, sehingga nilai eksplisit itulah yang harus dibawa.",
     ]
+    if self_weight:
+        # Hanya bila berat sendiri aktif: tanpanya berkas byte-identik dengan sebelumnya.
+        lines += [
+            ";   3. *SELFWEIGHT  -- berat sendiri (analysis.include_self_weight) ditambahkan",
+            ";      ke SETIAP kombinasi, faktor 1, seperti di model OpenSees. Sintaks ini",
+            ";      tidak ada di berkas rujukan mana pun; pastikan terbaca sebagai -Z.",
+        ]
     if combos:
         lines.append("; " + "-" * 74)
         lines.append("; Pemetaan nama kombinasi -> nama load case MCT (nama MCT tidak")
@@ -221,8 +229,14 @@ def _load_sections(
     mesh: MeshModel,
     geom: GeometryModel,
     loads: Mapping[str, Mapping[str, float]],
+    *,
+    self_weight: bool = False,
 ) -> list[str]:
-    """`*STLDCASE` + `*LOADCOMB` envelope + satu blok `*PRESSURE` per kombinasi."""
+    """`*STLDCASE` + `*LOADCOMB` envelope + satu blok `*PRESSURE` per kombinasi.
+
+    `self_weight`: setiap kombinasi juga mendapat `*SELFWEIGHT` (faktor 1, arah -Z), karena
+    `fem_engine.analyze_combo` menambahkan berat sendiri tak terfaktor ke setiap kombinasi.
+    """
     from pilecap_fem.fem_engine import pile_pressures
 
     combos = list(loads)
@@ -239,6 +253,9 @@ def _load_sections(
 
     for combo in combos:
         lines.append(f"*USE-STLD,{names[combo]}")
+        if self_weight:
+            lines.append("*SELFWEIGHT")
+            lines.append("0, 0, -1, ")
         lines.append("*PRESSURE")
         for load in pile_pressures(mesh, geom, dict(loads[combo])):
             p = _num(load.pressure * _PA_TO_KN_PER_M2)
@@ -260,6 +277,7 @@ def write_mct(
     loads: Mapping[str, Mapping[str, float]] | None = None,
     now: datetime | None = None,
     bands: ThicknessBands | None = None,
+    self_weight: bool = False,
 ) -> Path:
     """Tulis model ke berkas Midas Civil `.mct`.
 
@@ -281,6 +299,7 @@ def write_mct(
         n_groups=len(mesh.group_names),
         combos=combos,
         now=now or datetime.now(),
+        self_weight=self_weight and bool(loads),
     )
     lines.append("*UNIT")
     lines.append(f"{MCT_FORCE_UNIT}, {MCT_LENGTH_UNIT}, {MCT_HEAT_UNIT}, {MCT_TEMP_UNIT}")
@@ -296,7 +315,7 @@ def write_mct(
         lines.append("; nilainya harus Anda isi sendiri di Midas sebelum model dijalankan.")
     lines += _constraint_section(mesh, geom)
     if loads:
-        lines += _load_sections(mesh, geom, loads)
+        lines += _load_sections(mesh, geom, loads, self_weight=self_weight)
     else:
         lines.append("; Tanpa pembebanan: dihasilkan `pilecap-mesh`, yang tidak membaca")
         lines.append("; pile_reactions.csv. Jalankan `pilecap-analyze` untuk versi lengkap.")

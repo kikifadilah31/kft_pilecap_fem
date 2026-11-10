@@ -882,6 +882,16 @@ def chapter_output() -> str:
                     f"`{config.FILE_MODEL_MCT}`",
                     "Model siap diimpor ke Midas Civil, lengkap dengan pembebanannya.",
                 ],
+                [
+                    f"`{config.FILE_MODEL_S2K}`",
+                    "Model siap diimpor ke SAP2000 (teks .s2k), lengkap dengan pembebanannya. "
+                    "Belum divalidasi terhadap SAP2000; periksa pada impor pertama.",
+                ],
+                [
+                    f"`{config.FILE_LOAD_AREA}`, `{config.FILE_LOAD_NODE}`",
+                    "Beban yang benar-benar dipasang, per elemen (merata) dan per node "
+                    "(gaya), untuk seluruh kombinasi. Positif = ke atas.",
+                ],
                 [f"`{config.FILE_MODEL_OPSVIS}`", "Gambar model beserta tumpuan dan bebannya."],
                 [
                     f"`{config.FILE_GEOMETRY_JSON}`",

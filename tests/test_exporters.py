@@ -34,6 +34,10 @@ LOADS = {"1.2D+1.6L": {"P1": 600e3, "P2": 400e3}, "1.2D+1.0W": {"P1": 750e3, "P2
 
 @pytest.fixture(scope="module")
 def model():
+    return build_model()
+
+
+def build_model():
     """Pelat 4x2 m dengan dua area pile dan satu area pier sebagai physical group.
 
     Dibangun dari array, bukan gmsh: yang diperiksa di sini adalah PENERJEMAHAN, dan mesh

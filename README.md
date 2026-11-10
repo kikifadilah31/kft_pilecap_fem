@@ -305,6 +305,9 @@ output/pilecap_20260804_093148/
 │   ├── nodes.csv          # tag, x, y, z  [SI]
 │   ├── elements.csv       # tag, n1..n4, luas, centroid, theta, group
 │   ├── model.mct          # model siap impor Midas Civil, lengkap dengan pembebanan
+│   ├── model.s2k          # model siap impor SAP2000 (teks .s2k), lengkap dengan pembebanan
+│   ├── load_area.csv      # beban merata per elemen, seluruh kombinasi: elemen, load_comb, load [kPa]
+│   ├── load_node.csv      # gaya nodal per node, seluruh kombinasi: node, load_comb, load [kN]
 │   └── model.msh          # opsional (--export-msh), untuk dibuka di GUI gmsh
 ├── SUMMARY.md             # ringkasan lintas kombinasi + governing + Known Limitations
 ├── laporan_pilecap.pdf    # opsional (--pdf): satu dokumen lengkap seluruh run
@@ -427,7 +430,7 @@ Plot opsvis **dilewati otomatis** di atas 3.000 elemen (dengan WARNING yang meny
 alasannya), karena `opsv.plot_defo` tumbuh lebih cepat dari linier — terukur 5,1 detik
 untuk 1.200 elemen. Paksa dengan `--opsvis`.
 
-### Ekspor ke Midas Civil (`model.mct`)
+### Ekspor ke Midas Civil (`model.mct`) dan SAP2000 (`model.s2k`)
 
 Setiap run menulis `00_Model/model.mct`, model teks siap impor Midas Civil: node, elemen
 PLATE, grup (`CAP`, `PILE_*`, `PIER_*` — grup yang sama dengan `elements.csv`), material,
@@ -452,8 +455,48 @@ bentuk elemen-saja.
 > Statusnya dinyatakan di header setiap berkas. Pastikan tumpuan dan material terbaca benar
 > sebelum memakai hasilnya.
 
-Format berbasis teks lain (mis. SAP2000 `.s2k`) dapat menyusul sebagai modul sejajar di
-`src/pilecap_fem/exporters/`; hanya MCT yang tersedia sekarang.
+Bila `analysis.include_self_weight` aktif, setiap load case MCT juga mendapat
+`*SELFWEIGHT` (faktor 1, arah −Z), sama dengan model OpenSees yang menambahkan berat sendiri
+tak terfaktor ke setiap kombinasi. Sintaks ini juga belum ada di berkas rujukan dan ikut
+didaftar di header. Bila berat sendiri mati, `model.mct` tidak berubah sama sekali.
+
+**SAP2000.** Setiap run juga menulis `00_Model/model.s2k`, berkas teks yang dapat diimpor
+SAP2000 (File → Import → SAP2000 .s2k). Tabelnya mengikuti berkas contoh SAP2000 v24.2
+(`CurrUnits="KN, m, C"`): koordinat joint, `CONNECTIVITY - AREA`, satu seksi
+`Shell-Thick` (Mindlin, setara ShellMITC4) — atau satu seksi per pita tebal pada pilecap
+tapper —, material dengan `E` dari config, grup yang sama dengan MCT, restraint jepit di
+pier, dan satu load pattern + load case per kombinasi plus combo `ENVELOPE`.
+
+* **Beban pile** dipilih dengan `--s2k-load` (atau opsi run di ketiga antarmuka):
+  `area` (bawaan) menulis `AREA LOADS - UNIFORM` arah Z global, identik dengan `*PRESSURE`
+  MCT; `joint` menulis `JOINT LOADS - FORCE`, yaitu gaya nodal yang persis dipasang di
+  OpenSees menurut `pile.modeling`.
+* **Berat sendiri** dibawa lewat `SelfWtMult = 1` pada setiap load pattern, bila aktif.
+* **Simpul tiap area diurut berlawanan jarum jam**, sehingga sumbu lokal 3 SAP menghadap +Z
+  di seluruh elemen dan M11/M22 terbaca dengan tanda yang konsisten.
+* Keterangan asal-usul (versi, waktu, asumsi) ada di tabel `PROJECT INFORMATION`.
+
+> **Belum tervalidasi terhadap SAP2000.** Ekspor `.s2k` belum pernah diimpor dan dijalankan
+> lalu dibandingkan hasilnya, seperti yang dilakukan VC-6 terhadap Midas. Tabel
+> `COMBINATION DEFINITIONS` (envelope) juga tidak ada di berkas contoh, sehingga sintaksnya
+> ditulis menurut konvensi SAP2000. Periksa model pada impor pertama.
+
+### Beban yang dipasang (`load_area.csv`, `load_node.csv`)
+
+`pilecap-analyze` menulis beban yang benar-benar dipasang pada model, untuk **seluruh**
+kombinasi di `pile_reactions.csv` (juga yang tidak dipilih `--combo`, sama dengan MCT dan
+S2K), dalam format panjang — satu baris per elemen atau node per kombinasi, hanya nilai tak
+nol:
+
+| Berkas | Kolom | Isi |
+|--------|-------|-----|
+| `load_area.csv` | `elemen, load_comb, load [kPa]` | Beban merata per elemen: tekanan pile `Pz / A_cakram` + berat sendiri `−γ·t` bila aktif |
+| `load_node.csv` | `node, load_comb, load [kN]` | Gaya nodal per node, persis yang dipasang di OpenSees (termasuk node terjepit, tempat bebannya terserap) |
+
+Tanda positif = ke atas (+Z), konvensi yang sama dengan MCT dan S2K. Tag elemen dan node
+sama dengan `elements.csv`, `nodes.csv`, `model.mct`, dan `model.s2k`. Kedua berkas berasal
+dari fungsi yang juga merakit beban OpenSees, sehingga
+`Σ(load_area × A_elemen) = Σ load_node = Σ Pz − berat sendiri` untuk tiap kombinasi.
 
 ### Argumen penting
 
@@ -470,6 +513,7 @@ Format berbasis teks lain (mis. SAP2000 `.s2k`) dapat menyusul sebagai modul sej
 | `--combo NAMA` | `analyze` | Analisis hanya kombinasi tertentu (boleh diulang) |
 | `--element ShellMITC4\|ShellDKGQ\|ShellNLDKGQ` | `analyze` | Mode perbandingan elemen (PRD §11) |
 | `--self-weight` | `analyze` | Aktifkan berat sendiri pilecap |
+| `--s2k-load area\|joint` | `analyze`, `run` | Beban pile di `model.s2k`: area load merata (bawaan) atau gaya nodal |
 | `--equilibrium-rtol` | `analyze` | Toleransi cek keseimbangan VC-0 |
 | `--opsvis` | `analyze` | Paksa plot opsvis meski di atas ambang elemen |
 | `--result-dir` | `report` | Folder hasil analisis (default: run terakhir) |

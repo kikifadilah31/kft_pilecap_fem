@@ -249,6 +249,58 @@ def write_element_resultants_csv(path: Path, results: ElementResults, mesh: Mesh
     return path
 
 
+def write_load_assignment_csvs(
+    model_dir: Path,
+    mesh: MeshModel,
+    *,
+    area_loads: dict[str, np.ndarray],
+    node_loads: dict[str, np.ndarray],
+) -> tuple[Path, Path]:
+    """`load_area.csv` dan `load_node.csv` -- beban yang dipasang, SELURUH kombinasi.
+
+    Format panjang: satu baris per elemen/node per kombinasi, hanya nilai tak nol, urut
+    kombinasi lalu tag. `load` adalah beban TOTAL kombinasi itu (pile + berat sendiri bila
+    aktif), positif ke atas (+Z) -- konvensi yang sama dengan `*PRESSURE` GZ di MCT.
+
+    `area_loads` [Pa] per elemen dan `node_loads` [N] per node berasal dari
+    `fem_engine.element_area_loads` dan `fem_engine.applied_nodal_loads`; yang kedua adalah
+    fungsi yang juga merakit beban OpenSees, jadi `load_node.csv` = gaya yang dianalisis.
+    """
+    unit_p = io_utils.display_unit("pressure")
+    unit_f = io_utils.display_unit("force")
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    def tulis(
+        path: Path, kolom: str, tags: np.ndarray, beban: dict[str, np.ndarray], qty: str, unit: str
+    ) -> Path:
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow([kolom, "load_comb", f"load [{unit}]"])
+            for combo, nilai in beban.items():
+                urutan = np.argsort(tags, kind="stable")
+                for i in urutan:
+                    if nilai[i] != 0.0:
+                        writer.writerow(
+                            [int(tags[i]), combo, f"{io_utils.to_display(nilai[i], qty):.6f}"]
+                        )
+        _log.debug("%s ditulis: %s", path.name, path)
+        return path
+
+    return (
+        tulis(
+            model_dir / config.FILE_LOAD_AREA,
+            "elemen",
+            mesh.elem_tags,
+            area_loads,
+            "pressure",
+            unit_p,
+        ),
+        tulis(
+            model_dir / config.FILE_LOAD_NODE, "node", mesh.node_tags, node_loads, "force", unit_f
+        ),
+    )
+
+
 def write_reactions_csv(path: Path, combo_result: ComboResult, mesh: MeshModel) -> Path:
     """`reactions.csv` -- reaksi tiap node jepit + baris TOTAL."""
     unit_len = io_utils.display_unit("length")

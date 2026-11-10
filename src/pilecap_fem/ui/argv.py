@@ -34,6 +34,7 @@ DEFAULTS: dict[str, Any] = {
     "contour_method": config.DEFAULT_CONTOUR_METHOD,
     "log_level": "INFO",
     "output_dir": "output",
+    "s2k_load": config.S2K_LOAD_MODES[0],
 }
 
 #: Flag yang TIDAK PERNAH dipancarkan UI, beserta alasannya.
@@ -84,6 +85,7 @@ def build_argv(
         argv.extend(["--combo", str(combo)])
 
     add("--equilibrium-rtol", "equilibrium_rtol")
+    add("--s2k-load", "s2k_load")
     add_flag("--no-custom", "no_custom")
     add_flag("--export-msh", "export_msh")
     add_flag("--opsvis", "opsvis")

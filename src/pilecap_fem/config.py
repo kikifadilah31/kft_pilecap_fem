@@ -448,6 +448,14 @@ FILE_MESH_PLAN: Final[str] = "mesh_plan.png"
 #: `pilecap-analyze` lengkap dengan pembebanan -- reaksi pile baru dibaca setelah
 #: `write_model_artifacts` selesai, sehingga versi lengkapnya tidak dapat menumpang di sana.
 FILE_MODEL_MCT: Final[str] = "model.mct"
+#: Model siap impor SAP2000 (teks `.s2k`). Ditulis di dua tahap yang sama dengan MCT.
+FILE_MODEL_S2K: Final[str] = "model.s2k"
+#: Cara beban pile ditulis di `.s2k`: area load (sama dengan `*PRESSURE` MCT) atau gaya
+#: nodal yang persis dipasang di OpenSees. Bawaan = yang pertama.
+S2K_LOAD_MODES: Final[tuple[str, ...]] = ("area", "joint")
+#: Beban yang benar-benar dipasang, per elemen dan per node, untuk SELURUH kombinasi.
+FILE_LOAD_AREA: Final[str] = "load_area.csv"
+FILE_LOAD_NODE: Final[str] = "load_node.csv"
 FILE_MODEL_OPSVIS: Final[str] = "model_opsvis.png"
 FILE_BOUNDARY_CHECK: Final[str] = "boundary_load_check.png"
 FILE_GEOMETRY_JSON: Final[str] = "geometry.json"

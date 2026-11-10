@@ -415,6 +415,8 @@ def test_wheel_memuat_contoh_dan_seluruh_modul(tmp_path: Path):
         "renderer",
         "reporter",
         "thickness",
+        "exporters/mct",
+        "exporters/s2k",
     ):
         assert f"pilecap_fem/{module}.py" in names, f"modul {module} tidak ikut terkemas"
 

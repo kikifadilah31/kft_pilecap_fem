@@ -34,7 +34,7 @@ from pilecap_fem import (
     validators,
 )
 from pilecap_fem import mesh_model as mesh_model_mod
-from pilecap_fem.exporters import write_mct
+from pilecap_fem.exporters import write_mct, write_s2k
 from pilecap_fem.geometry_builder import GeometryModel, ResolvedGeometrySources
 from pilecap_fem.mesh_model import MeshModel
 from pilecap_fem.validators import InputError, PilecapError
@@ -414,10 +414,10 @@ def write_model_artifacts(
     style: renderer.PlotStyle,
     command: str = "",
 ) -> None:
-    """Tulis isi `00_Model/`: nodes, elements, model.mct, mesh_summary, mesh_plan.
+    """Tulis isi `00_Model/`: nodes, elements, model.mct, model.s2k, mesh_summary, mesh_plan.
 
-    `model.mct` di sini SELALU tanpa pembebanan -- fungsi ini berjalan sebelum
-    `pile_reactions.csv` dibaca. `pilecap-analyze` menulisnya ulang dengan beban.
+    `model.mct` dan `model.s2k` di sini SELALU tanpa pembebanan -- fungsi ini berjalan
+    sebelum `pile_reactions.csv` dibaca. `pilecap-analyze` menulis keduanya ulang dengan beban.
     """
     prepared.mesh.write_nodes_csv(model_dir / "nodes.csv")
     prepared.mesh.write_elements_csv(model_dir / "elements.csv")
@@ -430,6 +430,15 @@ def write_model_artifacts(
         prepared.material,
         project_name=prepared.project_name,
         command=command,
+        fc_pa=prepared.fc,
+        bands=_bands_for_export(prepared),
+    )
+    write_s2k(
+        model_dir / config.FILE_MODEL_S2K,
+        prepared.geom,
+        prepared.mesh,
+        prepared.material,
+        project_name=prepared.project_name,
         fc_pa=prepared.fc,
         bands=_bands_for_export(prepared),
     )

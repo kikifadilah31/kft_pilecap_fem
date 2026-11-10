@@ -4,6 +4,32 @@ Format mengikuti template PRD Bagian 16C.
 
 ## [Unreleased]
 
+### Added — ekspor SAP2000 (`model.s2k`) dan CSV beban yang dipasang
+
+* **`00_Model/model.s2k`**: model teks siap impor SAP2000, mengikuti tabel berkas contoh
+  SAP2000 v24.2 (`KN, m, C`): joint, area (simpul diurut berlawanan jarum jam), seksi
+  `Shell-Thick` (satu per pita tebal pada pilecap tapper), material dengan `E` dari config,
+  grup, restraint jepit, satu load pattern + load case per kombinasi, dan combo `ENVELOPE`.
+  Beban pile dipilih dengan `--s2k-load` (juga opsi run di ketiga antarmuka): `area`
+  (bawaan, identik dengan `*PRESSURE` MCT) atau `joint` (gaya nodal OpenSees). Ditulis di
+  `pilecap-mesh` tanpa beban dan di `pilecap-analyze` lengkap, seperti MCT. **Belum
+  divalidasi** dengan impor sungguhan ke SAP2000.
+* **`00_Model/load_area.csv` dan `load_node.csv`**: beban yang benar-benar dipasang per
+  elemen (kPa) dan per node (kN), seluruh kombinasi, format panjang
+  `elemen/node, load_comb, load`. Positif ke atas.
+* Beban nodal kini dirakit di satu tempat (`fem_engine.applied_nodal_loads`), dipakai
+  bersama oleh OpenSees, `load_node.csv`, dan mode joint S2K. Hasil analisis tidak berubah
+  (golden dan VC-6 lulus tanpa regenerasi).
+
+### Fixed — berat sendiri tidak ikut diekspor ke MCT
+
+Bila `analysis.include_self_weight` aktif, OpenSees menambahkan berat sendiri ke setiap
+kombinasi, tetapi `model.mct` tidak membawanya, sehingga model Midas tidak setara dengan model
+yang dianalisis. Kini setiap load case mendapat `*SELFWEIGHT` (faktor 1, −Z); sintaksnya
+belum ada di berkas rujukan dan ditandai di header. Tanpa berat sendiri, MCT byte-identik
+dengan sebelumnya. Keenam contoh bawaan memakai `include_self_weight: false`, jadi tidak
+terdampak.
+
 ### Added — contoh `ex06_tapered_csv`: tebal dari CSV per bidang, bahu berbeda per arah
 
 Pilecap P2 yang sama dengan `ex05`, tetapi tebalnya diberikan sebagai `pilecap_thickness.csv`

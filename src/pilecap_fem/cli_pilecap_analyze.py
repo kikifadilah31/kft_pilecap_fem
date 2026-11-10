@@ -36,7 +36,7 @@ from pilecap_fem import (
     reporter,
     validators,
 )
-from pilecap_fem.exporters import write_mct
+from pilecap_fem.exporters import write_mct, write_s2k
 from pilecap_fem.validators import AnalysisError, InputError, PilecapError
 
 _log = config.get_logger("cli_pilecap_analyze")
@@ -69,6 +69,16 @@ def add_analysis_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         default=None,
         help="Aktifkan berat sendiri pilecap (default: dari config)",
+    )
+    parser.add_argument(
+        "--s2k-load",
+        choices=config.S2K_LOAD_MODES,
+        default=config.S2K_LOAD_MODES[0],
+        help=(
+            "Cara beban pile ditulis di model.s2k (SAP2000): 'area' = area load merata per "
+            "elemen cakram pile (sama dengan *PRESSURE MCT), 'joint' = gaya nodal yang persis "
+            "dipasang di OpenSees"
+        ),
     )
     parser.add_argument(
         "--equilibrium-rtol",
@@ -172,12 +182,24 @@ def _run_inner(
     reaction_warnings = validators.validate_reactions(reactions, prepared.geom)
     manifest.add_warnings(reaction_warnings)
 
-    # Reaksi baru terbaca DI SINI, sesudah `write_model_artifacts`. Karena itu MCT ditulis
-    # ulang -- kali ini lengkap dengan `*STLDCASE`/`*PRESSURE` -- alih-alih menumpang di
-    # sana. Tekanannya diambil dari `fem_engine.pile_pressures`, fungsi yang sama yang
-    # dipakai model OpenSees di bawah, sehingga kedua model tak mungkin berbeda bebannya.
     material = prepared.material
     assert material is not None, "require_material=True menjamin material terbaca"
+    options = fem_engine.AnalysisOptions.from_config(prepared.loaded.si)
+    if args.element is not None:
+        options = replace(options, shell_element=args.element)
+    if args.self_weight is not None:
+        options = replace(options, include_self_weight=bool(args.self_weight))
+    options = replace(options, equilibrium_rtol=float(args.equilibrium_rtol))
+    options.validate()
+
+    pile_modeling = (prepared.loaded.si.get("pile") or {}).get("modeling", "pressure")
+    load_strategy = fem_engine.make_load_strategy(pile_modeling)
+    bands = cli_pilecap_mesh._bands_for_export(prepared)
+
+    # Reaksi baru terbaca DI SINI, sesudah `write_model_artifacts`. Karena itu MCT dan S2K
+    # ditulis ulang -- kali ini lengkap dengan pembebanan -- alih-alih menumpang di sana.
+    # Tekanannya diambil dari `fem_engine.pile_pressures`, fungsi yang sama yang dipakai
+    # model OpenSees di bawah, sehingga model-model itu tak mungkin berbeda bebannya.
     write_mct(
         model_dir / config.FILE_MODEL_MCT,
         prepared.geom,
@@ -187,19 +209,45 @@ def _run_inner(
         command=command,
         fc_pa=prepared.fc,
         loads=reactions.values,
-        bands=cli_pilecap_mesh._bands_for_export(prepared),
+        bands=bands,
+        self_weight=options.include_self_weight,
     )
-
-    options = fem_engine.AnalysisOptions.from_config(prepared.loaded.si)
-    if args.element is not None:
-        options = replace(options, shell_element=args.element)
-    if args.self_weight is not None:
-        options = replace(options, include_self_weight=bool(args.self_weight))
-    options = replace(options, equilibrium_rtol=float(args.equilibrium_rtol))
-    options.validate()
-
-    load_strategy = fem_engine.make_load_strategy(
-        (prepared.loaded.si.get("pile") or {}).get("modeling", "pressure")
+    write_s2k(
+        model_dir / config.FILE_MODEL_S2K,
+        prepared.geom,
+        prepared.mesh,
+        material,
+        project_name=prepared.project_name,
+        fc_pa=prepared.fc,
+        loads=reactions.values,
+        load_mode=args.s2k_load,
+        pile_modeling=pile_modeling,
+        self_weight=options.include_self_weight,
+        bands=bands,
+    )
+    # Beban yang dipasang, SELURUH kombinasi -- termasuk yang tidak dipilih `--combo`, sama
+    # dengan MCT. Dari fungsi yang juga merakit beban OpenSees di `analyze_combo`.
+    reporter.write_load_assignment_csvs(
+        model_dir,
+        prepared.mesh,
+        area_loads={
+            c: fem_engine.element_area_loads(
+                prepared.mesh, prepared.geom, material, options, dict(pz), bands=bands
+            )
+            for c, pz in reactions.values.items()
+        },
+        node_loads={
+            c: fem_engine.applied_nodal_loads(
+                prepared.mesh,
+                prepared.geom,
+                material,
+                options,
+                dict(pz),
+                load_strategy=load_strategy,
+                bands=bands,
+            ).total_fz
+            for c, pz in reactions.values.items()
+        },
     )
 
     _log.info(
@@ -239,7 +287,7 @@ def _run_inner(
             combo=combo,
             pz_by_pile=reactions.values[combo],
             load_strategy=load_strategy,
-            bands=cli_pilecap_mesh._bands_for_export(prepared),
+            bands=bands,
         )
         results = postproc_engine.compute_element_results(result, prepared.mesh)
 

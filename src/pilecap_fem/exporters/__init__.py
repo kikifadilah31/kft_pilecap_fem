@@ -1,8 +1,7 @@
 """Ekspor model ke format program lain yang berbasis teks.
 
-Saat ini hanya Midas Civil (`mct.py`). Kerangka di sini disiapkan supaya format berikutnya
--- SAP2000 `.s2k` misalnya -- masuk sebagai modul sejajar, bukan sebagai cabang `if` di
-dalam CLI.
+Midas Civil (`mct.py`) dan SAP2000 (`s2k.py`), sebagai modul sejajar -- bukan sebagai
+cabang `if` di dalam CLI.
 
 .. rubric:: Aturan modul ini
 
@@ -16,5 +15,6 @@ membandingkan dua model yang diam-diam berbeda bebannya.
 from __future__ import annotations
 
 from pilecap_fem.exporters.mct import write_mct
+from pilecap_fem.exporters.s2k import write_s2k
 
-__all__ = ["write_mct"]
+__all__ = ["write_mct", "write_s2k"]

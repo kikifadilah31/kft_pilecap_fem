@@ -772,6 +772,78 @@ def _check_equilibrium(
     )
 
 
+@dataclass(frozen=True)
+class AppliedLoads:
+    """Beban nodal satu kombinasi, persis seperti yang dipasang ke OpenSees. SI [N].
+
+    Komponen pile dan berat sendiri dipisah: pemeriksaan beban yang mendarat di node jepit
+    hanya bermakna untuk beban pile, dan ekspor SAP2000 membawa berat sendiri lewat
+    mekanismenya sendiri (`SelfWtMult`), bukan sebagai gaya nodal.
+    """
+
+    pile_fz: np.ndarray
+    #: `None` bila `include_self_weight` mati.
+    self_weight_fz: np.ndarray | None
+    traces: tuple[PileLoadTrace, ...]
+
+    @property
+    def total_fz(self) -> np.ndarray:
+        if self.self_weight_fz is None:
+            return self.pile_fz
+        return np.asarray(self.pile_fz + self.self_weight_fz)
+
+    @property
+    def self_weight_total(self) -> float:
+        return 0.0 if self.self_weight_fz is None else float(self.self_weight_fz.sum())
+
+
+def applied_nodal_loads(
+    mesh: MeshModel,
+    geom: GeometryModel | None,
+    material: MaterialProperties,
+    options: AnalysisOptions,
+    pz_by_pile: dict[str, float],
+    *,
+    load_strategy: PileLoadStrategy | None = None,
+    bands: ThicknessBands | None = None,
+    fixed_nodes: np.ndarray | None = None,
+) -> AppliedLoads:
+    """Beban nodal satu kombinasi: pile (strategi beban) + berat sendiri bila aktif.
+
+    SATU-SATUNYA tempat beban nodal dirakit. `analyze_combo` memakainya untuk OpenSees,
+    dan `load_node.csv` serta ekspor SAP2000 mode joint memakai fungsi yang sama, sehingga
+    ketiganya tidak mungkin membawa beban yang berbeda.
+    """
+    strategi = load_strategy or PilePressureLoad()
+    pile_fz, traces = strategi.apply(mesh, geom, pz_by_pile, fixed_nodes=fixed_nodes)
+    berat = _self_weight_nodal(mesh, material, bands) if options.include_self_weight else None
+    return AppliedLoads(pile_fz=pile_fz, self_weight_fz=berat, traces=traces)
+
+
+def element_area_loads(
+    mesh: MeshModel,
+    geom: GeometryModel,
+    material: MaterialProperties,
+    options: AnalysisOptions,
+    pz_by_pile: dict[str, float],
+    *,
+    bands: ThicknessBands | None = None,
+) -> np.ndarray:
+    """Beban merata per elemen [Pa], positif ke atas: tekanan pile + berat sendiri bila aktif.
+
+    Tekanan pile dari `pile_pressures`, sumber yang sama dengan `*PRESSURE` MCT dan area
+    load SAP2000. Berat sendiri = `-density x t_e`, dengan `t_e` tebal pita elemen pada
+    pilecap tapper -- integral luasnya sama dengan `_self_weight_nodal`.
+    """
+    beban = np.zeros(mesh.n_elements, dtype=np.float64)
+    for load in pile_pressures(mesh, geom, pz_by_pile):
+        beban[load.element_index] += load.pressure
+    if options.include_self_weight:
+        tebal = material.thickness if bands is None else bands.elem_thickness
+        beban -= material.density * tebal
+    return beban
+
+
 def analyze_combo(
     mesh: MeshModel,
     geom: GeometryModel | None,
@@ -815,7 +887,17 @@ def analyze_combo(
 
     fixed_nodes = support_strategy.apply(mesh, geom)
 
-    nodal_fz, traces = load_strategy.apply(mesh, geom, pz_by_pile, fixed_nodes=fixed_nodes)
+    beban = applied_nodal_loads(
+        mesh,
+        geom,
+        material,
+        options,
+        pz_by_pile,
+        load_strategy=load_strategy,
+        bands=bands,
+        fixed_nodes=fixed_nodes,
+    )
+    nodal_fz, traces = beban.pile_fz, beban.traces
 
     # Jaring pengaman: geometri bilang tidak ada tumpang tindih, tetapi ada beban pile yang
     # tetap mendarat di node jepit. Penyebab yang mungkin: celah pile-pier jauh lebih kecil
@@ -846,11 +928,9 @@ def analyze_combo(
         for baris in peringatan_bocor:
             _log.warning("%s", baris)
 
-    self_weight_total = 0.0
-    if options.include_self_weight:
-        self_weight = _self_weight_nodal(mesh, material, bands)
-        self_weight_total = float(self_weight.sum())
-        nodal_fz = nodal_fz + self_weight
+    self_weight_total = beban.self_weight_total
+    nodal_fz = beban.total_fz
+    if beban.self_weight_fz is not None:
         _log.info("Berat sendiri diaktifkan: %.1f kN", self_weight_total / 1e3)
 
     # Node yang dijepit tidak perlu dibebani -- bebannya langsung masuk ke tumpuan.
