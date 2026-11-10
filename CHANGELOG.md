@@ -2,7 +2,7 @@
 
 Format mengikuti template PRD Bagian 16C.
 
-## [Unreleased]
+## [0.17.0] — 2026-11-10 — Ekspor SAP2000 (.s2k), CSV beban yang dipasang, contoh ex06
 
 ### Added — ekspor SAP2000 (`model.s2k`) dan CSV beban yang dipasang
 

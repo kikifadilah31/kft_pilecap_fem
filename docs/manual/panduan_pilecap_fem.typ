@@ -38,7 +38,7 @@
 
 #set page(footer: context [
   #set text(size: 7.5pt, fill: luma(90))
-  pilecap-fem v0.16.0 -- alat bantu perhitungan; wajib diperiksa dan disetujui engineer yang bertanggung jawab
+  pilecap-fem v0.17.0 -- alat bantu perhitungan; wajib diperiksa dan disetujui engineer yang bertanggung jawab
   #h(1fr)
   #counter(page).display("1 / 1", both: true)
 ])
@@ -50,7 +50,7 @@
   #text(size: 13pt)[Analisis pilecap berbasis metode elemen hingga,
   dari data masukan sampai penulangan menurut SNI 2847:2019]
   #v(14mm)
-  #text(size: 16pt, weight: 700)[Versi 0.16.0]
+  #text(size: 16pt, weight: 700)[Versi 0.17.0]
   #v(3mm)
   #text(size: 10pt)[Sistem satuan internal: SI (N, m, Pa)]
 ]
@@ -156,7 +156,7 @@ Selisih terbesar yang terukur pada momen puncak -- besaran yang menentukan tulan
   [Unduhan pertama], [Sekitar 60 MB, sekali saja per komputer.],
   [Jaringan], [Hanya saat memasang. Setelah terpasang, bekerja sepenuhnya luring.],
   [Data], [Seluruh keluaran ditulis sebagai berkas biasa di disk perusahaan sendiri; tidak ada data yang dikirim ke mana pun.],
-  [Pelatihan], [5 contoh lengkap ikut terpasang dan dapat dijalankan tanpa menyiapkan data apa pun.],
+  [Pelatihan], [6 contoh lengkap ikut terpasang dan dapat dijalankan tanpa menyiapkan data apa pun.],
   [Antarmuka], [Tersedia formulir grafis bagi pengguna yang tidak terbiasa dengan baris perintah.],
 ),
   caption: [Prasyarat penerapan di lingkungan perusahaan.],
@@ -165,7 +165,7 @@ Selisih terbesar yang terukur pada momen puncak -- besaran yang menentukan tulan
 == Pernyataan tanggung jawab
 
 #kotak([HATI-HATI], rgb("#b91c1c"))[
-#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.16.0 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
+#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.17.0 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
 ]
 
 #pagebreak()
@@ -237,7 +237,7 @@ Satu perintah, disalin utuh termasuk alamat panjang di ujungnya.
   inset: 8pt,
   radius: 2pt,
   breakable: true,
-  raw(block: true, "uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.16.0/pilecap_fem-0.16.0-py3-none-any.whl"),
+  raw(block: true, "uv tool install --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.17.0/pilecap_fem-0.17.0-py3-none-any.whl"),
 )
 
 Bagian-bagian perintah tersebut berarti sebagai berikut.
@@ -269,7 +269,7 @@ Bagian `--python 3.12` tidak boleh dihilangkan. Pustaka solver yang dipakai pera
   raw(block: true, "pilecap-run --version"),
 )
 
-Perintah itu harus menampilkan nomor versi. Bila yang muncul adalah #tegas[0.16.0], panduan ini memang panduan untuk perangkat lunak yang baru Anda pasang. Bila berbeda, mintalah panduan untuk versi tersebut -- daftar field dan keterbatasan dapat berbeda antarversi.
+Perintah itu harus menampilkan nomor versi. Bila yang muncul adalah #tegas[0.17.0], panduan ini memang panduan untuk perangkat lunak yang baru Anda pasang. Bila berbeda, mintalah panduan untuk versi tersebut -- daftar field dan keterbatasan dapat berbeda antarversi.
 
 == Bila gagal
 
@@ -297,10 +297,10 @@ Perintahnya sama dengan pemasangan, ditambah `--force`. Tanpa itu `uv` melihat b
   inset: 8pt,
   radius: 2pt,
   breakable: true,
-  raw(block: true, "uv tool install --force --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.16.0/pilecap_fem-0.16.0-py3-none-any.whl"),
+  raw(block: true, "uv tool install --force --python 3.12 https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.17.0/pilecap_fem-0.17.0-py3-none-any.whl"),
 )
 
-Alamat pada perintah di atas menunjuk versi #tegas[0.16.0]. Untuk versi lain, bagian nomor versinya diganti. Seluruh rilis beserta alamatnya tersedia pada halaman berikut.
+Alamat pada perintah di atas menunjuk versi #tegas[0.17.0]. Untuk versi lain, bagian nomor versinya diganti. Seluruh rilis beserta alamatnya tersedia pada halaman berikut.
 
 #link("https://github.com/kikifadilah31/kft_pilecap_fem/releases")[#raw("https://github.com/kikifadilah31/kft_pilecap_fem/releases")]
 
@@ -308,7 +308,7 @@ Alamat pada perintah di atas menunjuk versi #tegas[0.16.0]. Untuk versi lain, ba
 
 = Menjalankan pertama kali <bab-jalan-pertama>
 
-Perangkat lunak ini membawa #tegas[5 contoh lengkap]. Menjalankan salah satunya adalah cara tercepat memastikan pemasangan berhasil dan melihat bentuk keluarannya, tanpa perlu menyiapkan data sendiri.
+Perangkat lunak ini membawa #tegas[6 contoh lengkap]. Menjalankan salah satunya adalah cara tercepat memastikan pemasangan berhasil dan melihat bentuk keluarannya, tanpa perlu menyiapkan data sendiri.
 
 == Contoh yang tersedia
 
@@ -322,6 +322,7 @@ Perangkat lunak ini membawa #tegas[5 contoh lengkap]. Menjalankan salah satunya 
   [`ex03_custom_polygon`], [Pilecap dengan denah tidak persegi, didefinisikan sebagai poligon bebas.],
   [`ex04_pile_overlap_pier`], [Tiang yang sebagian tertutup pier. Kasus khusus dengan penanganan tersendiri, dijelaskan pada bab dasar teori.],
   [`ex05_tapered_p2`], [Pilecap tapper: denah trapesium, 16 tiang, tebal 2000 mm di sekitar pier menipis ke 1000 mm di tepi. Contoh profil tebal parametrik dan desain dengan tebal lokal.],
+  [`ex06_tapered_csv`], [Pilecap P2 yang sama, tetapi tebalnya diberikan sebagai CSV per bidang dengan bahu datar berbeda per arah (500 mm memanjang, 800 mm melintang). Acuan format CSV tebal.],
 ),
   caption: [Contoh bawaan yang ikut terpasang.],
 )
@@ -374,7 +375,7 @@ Bentuk ini terbuka sebagai jendela biasa, seperti aplikasi lain di komputer Anda
   inset: 8pt,
   radius: 2pt,
   breakable: true,
-  raw(block: true, "uv tool install --force --python 3.12 \"pilecap-fem[gui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.16.0/pilecap_fem-0.16.0-py3-none-any.whl\""),
+  raw(block: true, "uv tool install --force --python 3.12 \"pilecap-fem[gui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.17.0/pilecap_fem-0.17.0-py3-none-any.whl\""),
 )
 
 Setelah itu jendelanya dibuka dengan satu perintah.
@@ -398,7 +399,7 @@ Bentuk ini berjalan di peramban pada alamat `http://localhost:8501`, hanya di me
   inset: 8pt,
   radius: 2pt,
   breakable: true,
-  raw(block: true, "uv tool install --force --python 3.12 \"pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.16.0/pilecap_fem-0.16.0-py3-none-any.whl\""),
+  raw(block: true, "uv tool install --force --python 3.12 \"pilecap-fem[ui] @ https://github.com/kikifadilah31/kft_pilecap_fem/releases/download/v0.17.0/pilecap_fem-0.17.0-py3-none-any.whl\""),
 )
 
 Setelah itu formulirnya dibuka dengan satu perintah.
@@ -1403,6 +1404,8 @@ Setiap kali dijalankan, perangkat lunak membuat #tegas[satu folder baru] di dala
   [`mesh_plan.png`], [Denah mesh beserta label tiang dan pier.],
   [`nodes.csv`, `elements.csv`], [Mesh yang benar-benar dipakai. Keduanya cukup untuk mereproduksi angka secara persis.],
   [`model.mct`], [Model siap diimpor ke Midas Civil, lengkap dengan pembebanannya.],
+  [`model.s2k`], [Model siap diimpor ke SAP2000 (teks .s2k), lengkap dengan pembebanannya. Belum divalidasi terhadap SAP2000; periksa pada impor pertama.],
+  [`load_area.csv`, `load_node.csv`], [Beban yang benar-benar dipasang, per elemen (merata) dan per node (gaya), untuk seluruh kombinasi. Positif = ke atas.],
   [`model_opsvis.png`], [Gambar model beserta tumpuan dan bebannya.],
   [`geometry.json`], [Geometri hasil resolusi, setelah seluruh sumber data digabungkan.],
 ),
@@ -1643,7 +1646,7 @@ Item berikut BELUM dikonfirmasi, sehingga pengecekan terkait #tegas[tidak dilaku
 = Tanggung jawab dan lisensi <bab-tanggung-jawab>
 
 #kotak([HATI-HATI], rgb("#b91c1c"))[
-#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.16.0 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
+#tegas[\[DRAFT - redaksi final belum ditetapkan, PRD Bagian 17 item 18\]] Hasil perhitungan ini dihasilkan secara otomatis oleh pilecap-fem v0.17.0 dan merupakan ALAT BANTU. Hasil wajib diperiksa dan disetujui oleh engineer yang bertanggung jawab. Pengecekan di luar ruang lingkup PRD Bagian 1.4 TIDAK dilakukan oleh tool ini.
 ]
 
 Pernyataan di atas berlaku bagi setiap keluaran perangkat lunak ini, dan dicetak apa adanya pada setiap lembar perhitungan, setiap ringkasan, dan setiap laporan PDF yang dihasilkannya.
@@ -1669,7 +1672,7 @@ Perhitungan kapasitas penampang tidak dikerjakan sendiri oleh perangkat lunak in
   [Butir], [Nilai],
   [Standar acuan], [SNI 2847:2019],
   [Pustaka kapasitas], [`shell-kit` v3.3.0],
-  [Perangkat lunak ini], [`pilecap-fem` v0.16.0],
+  [Perangkat lunak ini], [`pilecap-fem` v0.17.0],
 ),
   caption: [Sumber perhitungan kapasitas.],
 )
